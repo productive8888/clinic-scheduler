@@ -32,10 +32,15 @@ export function generateSchedule(input: GenerateScheduleInput) {
       continue;
     }
 
-    if (slot.lockedEmployeeId) {
+    const lockedEmployeeIds = [
+      ...(slot.lockedEmployeeIds ?? []),
+      ...(slot.lockedEmployeeId ? [slot.lockedEmployeeId] : []),
+    ];
+
+    for (const lockedEmployeeId of lockedEmployeeIds) {
       const lockedAssignment: ScheduleAssignment = {
         slotId: slot.id,
-        employeeId: slot.lockedEmployeeId,
+        employeeId: lockedEmployeeId,
         taskTypeId: taskType.id,
         date: slot.date,
         source: "LOCKED",
@@ -44,31 +49,38 @@ export function generateSchedule(input: GenerateScheduleInput) {
 
       assignments.push(lockedAssignment);
       occupiedAssignments.push(toExistingAssignment(lockedAssignment, slot));
-      continue;
     }
 
-    const selection = selectAssignment({
-      seed: input.seed,
-      slot,
-      taskType,
-      employees: input.employees,
-      rules: input.rules ?? [],
-      assignments: occupiedAssignments,
-    });
+    const requiredStaff = Math.max(1, slot.requiredStaff ?? 1);
+    const remainingStaffNeeded = Math.max(0, requiredStaff - lockedEmployeeIds.length);
 
-    if (!selection.assignment) {
-      conflicts.push({
-        slotId: slot.id,
-        taskTypeId: taskType.id,
-        date: slot.date,
-        reason: "No compatible available employee",
-        rejectedCandidates: selection.rejectedCandidates,
+    for (let staffIndex = 0; staffIndex < remainingStaffNeeded; staffIndex += 1) {
+      const selection = selectAssignment({
+        seed: `${input.seed}:${staffIndex}`,
+        slot,
+        taskType,
+        employees: input.employees,
+        rules: input.rules ?? [],
+        assignments: occupiedAssignments,
       });
-      continue;
-    }
 
-    assignments.push(selection.assignment);
-    occupiedAssignments.push(toExistingAssignment(selection.assignment, slot));
+      if (!selection.assignment) {
+        conflicts.push({
+          slotId: slot.id,
+          taskTypeId: taskType.id,
+          date: slot.date,
+          reason:
+            staffIndex === 0
+              ? "No compatible available employee"
+              : `Only filled ${staffIndex + lockedEmployeeIds.length} of ${requiredStaff} required staff`,
+          rejectedCandidates: selection.rejectedCandidates,
+        });
+        break;
+      }
+
+      assignments.push(selection.assignment);
+      occupiedAssignments.push(toExistingAssignment(selection.assignment, slot));
+    }
   }
 
   return {

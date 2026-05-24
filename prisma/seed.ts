@@ -95,6 +95,81 @@ const taskTypes = [
   },
 ];
 
+const demoEmployees = [
+  {
+    email: "ava.allergy@clinic.test",
+    fullName: "Ava Allergy",
+    role: "ADMIN" as const,
+    skillCodes: ["ALLERGY_SHOT"],
+    ptoBalanceHours: 80,
+    weeklyAssignmentLimit: 5,
+  },
+  {
+    email: "ben.frontdesk@clinic.test",
+    fullName: "Ben Front Desk",
+    role: "MANAGER" as const,
+    skillCodes: [],
+    ptoBalanceHours: 64,
+    weeklyAssignmentLimit: 5,
+  },
+  {
+    email: "cora.civil@clinic.test",
+    fullName: "Cora Civil",
+    role: "EMPLOYEE" as const,
+    skillCodes: ["CIVIL_SURGEON"],
+    ptoBalanceHours: 72,
+    weeklyAssignmentLimit: 5,
+  },
+  {
+    email: "dev.procedure@clinic.test",
+    fullName: "Dev Procedure",
+    role: "EMPLOYEE" as const,
+    skillCodes: ["PROCEDURE"],
+    ptoBalanceHours: 56,
+    weeklyAssignmentLimit: 5,
+  },
+  {
+    email: "ella.float@clinic.test",
+    fullName: "Ella Float",
+    role: "EMPLOYEE" as const,
+    skillCodes: ["ALLERGY_SHOT", "PROCEDURE"],
+    ptoBalanceHours: 48,
+    weeklyAssignmentLimit: 5,
+  },
+  {
+    email: "finn.gi@clinic.test",
+    fullName: "Finn GI",
+    role: "EMPLOYEE" as const,
+    skillCodes: [],
+    ptoBalanceHours: 60,
+    weeklyAssignmentLimit: 5,
+  },
+  {
+    email: "gia.followup@clinic.test",
+    fullName: "Gia Followup",
+    role: "EMPLOYEE" as const,
+    skillCodes: [],
+    ptoBalanceHours: 40,
+    weeklyAssignmentLimit: 5,
+  },
+  {
+    email: "hugo.virtual@clinic.test",
+    fullName: "Hugo Virtual",
+    role: "EMPLOYEE" as const,
+    skillCodes: [],
+    ptoBalanceHours: 52,
+    weeklyAssignmentLimit: 5,
+  },
+  {
+    email: "ivy.backup@clinic.test",
+    fullName: "Ivy Backup",
+    role: "EMPLOYEE" as const,
+    skillCodes: ["CIVIL_SURGEON", "ALLERGY_SHOT"],
+    ptoBalanceHours: 44,
+    weeklyAssignmentLimit: 5,
+  },
+];
+
 async function main() {
   const skillByCode = new Map<string, string>();
 
@@ -156,6 +231,61 @@ async function main() {
         },
       });
     }
+  }
+
+  for (const employee of demoEmployees) {
+    const record = await prisma.employee.upsert({
+      where: { email: employee.email },
+      update: {
+        fullName: employee.fullName,
+        role: employee.role,
+        status: "ACTIVE",
+        ptoBalanceHours: employee.ptoBalanceHours,
+        weeklyAssignmentLimit: employee.weeklyAssignmentLimit,
+        startDate: new Date("2026-01-01T00:00:00.000Z"),
+      },
+      create: {
+        email: employee.email,
+        fullName: employee.fullName,
+        role: employee.role,
+        status: "ACTIVE",
+        ptoBalanceHours: employee.ptoBalanceHours,
+        weeklyAssignmentLimit: employee.weeklyAssignmentLimit,
+        startDate: new Date("2026-01-01T00:00:00.000Z"),
+      },
+    });
+
+    await prisma.employeeSkill.deleteMany({
+      where: { employeeId: record.id },
+    });
+
+    for (const skillCode of employee.skillCodes) {
+      const skillId = skillByCode.get(skillCode);
+      if (!skillId) {
+        throw new Error(`Missing employee seed skill: ${skillCode}`);
+      }
+
+      await prisma.employeeSkill.create({
+        data: {
+          employeeId: record.id,
+          skillId,
+        },
+      });
+    }
+
+    await prisma.weeklyAvailability.deleteMany({
+      where: { employeeId: record.id },
+    });
+
+    await prisma.weeklyAvailability.createMany({
+      data: [1, 2, 3, 4, 5].map((weekday) => ({
+        employeeId: record.id,
+        weekday,
+        startMinute: 8 * 60,
+        endMinute: 17 * 60,
+        effectiveStartDate: new Date("2026-01-01T00:00:00.000Z"),
+      })),
+    });
   }
 }
 

@@ -117,3 +117,84 @@ export async function deactivateEmployeeAction(employeeId: string) {
 
   revalidatePath("/admin/employees");
 }
+
+export async function deleteEmployeeAction(employeeId: string) {
+  const actor = await requireManager();
+  const db = getDb();
+  const before = await db.employee.findUnique({
+    where: { id: employeeId },
+    include: {
+      skills: true,
+      availability: true,
+    },
+  });
+
+  if (!before) {
+    revalidatePath("/admin/employees");
+    return;
+  }
+
+  const [
+    assignmentCount,
+    ptoRequestCount,
+    reviewedPtoRequestCount,
+    schedulingRuleCount,
+    createdSchedulingRuleCount,
+    generationRunCount,
+    auditLogCount,
+    exportLogCount,
+    publishedScheduleCount,
+  ] = await Promise.all([
+    db.assignment.count({ where: { employeeId } }),
+    db.pTORequest.count({ where: { employeeId } }),
+    db.pTORequest.count({ where: { reviewedByEmployeeId: employeeId } }),
+    db.schedulingRule.count({ where: { employeeId } }),
+    db.schedulingRule.count({ where: { createdByEmployeeId: employeeId } }),
+    db.scheduleGenerationRun.count({ where: { requestedByEmployeeId: employeeId } }),
+    db.auditLog.count({ where: { actorEmployeeId: employeeId } }),
+    db.exportLog.count({ where: { requestedByEmployeeId: employeeId } }),
+    db.scheduleDay.count({ where: { publishedByEmployeeId: employeeId } }),
+  ]);
+  const relatedRecordCount =
+    assignmentCount +
+    ptoRequestCount +
+    reviewedPtoRequestCount +
+    schedulingRuleCount +
+    createdSchedulingRuleCount +
+    generationRunCount +
+    auditLogCount +
+    exportLogCount +
+    publishedScheduleCount;
+
+  if (relatedRecordCount > 0) {
+    const employee = await db.employee.update({
+      where: { id: employeeId },
+      data: { status: "INACTIVE" },
+    });
+
+    await writeAuditLog({
+      actorEmployeeId: auditActorId(actor),
+      action: "employee.delete_requested_deactivated",
+      entityType: "Employee",
+      entityId: employee.id,
+      before,
+      after: {
+        status: employee.status,
+        relatedRecordCount,
+      },
+    });
+  } else {
+    await db.employee.delete({ where: { id: employeeId } });
+
+    await writeAuditLog({
+      actorEmployeeId: auditActorId(actor),
+      action: "employee.delete",
+      entityType: "Employee",
+      entityId: employeeId,
+      before,
+      after: null,
+    });
+  }
+
+  revalidatePath("/admin/employees");
+}

@@ -134,6 +134,34 @@ describe("generateSchedule", () => {
 
     assert.deepEqual(first, second);
   });
+
+  it("preserves locked manual overrides during generation", () => {
+    const result = generateSchedule({
+      seed: "override-preservation",
+      employees: baseEmployees,
+      taskTypes,
+      slots: [
+        {
+          ...slots[1],
+          lockedEmployeeIds: ["blake"],
+        },
+        slots[0],
+      ],
+    });
+
+    assert.equal(result.conflicts.length, 0);
+    assert.deepEqual(
+      result.assignments.map((assignment) => [
+        assignment.slotId,
+        assignment.employeeId,
+        assignment.source,
+      ]),
+      [
+        ["civil-slot", "alice", "GENERATED"],
+        ["front-slot", "blake", "LOCKED"],
+      ],
+    );
+  });
 });
 
 describe("resolveDirectReplacement", () => {

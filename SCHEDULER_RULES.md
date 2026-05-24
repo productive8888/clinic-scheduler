@@ -14,6 +14,8 @@ not contain scheduling decisions.
 - Weekly assignment limits are honored when configured.
 - Skilled and difficult slots are filled before easier general slots.
 - Manual locked assignments are preserved during regeneration.
+- Default generated task slots use 8 AM-5 PM working hours so they match the
+  seeded recurring availability window.
 - Fairness scoring favors underused employees and reduces repeated difficult
   task assignments.
 - Configurable `SchedulingRule` rows can prefer, avoid, boost, penalize, or

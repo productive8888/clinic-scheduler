@@ -14,6 +14,13 @@ export function todayIsoDate() {
   return toIsoDate(new Date());
 }
 
+export function addDaysIsoDate(date: string, days: number) {
+  const parsed = parseIsoDate(date);
+  parsed.setUTCDate(parsed.getUTCDate() + days);
+
+  return toIsoDate(parsed);
+}
+
 export function formatDisplayDate(value: Date | string) {
   const date = typeof value === "string" ? parseIsoDate(value) : value;
 

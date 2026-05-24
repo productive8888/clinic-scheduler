@@ -33,6 +33,7 @@ export type SchedulerTaskSlot = {
   minStaff?: number;
   requiredStaff?: number;
   lockedEmployeeId?: string | null;
+  lockedEmployeeIds?: string[];
 };
 
 export type AvailabilityWindow = {

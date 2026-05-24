@@ -5,6 +5,7 @@ import {
   ensureScheduleDayWithDefaultSlots,
   generateScheduleForDate,
   manuallyAssignSlot,
+  publishScheduleForDate,
 } from "@/lib/db/schedule";
 import { auditActorId, requireManager } from "@/lib/auth";
 import { todayIsoDate } from "@/lib/utils/date";
@@ -29,6 +30,17 @@ export async function generateScheduleAction(formData: FormData) {
   await generateScheduleForDate({
     date,
     seed,
+    actorEmployeeId: auditActorId(actor),
+  });
+  revalidatePath("/schedule");
+}
+
+export async function publishScheduleAction(formData: FormData) {
+  const actor = await requireManager();
+  const date = getDateFromForm(formData);
+
+  await publishScheduleForDate({
+    date,
     actorEmployeeId: auditActorId(actor),
   });
   revalidatePath("/schedule");

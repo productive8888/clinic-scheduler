@@ -14,7 +14,8 @@ initial migration in `prisma/migrations/202605240001_initial/migration.sql`.
 - `WeeklyAvailability`: recurring employee availability by weekday and minute
   range.
 - `PTORequest`: PTO, absence, unavailability, and schedule-change requests.
-- `ScheduleDay`: one operational staffing day.
+- `ScheduleDay`: one operational staffing day, including draft/generated/
+  published status and publish metadata.
 - `TaskSlot`: concrete task opening on a schedule day.
 - `Assignment`: employee assigned to a task slot, including generated/manual
   source, lock state, and removal history.

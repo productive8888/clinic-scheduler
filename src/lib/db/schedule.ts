@@ -1,5 +1,10 @@
 import { createHash } from "node:crypto";
-import { AssignmentSource, AssignmentStatus, TaskSlotStatus } from "@prisma/client";
+import {
+  AssignmentSource,
+  AssignmentStatus,
+  Prisma,
+  TaskSlotStatus,
+} from "@prisma/client";
 import { writeAuditLog } from "@/lib/audit";
 import { getDb } from "@/lib/db";
 import {
@@ -11,6 +16,9 @@ import {
   type SchedulerTaskType,
 } from "@/lib/scheduler";
 import { parseIsoDate, toIsoDate } from "@/lib/utils/date";
+
+const DEFAULT_SLOT_START_MINUTE = 8 * 60;
+const DEFAULT_SLOT_END_MINUTE = 17 * 60;
 
 export async function getScheduleBoard(date: string) {
   return getDb().scheduleDay.findUnique({
@@ -36,6 +44,7 @@ export async function getScheduleBoard(date: string) {
           },
         },
       },
+      publishedBy: true,
     },
   });
 }
@@ -80,7 +89,7 @@ export async function ensureScheduleDayWithDefaultSlots(
   });
 
   for (const taskType of taskTypes) {
-    await db.taskSlot.upsert({
+    const slot = await db.taskSlot.upsert({
       where: {
         scheduleDayId_taskTypeId_slotIndex: {
           scheduleDayId: scheduleDay.id,
@@ -94,11 +103,23 @@ export async function ensureScheduleDayWithDefaultSlots(
         taskTypeId: taskType.id,
         slotIndex: 1,
         label: taskType.name,
+        startMinute: DEFAULT_SLOT_START_MINUTE,
+        endMinute: DEFAULT_SLOT_END_MINUTE,
         status: "OPEN",
         minStaff: 1,
         requiredStaff: 1,
       },
     });
+
+    if (slot.startMinute === null || slot.endMinute === null) {
+      await db.taskSlot.update({
+        where: { id: slot.id },
+        data: {
+          startMinute: slot.startMinute ?? DEFAULT_SLOT_START_MINUTE,
+          endMinute: slot.endMinute ?? DEFAULT_SLOT_END_MINUTE,
+        },
+      });
+    }
   }
 
   await writeAuditLog({
@@ -157,6 +178,7 @@ export async function manuallyAssignSlot(input: {
       where: { id: input.slotId },
       data: {
         status: input.employeeId ? "FILLED" : "OPEN",
+        notes: null,
       },
     });
 
@@ -192,7 +214,7 @@ export async function generateScheduleForDate(input: {
 }) {
   await ensureScheduleDayWithDefaultSlots(input.date, input.actorEmployeeId);
 
-  const [scheduleDay, employees, historicalAssignments] = await Promise.all([
+  const [scheduleDay, employees, historicalAssignments, rules] = await Promise.all([
     getScheduleBoard(input.date),
     getDb().employee.findMany({
       where: { status: "ACTIVE" },
@@ -212,6 +234,27 @@ export async function generateScheduleForDate(input: {
     getDb().assignment.findMany({
       where: { status: "ACTIVE" },
       include: { taskSlot: true },
+      orderBy: [{ employeeId: "asc" }, { taskSlotId: "asc" }, { id: "asc" }],
+    }),
+    getDb().schedulingRule.findMany({
+      where: {
+        active: true,
+        AND: [
+          {
+            OR: [
+              { effectiveStartDate: null },
+              { effectiveStartDate: { lte: parseIsoDate(input.date) } },
+            ],
+          },
+          {
+            OR: [
+              { effectiveEndDate: null },
+              { effectiveEndDate: { gte: parseIsoDate(input.date) } },
+            ],
+          },
+        ],
+      },
+      orderBy: [{ priority: "desc" }, { createdAt: "asc" }, { id: "asc" }],
     }),
   ]);
 
@@ -252,34 +295,51 @@ export async function generateScheduleForDate(input: {
     historicalTaskCountByEmployee.set(assignment.employeeId, taskCounts);
   }
 
-  const schedulerEmployees: SchedulerEmployee[] = employees.map((employee) => ({
-    id: employee.id,
-    fullName: employee.fullName,
-    active: employee.status === "ACTIVE",
-    skillIds: employee.skills.map((skill) => skill.skillId),
-    preferredTaskTypeIds: [],
-    availability: employee.availability.map((window) => ({
-      weekday: window.weekday,
-      startMinute: window.startMinute,
-      endMinute: window.endMinute,
-      effectiveStartDate: toIsoDate(window.effectiveStartDate),
-      effectiveEndDate: window.effectiveEndDate
-        ? toIsoDate(window.effectiveEndDate)
-        : null,
-      active: window.active,
-    })),
-    unavailable: employee.ptoRequests.map((request) => ({
-      startDate: toIsoDate(request.startDate),
-      endDate: toIsoDate(request.endDate),
-      startMinute: request.startMinute,
-      endMinute: request.endMinute,
-      active: true,
-    })),
-    weeklyAssignmentLimit: employee.weeklyAssignmentLimit,
+  const schedulerEmployees: SchedulerEmployee[] = employees
+    .map((employee) => ({
+      id: employee.id,
+      fullName: employee.fullName,
+      active: employee.status === "ACTIVE",
+      skillIds: employee.skills.map((skill) => skill.skillId).sort(),
+      preferredTaskTypeIds: [],
+      availability: employee.availability
+        .map((window) => ({
+          weekday: window.weekday,
+          startMinute: window.startMinute,
+          endMinute: window.endMinute,
+          effectiveStartDate: toIsoDate(window.effectiveStartDate),
+          effectiveEndDate: window.effectiveEndDate
+            ? toIsoDate(window.effectiveEndDate)
+            : null,
+          active: window.active,
+        }))
+        .sort(
+          (left, right) =>
+            left.weekday - right.weekday ||
+            left.startMinute - right.startMinute ||
+            left.endMinute - right.endMinute,
+        ),
+      unavailable: employee.ptoRequests
+        .map((request) => ({
+          startDate: toIsoDate(request.startDate),
+          endDate: toIsoDate(request.endDate),
+          startMinute: request.startMinute,
+          endMinute: request.endMinute,
+          active: true,
+        }))
+        .sort(
+          (left, right) =>
+            left.startDate.localeCompare(right.startDate) ||
+            left.endDate.localeCompare(right.endDate) ||
+            (left.startMinute ?? 0) - (right.startMinute ?? 0),
+        ),
+      weeklyAssignmentLimit: employee.weeklyAssignmentLimit,
     historicalAssignments: historicalCountByEmployee.get(employee.id) ?? 0,
-    historicalTaskAssignments:
-      historicalTaskCountByEmployee.get(employee.id) ?? {},
-  }));
+      historicalTaskAssignments: sortNumberRecord(
+        historicalTaskCountByEmployee.get(employee.id) ?? {},
+      ),
+    }))
+    .sort((left, right) => left.id.localeCompare(right.id));
 
   const slots: SchedulerTaskSlot[] = scheduleDay.taskSlots.map((slot) => ({
     id: slot.id,
@@ -290,35 +350,40 @@ export async function generateScheduleForDate(input: {
     endMinute: slot.endMinute,
     minStaff: slot.minStaff,
     requiredStaff: slot.requiredStaff,
-    lockedEmployeeId:
-      slot.assignments.find((assignment) => assignment.locked)?.employeeId ?? null,
+    lockedEmployeeIds: slot.assignments
+      .filter((assignment) => assignment.locked)
+      .map((assignment) => assignment.employeeId)
+      .sort(),
   }));
 
-  const existingAssignments: ExistingAssignment[] = scheduleDay.taskSlots.flatMap(
-    (slot) =>
-      slot.assignments
-        .filter((assignment) => assignment.locked)
-        .map((assignment) => ({
-          slotId: slot.id,
-          employeeId: assignment.employeeId,
-          date: input.date,
-          taskTypeId: slot.taskTypeId,
-          startMinute: slot.startMinute,
-          endMinute: slot.endMinute,
-          locked: true,
-        })),
-  );
+  const existingAssignments: ExistingAssignment[] = [];
 
   const schedulerInput = {
     seed: input.seed,
     employees: schedulerEmployees,
-    taskTypes: [...taskTypes.values()],
+    taskTypes: [...taskTypes.values()].sort((left, right) =>
+      left.id.localeCompare(right.id),
+    ),
     slots,
+    rules: rules.map((rule) => ({
+      id: rule.id,
+      type: rule.type,
+      employeeId: rule.employeeId,
+      taskTypeId: rule.taskTypeId,
+      weight: rule.weight,
+      priority: rule.priority,
+      active: rule.active,
+      effectiveStartDate: rule.effectiveStartDate
+        ? toIsoDate(rule.effectiveStartDate)
+        : null,
+      effectiveEndDate: rule.effectiveEndDate ? toIsoDate(rule.effectiveEndDate) : null,
+      parameters: jsonRecord(rule.parameters),
+    })),
     existingAssignments,
   };
 
   const inputHash = createHash("sha256")
-    .update(JSON.stringify(schedulerInput))
+    .update(stableStringify(schedulerInput))
     .digest("hex");
   const result = generateSchedule(schedulerInput);
 
@@ -378,6 +443,9 @@ export async function generateScheduleForDate(input: {
   }
 
   const conflictSlotIds = new Set(result.conflicts.map((conflict) => conflict.slotId));
+  const conflictsBySlotId = new Map(
+    result.conflicts.map((conflict) => [conflict.slotId, conflict]),
+  );
   const assignedSlotIds = new Set(
     result.assignments.map((assignment) => assignment.slotId),
   );
@@ -391,13 +459,22 @@ export async function generateScheduleForDate(input: {
 
     await getDb().taskSlot.update({
       where: { id: slotId },
-      data: { status },
+      data: {
+        status,
+        notes: conflictsBySlotId.has(slotId)
+          ? formatConflictNote(conflictsBySlotId.get(slotId)!)
+          : null,
+      },
     });
   }
 
   await getDb().scheduleDay.update({
     where: { id: scheduleDay.id },
-    data: { status: "GENERATED" },
+    data: {
+      status: "GENERATED",
+      publishedAt: null,
+      publishedByEmployeeId: null,
+    },
   });
 
   await writeAuditLog({
@@ -412,4 +489,86 @@ export async function generateScheduleForDate(input: {
   });
 
   return result;
+}
+
+export async function publishScheduleForDate(input: {
+  date: string;
+  actorEmployeeId?: string | null;
+}) {
+  const scheduleDay = await getScheduleBoard(input.date);
+
+  if (!scheduleDay) {
+    throw new Error("Prepare and generate a schedule before publishing.");
+  }
+
+  const shortageCount = scheduleDay.taskSlots.filter(
+    (slot) => slot.status === "SHORTAGE" || slot.assignments.length < slot.requiredStaff,
+  ).length;
+
+  if (shortageCount > 0) {
+    throw new Error("Resolve all shortages before publishing the schedule.");
+  }
+
+  const published = await getDb().scheduleDay.update({
+    where: { id: scheduleDay.id },
+    data: {
+      status: "PUBLISHED",
+      publishedAt: new Date(),
+      publishedByEmployeeId: input.actorEmployeeId ?? undefined,
+    },
+  });
+
+  await writeAuditLog({
+    actorEmployeeId: input.actorEmployeeId,
+    action: "schedule.publish",
+    entityType: "ScheduleDay",
+    entityId: published.id,
+    before: { status: scheduleDay.status },
+    after: { status: published.status, publishedAt: published.publishedAt },
+  });
+
+  return published;
+}
+
+function formatConflictNote(conflict: {
+  reason: string;
+  rejectedCandidates: { employeeId: string; reasons: string[] }[];
+}) {
+  const rejectionSummary = conflict.rejectedCandidates
+    .slice(0, 4)
+    .map((candidate) => `${candidate.employeeId}: ${candidate.reasons.join(", ")}`)
+    .join(" | ");
+
+  return rejectionSummary
+    ? `${conflict.reason}. ${rejectionSummary}`
+    : conflict.reason;
+}
+
+function jsonRecord(value: Prisma.JsonValue) {
+  if (!value || Array.isArray(value) || typeof value !== "object") {
+    return null;
+  }
+
+  return value as Record<string, unknown>;
+}
+
+function sortNumberRecord(record: Record<string, number>) {
+  return Object.fromEntries(
+    Object.entries(record).sort(([left], [right]) => left.localeCompare(right)),
+  );
+}
+
+function stableStringify(value: unknown): string {
+  if (value === null || typeof value !== "object") {
+    return JSON.stringify(value);
+  }
+
+  if (Array.isArray(value)) {
+    return `[${value.map((item) => stableStringify(item)).join(",")}]`;
+  }
+
+  return `{${Object.entries(value as Record<string, unknown>)
+    .sort(([left], [right]) => left.localeCompare(right))
+    .map(([key, item]) => `${JSON.stringify(key)}:${stableStringify(item)}`)
+    .join(",")}}`;
 }

@@ -114,6 +114,7 @@ model Employee {
   schedulingRules         SchedulingRule[]        @relation("RuleEmployee")
   createdSchedulingRules  SchedulingRule[]        @relation("RuleCreator")
   requestedGenerationRuns ScheduleGenerationRun[] @relation("GenerationRequester")
+  publishedScheduleDays   ScheduleDay[]           @relation("SchedulePublisher")
   auditLogs               AuditLog[]              @relation("AuditActor")
   exportLogs              ExportLog[]             @relation("ExportRequester")
 
@@ -218,14 +219,19 @@ model PTORequest {
 }
 
 model ScheduleDay {
-  id        String            @id @default(cuid())
-  date      DateTime          @unique @db.Date
-  status    ScheduleDayStatus @default(DRAFT)
-  notes     String?
-  createdAt DateTime          @default(now())
-  updatedAt DateTime          @updatedAt
+  id                    String            @id @default(cuid())
+  date                  DateTime          @unique @db.Date
+  status                ScheduleDayStatus @default(DRAFT)
+  notes                 String?
+  publishedAt           DateTime?
+  publishedByEmployeeId String?
+  createdAt             DateTime          @default(now())
+  updatedAt             DateTime          @updatedAt
 
-  taskSlots TaskSlot[]
+  taskSlots   TaskSlot[]
+  publishedBy Employee?  @relation("SchedulePublisher", fields: [publishedByEmployeeId], references: [id])
+
+  @@index([publishedByEmployeeId])
 }
 
 model TaskSlot {
