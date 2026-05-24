@@ -1,5 +1,6 @@
 import {
   Activity,
+  BarChart3,
   CalendarDays,
   CalendarCheck2,
   ClipboardList,
@@ -26,6 +27,7 @@ const managerNavItems = [
   { href: "/admin", label: "Admin", icon: Settings },
   { href: "/admin/employees", label: "Employees", icon: Users },
   { href: "/admin/pto", label: "PTO", icon: CalendarCheck2 },
+  { href: "/admin/analytics", label: "Analytics", icon: BarChart3 },
   { href: "/admin/rules", label: "Rules", icon: SlidersHorizontal },
   { href: "/admin/audit", label: "Audit", icon: Activity },
 ];

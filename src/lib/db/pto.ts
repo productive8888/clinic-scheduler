@@ -9,6 +9,7 @@ import {
   PTO_BALANCE_APPROVAL_FLOOR_HOURS,
   wouldPutPtoBalanceBelowFloor,
 } from "@/lib/pto/policy";
+import { isShortNoticeForDateRange } from "@/lib/schedule/short-notice";
 import type { PTORequestFormValues } from "@/lib/validation/pto";
 import { enumerateIsoDates, parseIsoDate, toIsoDate } from "@/lib/utils/date";
 
@@ -63,6 +64,12 @@ export async function createPtoRequest(input: {
   action?: string;
 }) {
   const autoApprove = isAutoApprovedPtoType(input.values.type);
+  const createdAt = new Date();
+  const shortNotice = isShortNoticeForDateRange({
+    createdAt,
+    startDate: input.values.startDate,
+    endDate: input.values.endDate,
+  });
   const request = await getDb().pTORequest.create({
     data: {
       employeeId: input.employeeId,
@@ -72,8 +79,10 @@ export async function createPtoRequest(input: {
       endDate: parseIsoDate(input.values.endDate),
       startMinute: input.values.startMinute,
       endMinute: input.values.endMinute,
+      shortNotice,
       reason: input.values.reason,
-      reviewedAt: autoApprove ? new Date() : undefined,
+      createdAt,
+      reviewedAt: autoApprove ? createdAt : undefined,
     },
   });
 
@@ -83,6 +92,7 @@ export async function createPtoRequest(input: {
     entityType: "PTORequest",
     entityId: request.id,
     after: request,
+    metadata: { shortNotice },
   });
 
   if (autoApprove) {
@@ -99,7 +109,7 @@ export async function createPtoRequest(input: {
       entityType: "PTORequest",
       entityId: request.id,
       after: request,
-      metadata: { regeneratedDates },
+      metadata: { regeneratedDates, shortNotice },
     });
   }
 

@@ -222,6 +222,7 @@ model PTORequest {
   endDate              DateTime       @db.Date
   startMinute          Int?
   endMinute            Int?
+  shortNotice          Boolean        @default(false)
   reason               String?
   managerNote          String?
   reviewedByEmployeeId String?
@@ -264,6 +265,7 @@ model TaskSlot {
   minStaff      Int            @default(1)
   requiredStaff Int            @default(1)
   status        TaskSlotStatus @default(OPEN)
+  shortNotice   Boolean        @default(false)
   notes         String?
   createdAt     DateTime       @default(now())
   updatedAt     DateTime       @updatedAt
@@ -283,6 +285,7 @@ model Assignment {
   source               AssignmentSource @default(GENERATED)
   status               AssignmentStatus @default(ACTIVE)
   locked               Boolean          @default(false)
+  shortNotice          Boolean          @default(false)
   assignedByEmployeeId String?
   generationRunId      String?
   assignedAt           DateTime         @default(now())

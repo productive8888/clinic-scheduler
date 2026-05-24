@@ -20,6 +20,7 @@ import {
   publishScheduleAction,
   setScheduleScenarioAction,
 } from "@/app/(app)/schedule/actions";
+import { ShortNoticeBadge } from "@/components/ui/short-notice-badge";
 import { addDaysIsoDate, formatDisplayDate } from "@/lib/utils/date";
 
 type ScheduleDayWithSlots = Prisma.ScheduleDayGetPayload<{
@@ -290,9 +291,12 @@ export function ScheduleBoard({
               >
                 <div className="flex items-start justify-between gap-3">
                   <div>
-                    <h2 className="text-lg font-semibold text-slate-950">
-                      {slot.label ?? slot.taskType.name}
-                    </h2>
+                    <div className="flex flex-wrap items-center gap-2">
+                      <h2 className="text-lg font-semibold text-slate-950">
+                        {slot.label ?? slot.taskType.name}
+                      </h2>
+                      {slot.shortNotice ? <ShortNoticeBadge /> : null}
+                    </div>
                     <p className="mt-1 text-sm text-slate-500">
                       Slot #{slot.slotIndex}
                     </p>
@@ -323,6 +327,9 @@ export function ScheduleBoard({
                           <span className="rounded-md bg-white px-2 py-1 text-xs font-medium text-slate-600">
                             {assignment.locked ? "Locked" : assignment.source}
                           </span>
+                          {assignment.shortNotice ? (
+                            <ShortNoticeBadge label="Short notice override" />
+                          ) : null}
                         </div>
                       ))}
                     </div>

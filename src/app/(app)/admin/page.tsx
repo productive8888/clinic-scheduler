@@ -1,5 +1,6 @@
 import {
   Activity,
+  BarChart3,
   CalendarCheck2,
   CalendarDays,
   Database,
@@ -27,6 +28,12 @@ const adminLinks = [
     title: "PTO review",
     description: "Approve time off and regenerate affected schedules.",
     icon: CalendarCheck2,
+  },
+  {
+    href: "/admin/analytics",
+    title: "Staffing analytics",
+    description: "Audit staffing health, workload balance, and short-notice changes.",
+    icon: BarChart3,
   },
   {
     href: "/admin/rules",

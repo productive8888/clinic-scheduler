@@ -15,7 +15,12 @@ import {
   requiresManagerApproval,
   wouldPutPtoBalanceBelowFloor,
 } from "../../src/lib/pto/policy";
+import { buildStaffingAnalytics } from "../../src/lib/analytics/staffing";
 import { selectDefaultTaskTypesForScenario } from "../../src/lib/schedule/scenarios";
+import {
+  isShortNoticeForDateRange,
+  isShortNoticeScheduleChange,
+} from "../../src/lib/schedule/short-notice";
 import { enumerateIsoDates } from "../../src/lib/utils/date";
 
 const monday = "2026-06-01";
@@ -412,6 +417,42 @@ describe("PTO workflow helpers", () => {
       false,
     );
   });
+
+  it("detects PTO submitted within seven days of an affected date", () => {
+    assert.equal(
+      isShortNoticeForDateRange({
+        createdAt: "2026-05-25",
+        startDate: "2026-06-01",
+        endDate: "2026-06-03",
+      }),
+      true,
+    );
+    assert.equal(
+      isShortNoticeForDateRange({
+        createdAt: "2026-05-24",
+        startDate: "2026-06-01",
+        endDate: "2026-06-03",
+      }),
+      false,
+    );
+  });
+
+  it("detects short-notice schedule changes within seven days of a shift", () => {
+    assert.equal(
+      isShortNoticeScheduleChange({
+        changedAt: "2026-05-25",
+        shiftDate: "2026-06-01",
+      }),
+      true,
+    );
+    assert.equal(
+      isShortNoticeScheduleChange({
+        changedAt: "2026-05-24",
+        shiftDate: "2026-06-01",
+      }),
+      false,
+    );
+  });
 });
 
 describe("clinic scenarios", () => {
@@ -459,5 +500,119 @@ describe("clinic scenarios", () => {
     manuallyAddedTaskIds.push("research");
 
     assert.equal(manuallyAddedTaskIds.includes("research"), true);
+  });
+});
+
+describe("staffing analytics aggregation", () => {
+  it("aggregates date, employee, and task health accurately", () => {
+    const analytics = buildStaffingAnalytics({
+      employees: [
+        { id: "alice", fullName: "Alice Admin" },
+        { id: "blake", fullName: "Blake Backup" },
+      ],
+      taskTypes: [
+        {
+          id: "front-desk",
+          code: "FRONT_DESK",
+          name: "Front Desk",
+          difficultyWeight: 0,
+          skillRequirementCount: 0,
+        },
+        {
+          id: "civil-surgeon",
+          code: "CIVIL_SURGEON",
+          name: "Civil Surgeon",
+          difficultyWeight: 3,
+          skillRequirementCount: 1,
+        },
+      ],
+      scheduleDays: [
+        {
+          id: "day-1",
+          date: monday,
+          scenario: "ROUTINE",
+          status: "GENERATED",
+          taskSlots: [
+            {
+              id: "front-slot",
+              taskTypeId: "front-desk",
+              status: "FILLED",
+              requiredStaff: 1,
+              shortNotice: false,
+              taskType: {
+                id: "front-desk",
+                code: "FRONT_DESK",
+                name: "Front Desk",
+                difficultyWeight: 0,
+                skillRequirementCount: 0,
+              },
+              assignments: [
+                {
+                  id: "assignment-1",
+                  employeeId: "alice",
+                  source: "MANUAL_OVERRIDE",
+                  status: "ACTIVE",
+                  shortNotice: true,
+                  employee: { id: "alice", fullName: "Alice Admin" },
+                },
+              ],
+            },
+            {
+              id: "civil-slot",
+              taskTypeId: "civil-surgeon",
+              status: "SHORTAGE",
+              requiredStaff: 1,
+              shortNotice: false,
+              taskType: {
+                id: "civil-surgeon",
+                code: "CIVIL_SURGEON",
+                name: "Civil Surgeon",
+                difficultyWeight: 3,
+                skillRequirementCount: 1,
+              },
+              assignments: [],
+            },
+          ],
+        },
+      ],
+      ptoRequests: [
+        {
+          id: "pto-1",
+          employeeId: "blake",
+          status: "APPROVED",
+          startDate: monday,
+          endDate: monday,
+          shortNotice: true,
+          employee: { id: "blake", fullName: "Blake Backup" },
+        },
+      ],
+    });
+
+    assert.deepEqual(analytics.dateHealth[0], {
+      date: monday,
+      scenario: "ROUTINE",
+      status: "GENERATED",
+      requiredTaskSlots: 2,
+      filledAssignments: 1,
+      unfilledSlots: 1,
+      ptoCount: 1,
+      shortageConflictCount: 1,
+      shortNoticeCount: 2,
+    });
+    assert.equal(analytics.employeeWorkloads[0].fullName, "Alice Admin");
+    assert.equal(analytics.employeeWorkloads[0].assignmentCount, 1);
+    assert.equal(analytics.employeeWorkloads[1].ptoCount, 1);
+    assert.equal(analytics.taskTypeStats[0].taskTypeName, "Civil Surgeon");
+    assert.equal(analytics.taskTypeStats[0].understaffedCount, 1);
+    assert.equal(
+      analytics.taskTypeStats.find((task) => task.taskTypeName === "Front Desk")
+        ?.overrideCount,
+      1,
+    );
+    assert.equal(
+      analytics.roleLeaders.find((leader) => leader.taskTypeName === "Front Desk")
+        ?.fullName,
+      "Alice Admin",
+    );
   });
 });

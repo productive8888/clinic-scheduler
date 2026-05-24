@@ -24,6 +24,9 @@
 - Role-aware navigation, admin route protection, and a development-only seeded
   employee switcher for local testing.
 - Admin audit log visibility for recent employee, schedule, PTO, and rule events.
+- Admin staffing analytics dashboard for date-level staffing health, employee
+  workload, role leaders, task understaffing, manual overrides, and short-notice
+  changes.
 - Admin scheduling rule management for employee-task preferences, boosts,
   penalties, and backup-only rules.
 - Seeded demo employees, skills, task types, and Monday-Friday recurring
@@ -32,7 +35,8 @@
   coverage replacement.
 - Scheduler unit tests for skill enforcement, PTO blocking, double-booking,
   deterministic generation, override preservation, direct coverage replacement,
-  priority rule scoring, PTO policy behavior, and clinic scenario defaults.
+  priority rule scoring, PTO policy behavior, clinic scenario defaults,
+  short-notice detection, and staffing analytics aggregation.
 - Export and webhook route placeholders.
 
 ## Next Phases

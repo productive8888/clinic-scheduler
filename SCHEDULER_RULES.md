@@ -15,6 +15,7 @@ not contain scheduling decisions.
   assignments on affected dates.
 - Personal and vacation approvals deduct PTO balance and are denied when they
   would put the balance below -24 hours.
+- PTO submitted within 7 days of any affected date is marked short notice.
 - PTO approval regenerates existing affected schedule days and returns them to
   generated draft review.
 - Employees cannot be double-booked for overlapping slots on the same date.
@@ -36,6 +37,12 @@ not contain scheduling decisions.
   slots the pure scheduler receives. `Clinic Closed` and `Custom Scenario`
   create no default task slots. `Doctor Off / Reduced Staffing` uses reduced
   task defaults. Optional tasks are manual-only.
+- Manual task-slot additions, scenario changes, and manual assignment overrides
+  made within 7 days of the affected shift are marked short notice in audit and
+  schedule views.
+- Staffing analytics are derived from schedule days, task slots, assignments,
+  PTO requests, task metadata, and audit records; they do not alter scheduling
+  decisions.
 
 ## Initial Task Types
 

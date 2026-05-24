@@ -17,12 +17,13 @@ initial migration in `prisma/migrations/202605240001_initial/migration.sql`.
 - `PTORequest`: PTO, absence, unavailability, and schedule-change requests.
   Personal/vacation requests require approval and can deduct PTO balance.
   Sick/emergency requests auto-approve. Approved requests are consumed by the
-  scheduler as employee unavailability.
+  scheduler as employee unavailability. Requests submitted within 7 days of an
+  affected date are marked short notice.
 - `ScheduleDay`: one operational staffing day, including draft/generated/
   published status, clinic scenario, and publish metadata.
 - `TaskSlot`: concrete task opening on a schedule day.
 - `Assignment`: employee assigned to a task slot, including generated/manual
-  source, lock state, and removal history.
+  source, lock state, short-notice override flag, and removal history.
 - `SchedulingRule`: database-driven preference, priority, avoidance, penalty,
   backup-only, effective-date, and note-backed rules used by the scheduler
   scoring layer.
@@ -47,3 +48,9 @@ Staffing`, and `Custom Scenario`. Clinic-closed and custom days create no
 default task slots. Reduced-staffing days use the task type defaults marked for
 reduced staffing. Optional task types such as Research, Background, Booking,
 Float, and Extra are manual-only and do not appear by default.
+
+## Analytics
+
+The admin staffing analytics dashboard is derived from canonical schedule, PTO,
+assignment, task, and audit records. No cached reporting tables are used in V1,
+which keeps analytics consistent with the current schedule state.

@@ -5,6 +5,7 @@ import {
   rejectPtoRequestAction,
 } from "@/app/(app)/admin/pto/actions";
 import { cancelMyPtoRequestAction } from "@/app/(app)/employee/actions";
+import { ShortNoticeBadge } from "@/components/ui/short-notice-badge";
 import { formatDisplayDate } from "@/lib/utils/date";
 import { formatMinuteOfDay } from "@/lib/utils/time";
 
@@ -57,6 +58,7 @@ export function PTORequestList({ requests, mode }: PTORequestListProps) {
                 <span className="rounded-md bg-slate-100 px-2 py-1 text-xs font-medium text-slate-600">
                   {formatEnumLabel(request.type)}
                 </span>
+                {request.shortNotice ? <ShortNoticeBadge /> : null}
               </div>
               <p className="mt-2 flex flex-wrap items-center gap-2 text-sm text-slate-600">
                 <CalendarX size={16} aria-hidden="true" />

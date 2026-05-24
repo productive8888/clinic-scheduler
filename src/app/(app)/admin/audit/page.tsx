@@ -1,6 +1,7 @@
 import { Activity } from "lucide-react";
 import Link from "next/link";
 import { SetupRequired } from "@/components/layout/setup-required";
+import { ShortNoticeBadge } from "@/components/ui/short-notice-badge";
 import { getAuditLogPageData } from "@/lib/db/audit-log";
 
 export const dynamic = "force-dynamic";
@@ -107,6 +108,10 @@ export default async function AuditLogPage({
                     <span className="font-semibold text-slate-950">
                       {log.action}
                     </span>
+                    {hasShortNoticeFlag(log.after) ||
+                    hasShortNoticeFlag(log.metadata) ? (
+                      <ShortNoticeBadge />
+                    ) : null}
                     <span className="rounded-md bg-slate-100 px-2 py-1 text-xs font-medium text-slate-600">
                       {log.entityType}
                     </span>
@@ -129,6 +134,11 @@ export default async function AuditLogPage({
                 <SummaryBlock label="Before" value={log.before} />
                 <SummaryBlock label="After" value={log.after} />
               </div>
+              {log.metadata ? (
+                <div className="mt-3">
+                  <SummaryBlock label="Metadata" value={log.metadata} />
+                </div>
+              ) : null}
             </article>
           ))
         ) : (
@@ -139,6 +149,24 @@ export default async function AuditLogPage({
       </section>
     </div>
   );
+}
+
+function hasShortNoticeFlag(value: unknown): boolean {
+  if (!value || typeof value !== "object") {
+    return false;
+  }
+
+  if (Array.isArray(value)) {
+    return value.some(hasShortNoticeFlag);
+  }
+
+  return Object.entries(value as Record<string, unknown>).some(([key, item]) => {
+    if (key === "shortNotice" && item === true) {
+      return true;
+    }
+
+    return hasShortNoticeFlag(item);
+  });
 }
 
 function SummaryBlock({ label, value }: { label: string; value: unknown }) {

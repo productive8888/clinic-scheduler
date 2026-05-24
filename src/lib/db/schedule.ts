@@ -17,6 +17,7 @@ import {
   type SchedulerTaskSlot,
   type SchedulerTaskType,
 } from "@/lib/scheduler";
+import { isShortNoticeScheduleChange } from "@/lib/schedule/short-notice";
 import { parseIsoDate, toIsoDate } from "@/lib/utils/date";
 
 const DEFAULT_SLOT_START_MINUTE = 8 * 60;
@@ -160,7 +161,12 @@ export async function setScheduleScenario(input: {
   actorEmployeeId?: string | null;
 }) {
   const db = getDb();
+  const changedAt = new Date();
   const dateValue = parseIsoDate(input.date);
+  const shortNotice = isShortNoticeScheduleChange({
+    changedAt,
+    shiftDate: input.date,
+  });
 
   const before = await db.scheduleDay.findUnique({
     where: { date: dateValue },
@@ -190,6 +196,7 @@ export async function setScheduleScenario(input: {
     entityId: scheduleDay.id,
     before,
     after: scheduleDay,
+    metadata: { shortNotice },
   });
 
   return scheduleDay;
@@ -201,7 +208,12 @@ export async function addTaskSlotToScheduleDay(input: {
   actorEmployeeId?: string | null;
 }) {
   const db = getDb();
+  const createdAt = new Date();
   const dateValue = parseIsoDate(input.date);
+  const shortNotice = isShortNoticeScheduleChange({
+    changedAt: createdAt,
+    shiftDate: input.date,
+  });
 
   const [scheduleDay, taskType] = await Promise.all([
     db.scheduleDay.upsert({
@@ -236,8 +248,10 @@ export async function addTaskSlotToScheduleDay(input: {
       startMinute: DEFAULT_SLOT_START_MINUTE,
       endMinute: DEFAULT_SLOT_END_MINUTE,
       status: "OPEN",
+      shortNotice,
       minStaff: 1,
       requiredStaff: 1,
+      createdAt,
     },
   });
 
@@ -262,7 +276,9 @@ export async function addTaskSlotToScheduleDay(input: {
       taskTypeId: input.taskTypeId,
       taskTypeCode: taskType.code,
       optional: taskType.optional,
+      shortNotice,
     },
+    metadata: { shortNotice },
   });
 
   return slot;
@@ -274,16 +290,22 @@ export async function manuallyAssignSlot(input: {
   actorEmployeeId?: string | null;
 }) {
   const db = getDb();
+  const changedAt = new Date();
 
   const result = await db.$transaction(async (tx) => {
     const slot = await tx.taskSlot.findUniqueOrThrow({
       where: { id: input.slotId },
       include: {
+        scheduleDay: true,
         assignments: {
           where: { status: "ACTIVE" },
           include: { employee: true },
         },
       },
+    });
+    const shortNotice = isShortNoticeScheduleChange({
+      changedAt,
+      shiftDate: slot.scheduleDay.date,
     });
 
     await tx.assignment.updateMany({
@@ -304,7 +326,9 @@ export async function manuallyAssignSlot(input: {
             employeeId: input.employeeId,
             source: "MANUAL_OVERRIDE",
             locked: true,
+            shortNotice,
             assignedByEmployeeId: input.actorEmployeeId ?? undefined,
+            assignedAt: changedAt,
           },
         })
       : null;
@@ -313,6 +337,7 @@ export async function manuallyAssignSlot(input: {
       where: { id: input.slotId },
       data: {
         status: input.employeeId ? "FILLED" : "OPEN",
+        shortNotice: slot.shortNotice || shortNotice,
         notes: null,
       },
     });
@@ -324,6 +349,7 @@ export async function manuallyAssignSlot(input: {
         assignmentId: existing.id,
         employeeId: existing.employeeId,
       })),
+      shortNotice,
     };
   });
 
@@ -336,9 +362,11 @@ export async function manuallyAssignSlot(input: {
     after: result.assignment
       ? {
           assignmentId: result.assignment.id,
-          employeeId: result.assignment.employeeId,
-        }
+        employeeId: result.assignment.employeeId,
+        shortNotice: result.assignment.shortNotice,
+      }
       : null,
+    metadata: { shortNotice: result.shortNotice },
   });
 }
 
