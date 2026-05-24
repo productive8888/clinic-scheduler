@@ -16,6 +16,8 @@ import {
   wouldPutPtoBalanceBelowFloor,
 } from "../../src/lib/pto/policy";
 import { buildStaffingAnalytics } from "../../src/lib/analytics/staffing";
+import { buildAssignmentCalendarEvents } from "../../src/lib/calendar/events";
+import { buildIcsCalendar } from "../../src/lib/calendar/ics";
 import { selectDefaultTaskTypesForScenario } from "../../src/lib/schedule/scenarios";
 import {
   isShortNoticeForDateRange,
@@ -641,6 +643,135 @@ describe("clinic scenarios", () => {
     manuallyAddedTaskIds.push("research");
 
     assert.equal(manuallyAddedTaskIds.includes("research"), true);
+  });
+});
+
+describe("calendar exports", () => {
+  const publishedCalendarDay = {
+    date: monday,
+    status: "PUBLISHED",
+    scenario: "ROUTINE",
+    taskSlots: [
+      {
+        id: "front-slot",
+        label: "Front Desk #1",
+        status: "FILLED",
+        startMinute: 540,
+        endMinute: 720,
+        notes: "Front desk opens early.",
+        taskType: {
+          name: "Front Desk",
+          code: "FRONT_DESK",
+        },
+        assignments: [
+          {
+            id: "assignment-alice-front",
+            employeeId: "alice",
+            source: "GENERATED",
+            locked: false,
+            employee: {
+              fullName: "Alice Admin",
+              email: "alice@example.com",
+            },
+          },
+          {
+            id: "assignment-blake-front",
+            employeeId: "blake",
+            source: "MANUAL_OVERRIDE",
+            locked: true,
+            employee: {
+              fullName: "Blake Backup",
+              email: "blake@example.com",
+            },
+          },
+        ],
+      },
+    ],
+  };
+  const unpublishedCalendarDay = {
+    date: "2026-06-02",
+    status: "GENERATED",
+    scenario: "ROUTINE",
+    taskSlots: [
+      {
+        id: "civil-slot",
+        label: "Civil Surgeon #1",
+        status: "FILLED",
+        startMinute: 540,
+        endMinute: 720,
+        notes: null,
+        taskType: {
+          name: "Civil Surgeon",
+          code: "CIVIL_SURGEON",
+        },
+        assignments: [
+          {
+            id: "assignment-alice-civil",
+            employeeId: "alice",
+            source: "GENERATED",
+            locked: false,
+            employee: {
+              fullName: "Alice Admin",
+              email: "alice@example.com",
+            },
+          },
+        ],
+      },
+    ],
+  };
+
+  it("exports only published schedule assignments", () => {
+    const events = buildAssignmentCalendarEvents({
+      scheduleDays: [unpublishedCalendarDay, publishedCalendarDay],
+    });
+
+    assert.equal(events.length, 2);
+    assert.equal(
+      events.some((event) => event.taskTypeName === "Civil Surgeon"),
+      false,
+    );
+  });
+
+  it("employee feeds only include that employee's assignments", () => {
+    const events = buildAssignmentCalendarEvents({
+      scheduleDays: [publishedCalendarDay],
+      employeeId: "blake",
+    });
+
+    assert.equal(events.length, 1);
+    assert.equal(events[0].employeeName, "Blake Backup");
+    assert.equal(events[0].assignmentId, "assignment-blake-front");
+  });
+
+  it("admin feeds include all published assignments", () => {
+    const events = buildAssignmentCalendarEvents({
+      scheduleDays: [publishedCalendarDay],
+    });
+
+    assert.deepEqual(
+      events.map((event) => event.employeeName),
+      ["Alice Admin", "Blake Backup"],
+    );
+  });
+
+  it("renders standards-shaped ICS event data for published assignments", () => {
+    const events = buildAssignmentCalendarEvents({
+      scheduleDays: [publishedCalendarDay, unpublishedCalendarDay],
+      employeeId: "alice",
+    });
+    const ics = buildIcsCalendar({
+      calendarName: "Alice Published Assignments",
+      events,
+      generatedAt: new Date("2026-05-24T12:00:00.000Z"),
+    });
+
+    assert.equal(ics.includes("BEGIN:VCALENDAR"), true);
+    assert.equal(ics.includes("VERSION:2.0"), true);
+    assert.equal(ics.includes("BEGIN:VEVENT"), true);
+    assert.equal(ics.includes("SUMMARY:Front Desk - Alice Admin"), true);
+    assert.equal(ics.includes("DTSTART:20260601T090000Z"), true);
+    assert.equal(ics.includes("DTEND:20260601T120000Z"), true);
+    assert.equal(ics.includes("Civil Surgeon"), false);
   });
 });
 

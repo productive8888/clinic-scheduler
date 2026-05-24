@@ -29,6 +29,8 @@
   changes.
 - Admin scheduling rule management for employee-task preferences, boosts,
   penalties, and backup-only rules.
+- Published-schedule ICS calendar exports for managers and employee-specific
+  assignment calendars.
 - Seeded demo employees, skills, task types, and mixed Monday-Friday /
   Tuesday-Saturday recurring availability for generated schedules.
 - Pure scheduler modules for constraints, scoring, fairness, assignment, and

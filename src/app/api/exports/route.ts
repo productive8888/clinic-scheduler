@@ -2,8 +2,11 @@ import { NextResponse } from "next/server";
 
 export async function GET() {
   return NextResponse.json({
-    status: "not_implemented",
-    message:
-      "Google Calendar, Google Sheets, and printable exports are reserved for the export phase.",
+    status: "available",
+    exports: {
+      clinicCalendar: "/api/exports/calendar/clinic",
+      employeeCalendar: "/api/exports/calendar/me",
+    },
+    message: "ICS calendar exports are available for published schedules.",
   });
 }

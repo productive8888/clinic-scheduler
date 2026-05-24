@@ -35,8 +35,8 @@ initial migration in `prisma/migrations/202605240001_initial/migration.sql`.
 - `ScheduleGenerationRun`: seed, engine version, input hash, status, and summary
   for reproducible generations.
 - `AuditLog`: before/after records for important user and system actions.
-- `ExportLog`: queued/completed export attempts for future Google Calendar,
-  Google Sheets, and printable exports.
+- `ExportLog`: queued/completed export attempts for ICS calendar downloads and
+  future Google Calendar, Google Sheets, and printable exports.
 
 ## Important Modeling Rule
 

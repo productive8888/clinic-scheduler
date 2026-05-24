@@ -45,6 +45,8 @@ not contain scheduling decisions.
 - Staffing analytics are derived from schedule days, task slots, assignments,
   PTO requests, task metadata, and audit records; they do not alter scheduling
   decisions.
+- Calendar exports are publish-gated: ICS feeds include active assignments from
+  published schedule days only.
 
 ## Initial Task Types
 

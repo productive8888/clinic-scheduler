@@ -6,6 +6,7 @@ import {
   CheckCircle2,
   ChevronLeft,
   ChevronRight,
+  Download,
   Plus,
   RefreshCw,
   SlidersHorizontal,
@@ -19,6 +20,7 @@ import {
   manualAssignAction,
   publishScheduleAction,
   setScheduleScenarioAction,
+  unpublishScheduleAction,
 } from "@/app/(app)/schedule/actions";
 import { ShortNoticeBadge } from "@/components/ui/short-notice-badge";
 import { addDaysIsoDate, formatDisplayDate } from "@/lib/utils/date";
@@ -68,6 +70,7 @@ export function ScheduleBoard({
       shortageCount === 0 &&
       assignedCount > 0,
   );
+  const canUnpublish = scheduleDay?.status === "PUBLISHED";
   const previousDate = addDaysIsoDate(date, -1);
   const nextDate = addDaysIsoDate(date, 1);
   const defaultTaskTypeCount = taskTypes.filter(
@@ -119,7 +122,7 @@ export function ScheduleBoard({
               </p>
             ) : null}
           </div>
-          <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-4">
+          <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-5">
             <form action={setScheduleScenarioAction} className="flex gap-2">
               <input type="hidden" name="date" value={date} />
               <select
@@ -180,6 +183,23 @@ export function ScheduleBoard({
                 Publish
               </button>
             </form>
+            <form action={unpublishScheduleAction}>
+              <input type="hidden" name="date" value={date} />
+              <button
+                disabled={!canUnpublish}
+                className="inline-flex h-10 w-full items-center justify-center gap-2 rounded-md border border-slate-300 px-3 text-sm font-semibold text-slate-700 hover:bg-slate-100 disabled:cursor-not-allowed disabled:bg-slate-100 disabled:text-slate-400"
+              >
+                <CalendarX2 size={16} aria-hidden="true" />
+                Unpublish
+              </button>
+            </form>
+            <Link
+              href="/api/exports/calendar/clinic"
+              className="inline-flex h-10 w-full items-center justify-center gap-2 rounded-md border border-emerald-200 px-3 text-sm font-semibold text-emerald-800 hover:bg-emerald-50"
+            >
+              <Download size={16} aria-hidden="true" />
+              Export Calendar
+            </Link>
           </div>
         </div>
         <form action={addTaskSlotAction} className="mt-4 flex flex-col gap-2 border-t border-slate-200 pt-4 sm:flex-row">
@@ -202,7 +222,7 @@ export function ScheduleBoard({
             Add slot
           </button>
         </form>
-        <div className="mt-4 grid gap-3 border-t border-slate-200 pt-4 text-sm text-slate-600 md:grid-cols-3">
+        <div className="mt-4 grid gap-3 border-t border-slate-200 pt-4 text-sm text-slate-600 md:grid-cols-4">
           <div>
             <span className="font-semibold text-slate-900">Prepare slots</span> creates
             dated openings for the selected clinic scenario.
@@ -214,6 +234,10 @@ export function ScheduleBoard({
           <div>
             <span className="font-semibold text-slate-900">Publish</span> finalizes the
             reviewed schedule once shortages are resolved.
+          </div>
+          <div>
+            <span className="font-semibold text-slate-900">Export Calendar</span> downloads
+            an ICS file containing published assignments only.
           </div>
         </div>
       </section>

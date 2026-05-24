@@ -9,6 +9,7 @@ import {
   manuallyAssignSlot,
   publishScheduleForDate,
   setScheduleScenario,
+  unpublishScheduleForDate,
 } from "@/lib/db/schedule";
 import { auditActorId, requireManager } from "@/lib/auth";
 import { todayIsoDate } from "@/lib/utils/date";
@@ -43,6 +44,17 @@ export async function publishScheduleAction(formData: FormData) {
   const date = getDateFromForm(formData);
 
   await publishScheduleForDate({
+    date,
+    actorEmployeeId: auditActorId(actor),
+  });
+  revalidatePath("/schedule");
+}
+
+export async function unpublishScheduleAction(formData: FormData) {
+  const actor = await requireManager();
+  const date = getDateFromForm(formData);
+
+  await unpublishScheduleForDate({
     date,
     actorEmployeeId: auditActorId(actor),
   });

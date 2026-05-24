@@ -721,6 +721,45 @@ export async function publishScheduleForDate(input: {
   return published;
 }
 
+export async function unpublishScheduleForDate(input: {
+  date: string;
+  actorEmployeeId?: string | null;
+}) {
+  const scheduleDay = await getScheduleBoard(input.date);
+
+  if (!scheduleDay) {
+    throw new Error("Schedule day not found.");
+  }
+
+  if (scheduleDay.status !== "PUBLISHED") {
+    throw new Error("Only published schedules can be unpublished.");
+  }
+
+  const unpublished = await getDb().scheduleDay.update({
+    where: { id: scheduleDay.id },
+    data: {
+      status: "GENERATED",
+      publishedAt: null,
+      publishedByEmployeeId: null,
+    },
+  });
+
+  await writeAuditLog({
+    actorEmployeeId: input.actorEmployeeId,
+    action: "schedule.unpublish",
+    entityType: "ScheduleDay",
+    entityId: unpublished.id,
+    before: {
+      status: scheduleDay.status,
+      publishedAt: scheduleDay.publishedAt,
+      publishedByEmployeeId: scheduleDay.publishedByEmployeeId,
+    },
+    after: { status: unpublished.status },
+  });
+
+  return unpublished;
+}
+
 function formatConflictNote(conflict: {
   reason: string;
   rejectedCandidates: { employeeId: string; reasons: string[] }[];

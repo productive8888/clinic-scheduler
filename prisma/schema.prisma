@@ -93,6 +93,7 @@ enum GenerationStatus {
 }
 
 enum ExportType {
+  ICS_CALENDAR
   GOOGLE_CALENDAR
   GOOGLE_SHEETS
   PRINTABLE
