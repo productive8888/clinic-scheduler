@@ -1,5 +1,6 @@
 import {
   CalendarDays,
+  CalendarCheck2,
   ClipboardList,
   Settings,
   UserRound,
@@ -13,6 +14,7 @@ const navItems = [
   { href: "/employee", label: "My profile", icon: UserRound },
   { href: "/admin", label: "Admin", icon: Settings },
   { href: "/admin/employees", label: "Employees", icon: Users },
+  { href: "/admin/pto", label: "PTO", icon: CalendarCheck2 },
 ];
 
 export async function AppShell({ children }: { children: React.ReactNode }) {

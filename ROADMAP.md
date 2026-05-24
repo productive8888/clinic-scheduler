@@ -11,6 +11,8 @@
   and locked manual overrides.
 - Manager draft/review/publish workflow with previous/next day navigation and
   visible shortage indicators.
+- PTO/unavailability request submission, manager approval/rejection, and
+  regeneration of existing affected schedule days.
 - Seeded demo employees, skills, task types, and Monday-Friday recurring
   availability for a complete generated schedule.
 - Pure scheduler modules for constraints, scoring, fairness, assignment, and
@@ -23,8 +25,7 @@
 ## Next Phases
 
 1. Configure Clerk keys, set up Clerk webhooks, and map Clerk users to employees.
-2. Add PTO request submission, manager approval/rejection, and regeneration of
-   affected task slots.
-3. Add drag/drop assignment interactions on top of the existing manual override
+2. Add drag/drop assignment interactions on top of the existing manual override
    server action.
+3. Add manager editing surfaces for recurring availability and scheduling rules.
 4. Implement Google Calendar, Google Sheets, and printable exports.

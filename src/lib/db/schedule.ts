@@ -9,6 +9,7 @@ import { writeAuditLog } from "@/lib/audit";
 import { getDb } from "@/lib/db";
 import {
   generateSchedule,
+  isUnavailableForSlot,
   SCHEDULER_ENGINE_VERSION,
   type ExistingAssignment,
   type SchedulerEmployee,
@@ -334,7 +335,7 @@ export async function generateScheduleForDate(input: {
             (left.startMinute ?? 0) - (right.startMinute ?? 0),
         ),
       weeklyAssignmentLimit: employee.weeklyAssignmentLimit,
-    historicalAssignments: historicalCountByEmployee.get(employee.id) ?? 0,
+      historicalAssignments: historicalCountByEmployee.get(employee.id) ?? 0,
       historicalTaskAssignments: sortNumberRecord(
         historicalTaskCountByEmployee.get(employee.id) ?? {},
       ),
@@ -401,11 +402,6 @@ export async function generateScheduleForDate(input: {
     },
   });
 
-  const lockedSlotIds = new Set(
-    scheduleDay.taskSlots
-      .filter((slot) => slot.assignments.some((assignment) => assignment.locked))
-      .map((slot) => slot.id),
-  );
   const slotIds = scheduleDay.taskSlots.map((slot) => slot.id);
 
   await getDb().assignment.updateMany({
@@ -427,7 +423,7 @@ export async function generateScheduleForDate(input: {
   });
 
   for (const assignment of result.assignments) {
-    if (assignment.source === "LOCKED" || lockedSlotIds.has(assignment.slotId)) {
+    if (assignment.source === "LOCKED") {
       continue;
     }
 
@@ -446,24 +442,57 @@ export async function generateScheduleForDate(input: {
   const conflictsBySlotId = new Map(
     result.conflicts.map((conflict) => [conflict.slotId, conflict]),
   );
+  const employeesById = new Map(
+    schedulerEmployees.map((employee) => [employee.id, employee]),
+  );
+  const schedulerSlotsById = new Map(slots.map((slot) => [slot.id, slot]));
+  const lockedPtoConflictsBySlotId = new Map<string, string>();
+
+  for (const slot of scheduleDay.taskSlots) {
+    const schedulerSlot = schedulerSlotsById.get(slot.id);
+
+    if (!schedulerSlot) {
+      continue;
+    }
+
+    const lockedConflictNames = slot.assignments
+      .filter((assignment) => assignment.locked)
+      .filter((assignment) => {
+        const employee = employeesById.get(assignment.employeeId);
+
+        return employee ? isUnavailableForSlot(employee, schedulerSlot) : false;
+      })
+      .map((assignment) => assignment.employee.fullName);
+
+    if (lockedConflictNames.length > 0) {
+      lockedPtoConflictsBySlotId.set(
+        slot.id,
+        `Locked assignment conflicts with approved PTO/unavailability: ${lockedConflictNames.join(", ")}`,
+      );
+    }
+  }
+
   const assignedSlotIds = new Set(
     result.assignments.map((assignment) => assignment.slotId),
   );
 
   for (const slotId of slotIds) {
-    const status = conflictSlotIds.has(slotId)
-      ? TaskSlotStatus.SHORTAGE
-      : assignedSlotIds.has(slotId)
-        ? TaskSlotStatus.FILLED
-        : TaskSlotStatus.OPEN;
+    const status =
+      conflictSlotIds.has(slotId) || lockedPtoConflictsBySlotId.has(slotId)
+        ? TaskSlotStatus.SHORTAGE
+        : assignedSlotIds.has(slotId)
+          ? TaskSlotStatus.FILLED
+          : TaskSlotStatus.OPEN;
 
     await getDb().taskSlot.update({
       where: { id: slotId },
       data: {
         status,
-        notes: conflictsBySlotId.has(slotId)
-          ? formatConflictNote(conflictsBySlotId.get(slotId)!)
-          : null,
+        notes:
+          lockedPtoConflictsBySlotId.get(slotId) ??
+          (conflictsBySlotId.has(slotId)
+            ? formatConflictNote(conflictsBySlotId.get(slotId)!)
+            : null),
       },
     });
   }

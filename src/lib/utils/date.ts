@@ -21,6 +21,19 @@ export function addDaysIsoDate(date: string, days: number) {
   return toIsoDate(parsed);
 }
 
+export function enumerateIsoDates(startDate: string, endDate: string) {
+  const dates: string[] = [];
+  const cursor = parseIsoDate(startDate);
+  const end = parseIsoDate(endDate);
+
+  while (cursor <= end) {
+    dates.push(toIsoDate(cursor));
+    cursor.setUTCDate(cursor.getUTCDate() + 1);
+  }
+
+  return dates;
+}
+
 export function formatDisplayDate(value: Date | string) {
   const date = typeof value === "string" ? parseIsoDate(value) : value;
 

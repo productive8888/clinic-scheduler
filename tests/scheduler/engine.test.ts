@@ -2,11 +2,13 @@ import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import {
   generateSchedule,
+  isUnavailableForSlot,
   resolveDirectReplacement,
   type SchedulerEmployee,
   type SchedulerTaskSlot,
   type SchedulerTaskType,
 } from "../../src/lib/scheduler";
+import { enumerateIsoDates } from "../../src/lib/utils/date";
 
 const monday = "2026-06-01";
 const allDayMonday = [
@@ -187,5 +189,35 @@ describe("resolveDirectReplacement", () => {
     assert.equal(result.conflict, null);
     assert.equal(result.assignment?.employeeId, "alice");
     assert.equal(result.assignment?.source, "COVERAGE_REPLACEMENT");
+  });
+});
+
+describe("PTO workflow helpers", () => {
+  it("expands inclusive date ranges for affected schedule regeneration", () => {
+    assert.deepEqual(enumerateIsoDates("2026-06-01", "2026-06-03"), [
+      "2026-06-01",
+      "2026-06-02",
+      "2026-06-03",
+    ]);
+  });
+
+  it("detects partial-day PTO overlap with a schedule slot", () => {
+    assert.equal(
+      isUnavailableForSlot(
+        {
+          ...baseEmployees[0],
+          unavailable: [
+            {
+              startDate: monday,
+              endDate: monday,
+              startMinute: 600,
+              endMinute: 660,
+            },
+          ],
+        },
+        slots[0],
+      ),
+      true,
+    );
   });
 });

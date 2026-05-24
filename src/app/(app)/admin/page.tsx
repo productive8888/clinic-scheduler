@@ -1,4 +1,10 @@
-import { CalendarDays, Database, ShieldCheck, Users } from "lucide-react";
+import {
+  CalendarCheck2,
+  CalendarDays,
+  Database,
+  ShieldCheck,
+  Users,
+} from "lucide-react";
 import Link from "next/link";
 
 const adminLinks = [
@@ -13,6 +19,12 @@ const adminLinks = [
     title: "Daily schedule",
     description: "Create task slots, run the engine, and lock overrides.",
     icon: CalendarDays,
+  },
+  {
+    href: "/admin/pto",
+    title: "PTO review",
+    description: "Approve time off and regenerate affected schedules.",
+    icon: CalendarCheck2,
   },
 ];
 

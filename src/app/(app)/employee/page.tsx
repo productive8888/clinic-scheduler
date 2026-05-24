@@ -1,8 +1,12 @@
-import { CalendarClock, IdCard, ShieldCheck } from "lucide-react";
+import { CalendarClock, CalendarX, IdCard, ShieldCheck } from "lucide-react";
 import type { Prisma } from "@prisma/client";
 import { SetupRequired } from "@/components/layout/setup-required";
+import { PTORequestForm } from "@/components/pto/pto-request-form";
+import { PTORequestList } from "@/components/pto/pto-request-list";
+import { createMyPtoRequestAction } from "@/app/(app)/employee/actions";
 import { getCurrentActor } from "@/lib/auth";
 import { getDb } from "@/lib/db";
+import { getEmployeePtoPageData } from "@/lib/db/pto";
 import { formatDisplayDate } from "@/lib/utils/date";
 
 export const dynamic = "force-dynamic";
@@ -18,14 +22,18 @@ type EmployeeAssignment = Prisma.AssignmentGetPayload<{
   };
 }>;
 
+type EmployeePtoPageData = Awaited<ReturnType<typeof getEmployeePtoPageData>>;
+
 export default async function EmployeePage() {
   const actor = await getCurrentActor();
   let assignments: EmployeeAssignment[] = [];
+  let employeeProfile: EmployeePtoPageData[0] = null;
+  let ptoRequests: EmployeePtoPageData[1] = [];
 
   try {
-    assignments =
-      actor && !actor.isDevFallback
-        ? await getDb().assignment.findMany({
+    if (actor && !actor.isDevFallback) {
+      const [assignmentRows, ptoData] = await Promise.all([
+        getDb().assignment.findMany({
           where: {
             employeeId: actor.id,
             status: "ACTIVE",
@@ -40,8 +48,14 @@ export default async function EmployeePage() {
           },
           orderBy: { assignedAt: "desc" },
           take: 10,
-        })
-        : [];
+        }),
+        getEmployeePtoPageData(actor.id),
+      ]);
+
+      assignments = assignmentRows;
+      employeeProfile = ptoData[0];
+      ptoRequests = ptoData[1];
+    }
   } catch (error) {
     return (
       <SetupRequired
@@ -66,7 +80,7 @@ export default async function EmployeePage() {
         </p>
       </section>
 
-      <section className="grid gap-4 md:grid-cols-3">
+      <section className="grid gap-4 md:grid-cols-4">
         <div className="rounded-md border border-slate-200 bg-white p-5">
           <IdCard className="text-emerald-700" size={22} aria-hidden="true" />
           <h2 className="mt-3 text-sm font-semibold text-slate-500">Email</h2>
@@ -86,6 +100,36 @@ export default async function EmployeePage() {
           </h2>
           <p className="mt-1 font-medium text-slate-950">{assignments.length}</p>
         </div>
+        <div className="rounded-md border border-slate-200 bg-white p-5">
+          <CalendarX className="text-emerald-700" size={22} aria-hidden="true" />
+          <h2 className="mt-3 text-sm font-semibold text-slate-500">
+            PTO balance
+          </h2>
+          <p className="mt-1 font-medium text-slate-950">
+            {employeeProfile?.ptoBalanceHours.toString() ?? "0"} hours
+          </p>
+        </div>
+      </section>
+
+      <section className="rounded-md border border-slate-200 bg-white p-5 shadow-sm">
+        <h2 className="text-lg font-semibold text-slate-950">
+          Request time off or unavailability
+        </h2>
+        <div className="mt-4">
+          {actor && !actor.isDevFallback ? (
+            <PTORequestForm action={createMyPtoRequestAction} />
+          ) : (
+            <p className="rounded-md border border-dashed border-slate-300 p-6 text-center text-sm text-slate-500">
+              Self-service PTO appears after signing in with a linked employee
+              profile.
+            </p>
+          )}
+        </div>
+      </section>
+
+      <section className="grid gap-3">
+        <h2 className="text-lg font-semibold text-slate-950">My PTO requests</h2>
+        <PTORequestList requests={ptoRequests} mode="employee" />
       </section>
 
       <section className="rounded-md border border-slate-200 bg-white p-5 shadow-sm">

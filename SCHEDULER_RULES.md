@@ -10,10 +10,14 @@ not contain scheduling decisions.
 - Required skills are enforced before scoring.
 - Weekly availability is enforced by weekday and minute range.
 - Approved PTO/unavailability blocks assignments.
+- PTO approval regenerates existing affected schedule days and returns them to
+  generated draft review.
 - Employees cannot be double-booked for overlapping slots on the same date.
 - Weekly assignment limits are honored when configured.
 - Skilled and difficult slots are filled before easier general slots.
 - Manual locked assignments are preserved during regeneration.
+- Locked assignments that conflict with approved PTO are preserved but surfaced
+  as shortage/conflict slots until a manager resolves them.
 - Default generated task slots use 8 AM-5 PM working hours so they match the
   seeded recurring availability window.
 - Fairness scoring favors underused employees and reduces repeated difficult
