@@ -24,6 +24,7 @@ import {
 import { enumerateIsoDates } from "../../src/lib/utils/date";
 
 const monday = "2026-06-01";
+const saturday = "2026-06-06";
 const allDayMonday = [
   {
     weekday: 1,
@@ -32,6 +33,20 @@ const allDayMonday = [
     effectiveStartDate: "2026-01-01",
   },
 ];
+const allDaySaturday = [
+  {
+    weekday: 6,
+    startMinute: 0,
+    endMinute: 1440,
+    effectiveStartDate: "2026-01-01",
+  },
+];
+const mondayThroughFriday = [1, 2, 3, 4, 5].map((weekday) => ({
+  weekday,
+  startMinute: 0,
+  endMinute: 1440,
+  effectiveStartDate: "2026-01-01",
+}));
 
 const taskTypes: SchedulerTaskType[] = [
   {
@@ -148,6 +163,132 @@ describe("generateSchedule", () => {
     });
 
     assert.deepEqual(first, second);
+  });
+
+  it("only assigns employees on configured working days", () => {
+    const result = generateSchedule({
+      seed: "configured-working-days",
+      employees: [
+        {
+          id: "tuesday-only",
+          fullName: "Tuesday Only",
+          skillIds: [],
+          availability: [
+            {
+              weekday: 2,
+              startMinute: 0,
+              endMinute: 1440,
+              effectiveStartDate: "2026-01-01",
+            },
+          ],
+        },
+      ],
+      taskTypes,
+      slots: [slots[1]],
+    });
+
+    assert.equal(result.assignments.length, 0);
+    assert.equal(result.conflicts.length, 1);
+    assert.equal(
+      result.conflicts[0].rejectedCandidates[0].reasons.includes(
+        "Outside weekly availability",
+      ),
+      true,
+    );
+  });
+
+  it("assigns Saturday workers to Saturday tasks", () => {
+    const result = generateSchedule({
+      seed: "saturday-worker",
+      employees: [
+        {
+          id: "weekday-only",
+          fullName: "Weekday Only",
+          skillIds: [],
+          availability: mondayThroughFriday,
+        },
+        {
+          id: "saturday-worker",
+          fullName: "Saturday Worker",
+          skillIds: [],
+          availability: allDaySaturday,
+        },
+      ],
+      taskTypes,
+      slots: [
+        {
+          ...slots[1],
+          id: "saturday-front-slot",
+          date: saturday,
+        },
+      ],
+    });
+
+    assert.equal(result.conflicts.length, 0);
+    assert.equal(result.assignments[0].employeeId, "saturday-worker");
+  });
+
+  it("does not assign Monday-Friday-only employees on Saturdays", () => {
+    const result = generateSchedule({
+      seed: "weekday-only-saturday",
+      employees: [
+        {
+          id: "weekday-only",
+          fullName: "Weekday Only",
+          skillIds: [],
+          availability: mondayThroughFriday,
+        },
+      ],
+      taskTypes,
+      slots: [
+        {
+          ...slots[1],
+          id: "saturday-front-slot",
+          date: saturday,
+        },
+      ],
+    });
+
+    assert.equal(result.assignments.length, 0);
+    assert.equal(result.conflicts.length, 1);
+    assert.equal(
+      result.conflicts[0].rejectedCandidates[0].reasons.includes(
+        "Outside weekly availability",
+      ),
+      true,
+    );
+  });
+
+  it("lets PTO override a normal working day", () => {
+    const result = generateSchedule({
+      seed: "pto-overrides-normal-shift",
+      employees: [
+        {
+          id: "saturday-worker",
+          fullName: "Saturday Worker",
+          skillIds: [],
+          availability: allDaySaturday,
+          unavailable: [{ startDate: saturday, endDate: saturday }],
+        },
+      ],
+      taskTypes,
+      slots: [
+        {
+          ...slots[1],
+          id: "saturday-front-slot",
+          date: saturday,
+        },
+      ],
+    });
+
+    assert.equal(result.assignments.length, 0);
+    assert.equal(result.conflicts.length, 1);
+    assert.equal(
+      result.conflicts[0].rejectedCandidates[0].reasons.includes(
+        "PTO or approved unavailability",
+      ),
+      true,
+    );
   });
 
   it("preserves locked manual overrides during generation", () => {

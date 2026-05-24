@@ -1,14 +1,24 @@
-import type { Employee, EmployeeSkill, Skill } from "@prisma/client";
-import { CircleOff, Pencil, ShieldCheck, Trash2 } from "lucide-react";
+import type {
+  Employee,
+  EmployeeSkill,
+  Skill,
+  WeeklyAvailability,
+} from "@prisma/client";
+import { CalendarClock, CircleOff, Pencil, Trash2 } from "lucide-react";
 import {
   deactivateEmployeeAction,
   deleteEmployeeAction,
 } from "@/app/(app)/admin/employees/actions";
+import {
+  formatMinuteRange,
+  weekdayShortLabel,
+  WEEKDAYS,
+} from "@/lib/availability";
 import { EmployeeForm } from "./employee-form";
 
 type EmployeeRecord = Employee & {
   skills: Array<EmployeeSkill & { skill: Skill }>;
-  availability: { id: string }[];
+  availability: WeeklyAvailability[];
 };
 
 export function EmployeeDirectory({
@@ -66,8 +76,8 @@ export function EmployeeDirectory({
             </div>
             <div className="flex items-center gap-3 text-sm text-slate-500">
               <span className="inline-flex items-center gap-1">
-                <ShieldCheck size={16} aria-hidden="true" />
-                {employee.availability.length} availability rows
+                <CalendarClock size={16} aria-hidden="true" />
+                {formatAvailabilitySummary(employee.availability)}
               </span>
               <span className="inline-flex items-center gap-1">
                 <Pencil size={16} aria-hidden="true" />
@@ -76,6 +86,41 @@ export function EmployeeDirectory({
             </div>
           </summary>
           <div className="border-t border-slate-200 p-4">
+            <div className="mb-4 rounded-md border border-slate-200 bg-slate-50 p-4">
+              <h3 className="text-sm font-semibold text-slate-950">
+                Normal weekly schedule
+              </h3>
+              <div className="mt-3 grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
+                {WEEKDAYS.map((day) => {
+                  const windows = employee.availability.filter(
+                    (window) => window.weekday === day.value,
+                  );
+
+                  return (
+                    <div
+                      key={day.value}
+                      className="rounded-md border border-slate-200 bg-white px-3 py-2 text-sm"
+                    >
+                      <div className="font-medium text-slate-950">
+                        {day.label}
+                      </div>
+                      <div className="mt-1 text-xs text-slate-500">
+                        {windows.length
+                          ? windows
+                              .map((window) =>
+                                formatMinuteRange(
+                                  window.startMinute,
+                                  window.endMinute,
+                                ),
+                              )
+                              .join(", ")
+                          : "Unavailable"}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
             <EmployeeForm employee={employee} skills={skills} />
             {employee.status === "ACTIVE" ? (
               <form action={deactivateEmployeeAction.bind(null, employee.id)}>
@@ -96,4 +141,20 @@ export function EmployeeDirectory({
       ))}
     </div>
   );
+}
+
+function formatAvailabilitySummary(availability: WeeklyAvailability[]) {
+  if (availability.length === 0) {
+    return "No normal hours";
+  }
+
+  return availability
+    .map(
+      (window) =>
+        `${weekdayShortLabel(window.weekday)} ${formatMinuteRange(
+          window.startMinute,
+          window.endMinute,
+        )}`,
+    )
+    .join(", ");
 }

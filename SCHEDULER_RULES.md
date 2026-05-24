@@ -8,7 +8,8 @@ not contain scheduling decisions.
 
 - Deterministic generation uses a caller-provided seed and stable tie-breakers.
 - Required skills are enforced before scoring.
-- Weekly availability is enforced by weekday and minute range.
+- Weekly availability is enforced by each employee's configured normal working
+  weekdays and minute ranges. The scheduler has no Monday-Friday assumption.
 - Approved PTO/unavailability blocks assignments.
 - Personal and vacation requests require manager approval before blocking
   scheduling; sick and emergency requests auto-approve and immediately block
@@ -24,8 +25,9 @@ not contain scheduling decisions.
 - Manual locked assignments are preserved during regeneration.
 - Locked assignments that conflict with approved PTO are preserved but surfaced
   as shortage/conflict slots until a manager resolves them.
-- Default generated task slots use 8 AM-5 PM working hours so they match the
-  seeded recurring availability window.
+- Default generated task slots use 8 AM-5 PM working hours. Employees are only
+  eligible when their configured recurring availability fully covers the slot,
+  including Saturday shifts when configured.
 - Fairness scoring favors underused employees and reduces repeated difficult
   task assignments.
 - Configurable `SchedulingRule` rows can prefer, avoid, boost, penalize, or
@@ -65,4 +67,5 @@ Optional manual-only task types:
 - Extra
 
 Seed data creates interchangeable groups for Allergy and GI virtual/in-person
-pairs, plus required skills for Civil Surgeon, Allergy Shots, and Procedures.
+pairs, required skills for Civil Surgeon, Allergy Shots, and Procedures, and a
+mix of Monday-Friday and Tuesday-Saturday employee schedules.

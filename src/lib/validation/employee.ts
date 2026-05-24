@@ -1,7 +1,26 @@
 import { EmployeeRole, EmployeeStatus } from "@prisma/client";
 import { z } from "zod";
+import { WEEKDAYS } from "@/lib/availability";
+import { timeStringToMinute } from "@/lib/utils/time";
 
 const emptyToNull = z.literal("").transform(() => null);
+
+const availabilitySchema = z
+  .object({
+    weekday: z.coerce.number().int().min(0).max(6),
+    active: z.boolean(),
+    startMinute: z.coerce.number().int().min(0).max(1439),
+    endMinute: z.coerce.number().int().min(1).max(1440),
+  })
+  .superRefine((value, context) => {
+    if (value.active && value.endMinute <= value.startMinute) {
+      context.addIssue({
+        code: "custom",
+        path: ["endMinute"],
+        message: "End time must be after start time",
+      });
+    }
+  });
 
 export const employeeFormSchema = z.object({
   fullName: z.string().trim().min(1, "Full name is required"),
@@ -21,7 +40,7 @@ export const employeeFormSchema = z.object({
   startDate: z.string().min(1, "Start date is required"),
   endDate: z.union([z.string().min(1), emptyToNull]).nullable(),
   skillIds: z.array(z.string()).default([]),
-  createDefaultAvailability: z.boolean().default(false),
+  availability: z.array(availabilitySchema).default([]),
 });
 
 export type EmployeeFormValues = z.infer<typeof employeeFormSchema>;
@@ -38,6 +57,29 @@ export function employeeFormValuesFromFormData(formData: FormData) {
     startDate: formData.get("startDate"),
     endDate: formData.get("endDate"),
     skillIds: formData.getAll("skillIds"),
-    createDefaultAvailability: formData.get("createDefaultAvailability") === "on",
+    availability: availabilityValuesFromFormData(formData),
   });
+}
+
+function availabilityValuesFromFormData(formData: FormData) {
+  return WEEKDAYS.map((day) => {
+    const startMinute =
+      timeStringToMinute(
+        stringField(formData.get(`availability.${day.value}.start`)),
+      ) ?? 0;
+    const endMinute =
+      timeStringToMinute(stringField(formData.get(`availability.${day.value}.end`))) ??
+      1440;
+
+    return {
+      weekday: day.value,
+      active: formData.get(`availability.${day.value}.active`) === "on",
+      startMinute,
+      endMinute,
+    };
+  });
+}
+
+function stringField(value: FormDataEntryValue | null) {
+  return typeof value === "string" ? value : null;
 }

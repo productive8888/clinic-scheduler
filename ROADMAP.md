@@ -6,7 +6,7 @@
 - Clerk-shaped auth helpers with role checks and a local development fallback
   when Clerk keys are not configured.
 - Admin employee CRUD surface for profiles, roles, status, skills, PTO balance,
-  and default availability.
+  and per-weekday recurring availability.
 - Daily schedule board with default task-slot creation, deterministic generation,
   and locked manual overrides.
 - Manager draft/review/publish workflow with previous/next day navigation and
@@ -20,7 +20,7 @@
 - Optional manual-only tasks for Research, Background, Booking, Float, and
   Extra.
 - Employee-facing portal for upcoming assignments, PTO status, PTO balance,
-  skills, and recurring availability.
+  skills, and normal weekly schedule visibility.
 - Role-aware navigation, admin route protection, and a development-only seeded
   employee switcher for local testing.
 - Admin audit log visibility for recent employee, schedule, PTO, and rule events.
@@ -29,8 +29,8 @@
   changes.
 - Admin scheduling rule management for employee-task preferences, boosts,
   penalties, and backup-only rules.
-- Seeded demo employees, skills, task types, and Monday-Friday recurring
-  availability for a complete generated schedule.
+- Seeded demo employees, skills, task types, and mixed Monday-Friday /
+  Tuesday-Saturday recurring availability for generated schedules.
 - Pure scheduler modules for constraints, scoring, fairness, assignment, and
   coverage replacement.
 - Scheduler unit tests for skill enforcement, PTO blocking, double-booking,
@@ -44,5 +44,5 @@
 1. Configure Clerk keys, set up Clerk webhooks, and map Clerk users to employees.
 2. Add drag/drop assignment interactions on top of the existing manual override
    server action.
-3. Add manager editing surfaces for recurring availability.
+3. Add historical effective-date management for recurring availability changes.
 4. Implement Google Calendar, Google Sheets, and printable exports.

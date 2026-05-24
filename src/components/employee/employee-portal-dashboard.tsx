@@ -9,25 +9,15 @@ import {
 import { createMyPtoRequestAction } from "@/app/(app)/employee/actions";
 import { PTORequestForm } from "@/components/pto/pto-request-form";
 import { PTORequestList } from "@/components/pto/pto-request-list";
+import { formatMinuteRange, WEEKDAYS } from "@/lib/availability";
 import type { getEmployeePortalData } from "@/lib/db/employee-portal";
 import { formatDisplayDate, toIsoDate } from "@/lib/utils/date";
-import { formatMinuteOfDay } from "@/lib/utils/time";
 
 type EmployeePortalData = Awaited<ReturnType<typeof getEmployeePortalData>>;
 
 type EmployeePortalDashboardProps = {
   data: EmployeePortalData;
 };
-
-const weekdayLabels = [
-  "Sunday",
-  "Monday",
-  "Tuesday",
-  "Wednesday",
-  "Thursday",
-  "Friday",
-  "Saturday",
-];
 
 export function EmployeePortalDashboard({ data }: EmployeePortalDashboardProps) {
   const { employee, assignments, ptoRequests } = data;
@@ -164,24 +154,43 @@ export function EmployeePortalDashboard({ data }: EmployeePortalDashboardProps) 
 
           <div className="rounded-md border border-slate-200 bg-white p-5 shadow-sm">
             <h2 className="text-lg font-semibold text-slate-950">
-              Recurring availability
+              Normal weekly schedule
             </h2>
             <div className="mt-4 grid gap-2">
               {employee.availability.length ? (
-                employee.availability.map((window) => (
-                  <div
-                    key={window.id}
-                    className="flex items-center justify-between gap-3 rounded-md bg-slate-50 p-3 text-sm"
-                  >
-                    <span className="font-medium text-slate-950">
-                      {weekdayLabels[window.weekday]}
-                    </span>
-                    <span className="inline-flex items-center gap-2 text-slate-600">
-                      <Clock size={14} aria-hidden="true" />
-                      {formatTimeRange(window.startMinute, window.endMinute)}
-                    </span>
-                  </div>
-                ))
+                WEEKDAYS.map((day) => {
+                  const windows = employee.availability.filter(
+                    (window) => window.weekday === day.value,
+                  );
+
+                  return (
+                    <div
+                      key={day.value}
+                      className="flex items-center justify-between gap-3 rounded-md bg-slate-50 p-3 text-sm"
+                    >
+                      <span className="font-medium text-slate-950">
+                        {day.label}
+                      </span>
+                      <span className="inline-flex items-center gap-2 text-slate-600">
+                        {windows.length ? (
+                          <>
+                            <Clock size={14} aria-hidden="true" />
+                            {windows
+                              .map((window) =>
+                                formatMinuteRange(
+                                  window.startMinute,
+                                  window.endMinute,
+                                ),
+                              )
+                              .join(", ")}
+                          </>
+                        ) : (
+                          "Unavailable"
+                        )}
+                      </span>
+                    </div>
+                  );
+                })
               ) : (
                 <p className="rounded-md border border-dashed border-slate-300 p-6 text-center text-sm text-slate-500">
                   No recurring availability is configured.
@@ -255,10 +264,7 @@ function formatTimeRange(
   startMinute: number | null | undefined,
   endMinute: number | null | undefined,
 ) {
-  const start = formatMinuteOfDay(startMinute);
-  const end = formatMinuteOfDay(endMinute);
-
-  return start && end ? `${start}-${end}` : "All day";
+  return formatMinuteRange(startMinute, endMinute);
 }
 
 function formatEnumLabel(value: string) {

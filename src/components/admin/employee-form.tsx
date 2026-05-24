@@ -1,10 +1,23 @@
-import type { Employee, EmployeeSkill, Skill } from "@prisma/client";
+import type {
+  Employee,
+  EmployeeSkill,
+  Skill,
+  WeeklyAvailability,
+} from "@prisma/client";
 import { Save, UserPlus } from "lucide-react";
 import { createEmployeeAction, updateEmployeeAction } from "@/app/(app)/admin/employees/actions";
+import {
+  isDefaultWorkingWeekday,
+  STANDARD_SHIFT_END_MINUTE,
+  STANDARD_SHIFT_START_MINUTE,
+  WEEKDAYS,
+} from "@/lib/availability";
 import { toIsoDate } from "@/lib/utils/date";
+import { minuteToTimeInput } from "@/lib/utils/time";
 
 type EmployeeWithSkills = Employee & {
   skills: EmployeeSkill[];
+  availability?: WeeklyAvailability[];
 };
 
 type EmployeeFormProps = {
@@ -17,6 +30,11 @@ export function EmployeeForm({ skills, employee }: EmployeeFormProps) {
     ? updateEmployeeAction.bind(null, employee.id)
     : createEmployeeAction;
   const selectedSkillIds = new Set(employee?.skills.map((skill) => skill.skillId));
+  const availabilityByWeekday = new Map(
+    employee?.availability
+      ?.filter((window) => window.active)
+      .map((window) => [window.weekday, window]) ?? [],
+  );
 
   return (
     <form action={action} className="grid gap-4">
@@ -135,16 +153,57 @@ export function EmployeeForm({ skills, employee }: EmployeeFormProps) {
         </div>
       </fieldset>
 
-      {!employee ? (
-        <label className="flex items-center gap-2 text-sm font-medium text-slate-700">
-          <input
-            type="checkbox"
-            name="createDefaultAvailability"
-            className="size-4 accent-emerald-700"
-          />
-          Add Monday-Friday 8 AM-5 PM availability
-        </label>
-      ) : null}
+      <fieldset className="grid gap-3 rounded-md border border-slate-200 bg-slate-50 p-4">
+        <legend className="px-1 text-sm font-semibold text-slate-900">
+          Normal weekly schedule
+        </legend>
+        <div className="grid gap-3">
+          {WEEKDAYS.map((day) => {
+            const existingWindow = availabilityByWeekday.get(day.value);
+            const defaultChecked = employee
+              ? Boolean(existingWindow)
+              : isDefaultWorkingWeekday(day.value);
+            const startMinute =
+              existingWindow?.startMinute ?? STANDARD_SHIFT_START_MINUTE;
+            const endMinute = existingWindow?.endMinute ?? STANDARD_SHIFT_END_MINUTE;
+
+            return (
+              <div
+                key={day.value}
+                className="grid gap-3 rounded-md border border-slate-200 bg-white p-3 sm:grid-cols-[minmax(8rem,1fr)_1fr_1fr] sm:items-end"
+              >
+                <label className="flex min-h-10 items-center gap-2 text-sm font-semibold text-slate-800">
+                  <input
+                    type="checkbox"
+                    name={`availability.${day.value}.active`}
+                    defaultChecked={defaultChecked}
+                    className="size-4 accent-emerald-700"
+                  />
+                  {day.label}
+                </label>
+                <label className="grid gap-1 text-sm font-medium text-slate-700">
+                  Start
+                  <input
+                    type="time"
+                    name={`availability.${day.value}.start`}
+                    defaultValue={minuteToTimeInput(startMinute)}
+                    className="h-10 rounded-md border border-slate-300 bg-white px-3 text-slate-950 outline-none focus:border-emerald-700"
+                  />
+                </label>
+                <label className="grid gap-1 text-sm font-medium text-slate-700">
+                  End
+                  <input
+                    type="time"
+                    name={`availability.${day.value}.end`}
+                    defaultValue={minuteToTimeInput(endMinute)}
+                    className="h-10 rounded-md border border-slate-300 bg-white px-3 text-slate-950 outline-none focus:border-emerald-700"
+                  />
+                </label>
+              </div>
+            );
+          })}
+        </div>
+      </fieldset>
 
       <button className="inline-flex h-10 w-fit items-center gap-2 rounded-md bg-emerald-700 px-4 text-sm font-semibold text-white transition hover:bg-emerald-800">
         {employee ? <Save size={16} aria-hidden="true" /> : <UserPlus size={16} aria-hidden="true" />}

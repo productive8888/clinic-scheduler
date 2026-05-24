@@ -1,45 +1,43 @@
 "use server";
 
+import type { Prisma } from "@prisma/client";
 import { revalidatePath } from "next/cache";
 import { auditActorId, requireManager } from "@/lib/auth";
 import { writeAuditLog } from "@/lib/audit";
 import { getDb } from "@/lib/db";
-import { employeeFormValuesFromFormData } from "@/lib/validation/employee";
+import {
+  employeeFormValuesFromFormData,
+  type EmployeeFormValues,
+} from "@/lib/validation/employee";
 import { parseIsoDate } from "@/lib/utils/date";
-
-const defaultWeekdays = [1, 2, 3, 4, 5];
 
 export async function createEmployeeAction(formData: FormData) {
   const actor = await requireManager();
   const values = employeeFormValuesFromFormData(formData);
 
-  const employee = await getDb().employee.create({
-    data: {
-      fullName: values.fullName,
-      email: values.email,
-      authProviderId: values.authProviderId,
-      role: values.role,
-      status: values.status,
-      ptoBalanceHours: values.ptoBalanceHours,
-      weeklyAssignmentLimit: values.weeklyAssignmentLimit,
-      startDate: parseIsoDate(values.startDate),
-      endDate: values.endDate ? parseIsoDate(values.endDate) : null,
-      skills: {
-        create: values.skillIds.map((skillId) => ({
-          skillId,
-        })),
+  const employee = await getDb().$transaction(async (tx) => {
+    const record = await tx.employee.create({
+      data: {
+        fullName: values.fullName,
+        email: values.email,
+        authProviderId: values.authProviderId,
+        role: values.role,
+        status: values.status,
+        ptoBalanceHours: values.ptoBalanceHours,
+        weeklyAssignmentLimit: values.weeklyAssignmentLimit,
+        startDate: parseIsoDate(values.startDate),
+        endDate: values.endDate ? parseIsoDate(values.endDate) : null,
+        skills: {
+          create: values.skillIds.map((skillId) => ({
+            skillId,
+          })),
+        },
       },
-      availability: values.createDefaultAvailability
-        ? {
-            create: defaultWeekdays.map((weekday) => ({
-              weekday,
-              startMinute: 8 * 60,
-              endMinute: 17 * 60,
-              effectiveStartDate: parseIsoDate(values.startDate),
-            })),
-          }
-        : undefined,
-    },
+    });
+
+    await replaceEmployeeAvailability(tx, record.id, values);
+
+    return record;
   });
 
   await writeAuditLog({
@@ -59,13 +57,14 @@ export async function updateEmployeeAction(employeeId: string, formData: FormDat
 
   const before = await getDb().employee.findUnique({
     where: { id: employeeId },
-    include: { skills: true },
+    include: { skills: true, availability: true },
   });
 
   const employee = await getDb().$transaction(async (tx) => {
     await tx.employeeSkill.deleteMany({ where: { employeeId } });
+    await tx.weeklyAvailability.deleteMany({ where: { employeeId } });
 
-    return tx.employee.update({
+    const record = await tx.employee.update({
       where: { id: employeeId },
       data: {
         fullName: values.fullName,
@@ -84,6 +83,10 @@ export async function updateEmployeeAction(employeeId: string, formData: FormDat
         },
       },
     });
+
+    await replaceEmployeeAvailability(tx, employeeId, values);
+
+    return record;
   });
 
   await writeAuditLog({
@@ -96,6 +99,28 @@ export async function updateEmployeeAction(employeeId: string, formData: FormDat
   });
 
   revalidatePath("/admin/employees");
+}
+
+async function replaceEmployeeAvailability(
+  tx: Prisma.TransactionClient,
+  employeeId: string,
+  values: EmployeeFormValues,
+) {
+  const availability = values.availability.filter((window) => window.active);
+
+  if (availability.length === 0) {
+    return;
+  }
+
+  await tx.weeklyAvailability.createMany({
+    data: availability.map((window) => ({
+      employeeId,
+      weekday: window.weekday,
+      startMinute: window.startMinute,
+      endMinute: window.endMinute,
+      effectiveStartDate: parseIsoDate(values.startDate),
+    })),
+  });
 }
 
 export async function deactivateEmployeeAction(employeeId: string) {

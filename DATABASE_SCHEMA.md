@@ -12,8 +12,9 @@ initial migration in `prisma/migrations/202605240001_initial/migration.sql`.
   difficulty, sort order, scenario-default flags, optional/manual-only flags,
   and interchangeable task group keys.
 - `TaskSkillRequirement`: required skill mapping per task type.
-- `WeeklyAvailability`: recurring employee availability by weekday and minute
-  range.
+- `WeeklyAvailability`: recurring employee normal working schedule by weekday,
+  start/end minute, effective date range, and active state. Days without an
+  active row are treated as normally unavailable.
 - `PTORequest`: PTO, absence, unavailability, and schedule-change requests.
   Personal/vacation requests require approval and can deduct PTO balance.
   Sick/emergency requests auto-approve. Approved requests are consumed by the

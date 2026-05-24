@@ -177,6 +177,18 @@ const taskTypes = [
   },
 ];
 
+function weekdayWindows(
+  weekdays: number[],
+  startMinute = 8 * 60,
+  endMinute = 17 * 60,
+) {
+  return weekdays.map((weekday) => ({
+    weekday,
+    startMinute,
+    endMinute,
+  }));
+}
+
 const demoEmployees = [
   {
     email: "ava.allergy@clinic.test",
@@ -185,6 +197,7 @@ const demoEmployees = [
     skillCodes: ["ALLERGY_SHOT"],
     ptoBalanceHours: 80,
     weeklyAssignmentLimit: 5,
+    availability: weekdayWindows([1, 2, 3, 4, 5]),
   },
   {
     email: "ben.frontdesk@clinic.test",
@@ -193,6 +206,7 @@ const demoEmployees = [
     skillCodes: [],
     ptoBalanceHours: 64,
     weeklyAssignmentLimit: 5,
+    availability: weekdayWindows([2, 3, 4, 5, 6]),
   },
   {
     email: "cora.civil@clinic.test",
@@ -201,6 +215,7 @@ const demoEmployees = [
     skillCodes: ["CIVIL_SURGEON"],
     ptoBalanceHours: 72,
     weeklyAssignmentLimit: 5,
+    availability: weekdayWindows([1, 2, 3, 4, 5], 7 * 60 + 30, 17 * 60),
   },
   {
     email: "dev.procedure@clinic.test",
@@ -209,6 +224,7 @@ const demoEmployees = [
     skillCodes: ["PROCEDURE"],
     ptoBalanceHours: 56,
     weeklyAssignmentLimit: 5,
+    availability: weekdayWindows([1, 2, 3, 4, 5], 8 * 60, 18 * 60),
   },
   {
     email: "ella.float@clinic.test",
@@ -217,6 +233,7 @@ const demoEmployees = [
     skillCodes: ["ALLERGY_SHOT", "PROCEDURE"],
     ptoBalanceHours: 48,
     weeklyAssignmentLimit: 5,
+    availability: weekdayWindows([2, 3, 4, 5, 6]),
   },
   {
     email: "finn.gi@clinic.test",
@@ -225,6 +242,7 @@ const demoEmployees = [
     skillCodes: [],
     ptoBalanceHours: 60,
     weeklyAssignmentLimit: 5,
+    availability: weekdayWindows([1, 2, 4, 5]),
   },
   {
     email: "gia.followup@clinic.test",
@@ -233,6 +251,7 @@ const demoEmployees = [
     skillCodes: [],
     ptoBalanceHours: 40,
     weeklyAssignmentLimit: 5,
+    availability: weekdayWindows([1, 3, 4, 5, 6]),
   },
   {
     email: "hugo.virtual@clinic.test",
@@ -241,6 +260,7 @@ const demoEmployees = [
     skillCodes: [],
     ptoBalanceHours: 52,
     weeklyAssignmentLimit: 5,
+    availability: weekdayWindows([2, 3, 4, 5, 6]),
   },
   {
     email: "ivy.backup@clinic.test",
@@ -249,6 +269,7 @@ const demoEmployees = [
     skillCodes: ["CIVIL_SURGEON", "ALLERGY_SHOT"],
     ptoBalanceHours: 44,
     weeklyAssignmentLimit: 5,
+    availability: weekdayWindows([1, 2, 3, 5, 6]),
   },
 ];
 
@@ -366,11 +387,11 @@ async function main() {
     });
 
     await prisma.weeklyAvailability.createMany({
-      data: [1, 2, 3, 4, 5].map((weekday) => ({
+      data: employee.availability.map((window) => ({
         employeeId: record.id,
-        weekday,
-        startMinute: 8 * 60,
-        endMinute: 17 * 60,
+        weekday: window.weekday,
+        startMinute: window.startMinute,
+        endMinute: window.endMinute,
         effectiveStartDate: new Date("2026-01-01T00:00:00.000Z"),
       })),
     });
