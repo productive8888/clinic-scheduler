@@ -1,8 +1,10 @@
 import {
+  Activity,
   CalendarCheck2,
   CalendarDays,
   Database,
   ShieldCheck,
+  SlidersHorizontal,
   Users,
 } from "lucide-react";
 import Link from "next/link";
@@ -25,6 +27,18 @@ const adminLinks = [
     title: "PTO review",
     description: "Approve time off and regenerate affected schedules.",
     icon: CalendarCheck2,
+  },
+  {
+    href: "/admin/rules",
+    title: "Scheduling rules",
+    description: "Configure employee/task preferences, penalties, and backup-only rules.",
+    icon: SlidersHorizontal,
+  },
+  {
+    href: "/admin/audit",
+    title: "Audit log",
+    description: "Review recent employee, PTO, schedule, and rule changes.",
+    icon: Activity,
   },
 ];
 

@@ -52,7 +52,7 @@ export function PTORequestList({ requests, mode }: PTORequestListProps) {
                 <span
                   className={`rounded-md px-2 py-1 text-xs font-semibold ${statusStyles[request.status]}`}
                 >
-                  {request.status}
+                  {formatStatusLabel(request)}
                 </span>
                 <span className="rounded-md bg-slate-100 px-2 py-1 text-xs font-medium text-slate-600">
                   {formatEnumLabel(request.type)}
@@ -69,7 +69,21 @@ export function PTORequestList({ requests, mode }: PTORequestListProps) {
               ) : null}
               {request.managerNote ? (
                 <p className="mt-2 rounded-md bg-slate-50 p-2 text-sm text-slate-600">
+                  <span className="font-semibold text-slate-800">
+                    {request.status === "REJECTED" ? "Decision reason: " : "Manager note: "}
+                  </span>
                   {request.managerNote}
+                </p>
+              ) : null}
+              {request.status === "PENDING" ? (
+                <p className="mt-2 text-xs text-amber-700">
+                  Awaiting manager review.
+                </p>
+              ) : null}
+              {request.status === "APPROVED" &&
+              (request.type === "SICK" || request.type === "EMERGENCY") ? (
+                <p className="mt-2 text-xs text-emerald-700">
+                  Auto-approved and included as schedule unavailability.
                 </p>
               ) : null}
               {request.reviewedBy ? (
@@ -132,6 +146,17 @@ function formatTimeRange(request: PTORequest) {
   const end = formatMinuteOfDay(request.endMinute);
 
   return start && end ? `, ${start}-${end}` : "";
+}
+
+function formatStatusLabel(request: PTORequest) {
+  if (
+    request.status === "APPROVED" &&
+    (request.type === "SICK" || request.type === "EMERGENCY")
+  ) {
+    return "AUTO-APPROVED";
+  }
+
+  return request.status;
 }
 
 function formatEnumLabel(value: string) {

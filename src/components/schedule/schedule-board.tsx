@@ -2,18 +2,23 @@ import type { Employee, Prisma, TaskType } from "@prisma/client";
 import {
   AlertTriangle,
   CalendarPlus,
+  CalendarX2,
   CheckCircle2,
   ChevronLeft,
   ChevronRight,
+  Plus,
   RefreshCw,
+  SlidersHorizontal,
   UserCheck,
 } from "lucide-react";
 import Link from "next/link";
 import {
   createScheduleDayAction,
+  addTaskSlotAction,
   generateScheduleAction,
   manualAssignAction,
   publishScheduleAction,
+  setScheduleScenarioAction,
 } from "@/app/(app)/schedule/actions";
 import { addDaysIsoDate, formatDisplayDate } from "@/lib/utils/date";
 
@@ -46,6 +51,7 @@ export function ScheduleBoard({
   employees,
   taskTypes,
 }: ScheduleBoardProps) {
+  const currentScenario = scheduleDay?.scenario ?? "ROUTINE";
   const unfilledCount =
     scheduleDay?.taskSlots.filter((slot) => slot.status !== "FILLED").length ?? 0;
   const shortageCount =
@@ -63,6 +69,15 @@ export function ScheduleBoard({
   );
   const previousDate = addDaysIsoDate(date, -1);
   const nextDate = addDaysIsoDate(date, 1);
+  const defaultTaskTypeCount = taskTypes.filter(
+    (taskType) =>
+      !taskType.optional &&
+      (currentScenario === "DOCTOR_OFF_REDUCED_STAFFING"
+        ? taskType.defaultForReduced
+        : currentScenario === "ROUTINE"
+          ? taskType.defaultForRoutine
+          : false),
+  ).length;
 
   return (
     <div className="grid gap-6">
@@ -93,8 +108,8 @@ export function ScheduleBoard({
             </div>
             <p className="mt-2 text-sm text-slate-500">
               {scheduleDay
-                ? `${scheduleDay.status.toLowerCase()} schedule: ${assignedCount} assignments, ${unfilledCount} slots needing attention`
-                : `${taskTypes.length} task types are configured for a new schedule day`}
+                ? `${formatEnumLabel(currentScenario)}: ${scheduleDay.status.toLowerCase()} schedule with ${assignedCount} assignments and ${unfilledCount} slots needing attention`
+                : `${formatEnumLabel(currentScenario)} will create ${defaultTaskTypeCount} default slots for a new schedule day`}
             </p>
             {scheduleDay?.publishedAt ? (
               <p className="mt-1 text-xs text-slate-500">
@@ -104,6 +119,25 @@ export function ScheduleBoard({
             ) : null}
           </div>
           <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-4">
+            <form action={setScheduleScenarioAction} className="flex gap-2">
+              <input type="hidden" name="date" value={date} />
+              <select
+                name="scenario"
+                defaultValue={currentScenario}
+                className="h-10 min-w-0 flex-1 rounded-md border border-slate-300 bg-white px-3 text-sm outline-none focus:border-emerald-700"
+                aria-label="Clinic scenario"
+              >
+                {scenarioOptions.map((scenario) => (
+                  <option key={scenario} value={scenario}>
+                    {formatEnumLabel(scenario)}
+                  </option>
+                ))}
+              </select>
+              <button className="inline-flex h-10 items-center justify-center gap-2 rounded-md border border-slate-300 px-3 text-sm font-semibold text-slate-700 hover:bg-slate-100">
+                <SlidersHorizontal size={16} aria-hidden="true" />
+                Save
+              </button>
+            </form>
             <form className="flex gap-2" action="/schedule">
               <input
                 name="date"
@@ -147,10 +181,30 @@ export function ScheduleBoard({
             </form>
           </div>
         </div>
+        <form action={addTaskSlotAction} className="mt-4 flex flex-col gap-2 border-t border-slate-200 pt-4 sm:flex-row">
+          <input type="hidden" name="date" value={date} />
+          <select
+            name="taskTypeId"
+            defaultValue=""
+            className="h-10 min-w-0 flex-1 rounded-md border border-slate-300 bg-white px-3 text-sm outline-none focus:border-emerald-700"
+          >
+            <option value="">Add manual task slot</option>
+            {taskTypes.map((taskType) => (
+              <option key={taskType.id} value={taskType.id}>
+                {taskType.name}
+                {taskType.optional ? " (optional)" : ""}
+              </option>
+            ))}
+          </select>
+          <button className="inline-flex h-10 items-center justify-center gap-2 rounded-md border border-slate-300 px-3 text-sm font-semibold text-slate-700 hover:bg-slate-100">
+            <Plus size={16} aria-hidden="true" />
+            Add slot
+          </button>
+        </form>
         <div className="mt-4 grid gap-3 border-t border-slate-200 pt-4 text-sm text-slate-600 md:grid-cols-3">
           <div>
             <span className="font-semibold text-slate-900">Prepare slots</span> creates
-            one dated opening for each active task type.
+            dated openings for the selected clinic scenario.
           </div>
           <div>
             <span className="font-semibold text-slate-900">Generate draft</span> fills
@@ -192,6 +246,33 @@ export function ScheduleBoard({
         </section>
       ) : (
         <section className="grid gap-4 lg:grid-cols-3">
+          {scheduleDay.taskSlots.length === 0 ? (
+            <div className="rounded-md border border-dashed border-slate-300 bg-white p-8 text-center lg:col-span-3">
+              {currentScenario === "CLINIC_CLOSED" ? (
+                <CalendarX2
+                  className="mx-auto text-emerald-700"
+                  size={28}
+                  aria-hidden="true"
+                />
+              ) : (
+                <CalendarPlus
+                  className="mx-auto text-emerald-700"
+                  size={28}
+                  aria-hidden="true"
+                />
+              )}
+              <h2 className="mt-3 text-xl font-semibold text-slate-950">
+                {currentScenario === "CLINIC_CLOSED"
+                  ? "Clinic closed"
+                  : "No task slots configured"}
+              </h2>
+              <p className="mx-auto mt-2 max-w-md text-sm text-slate-500">
+                {currentScenario === "CLINIC_CLOSED"
+                  ? "This date will not create routine staffing slots."
+                  : "Use Add slot for optional or custom work, or switch back to a default scenario and prepare slots."}
+              </p>
+            </div>
+          ) : null}
           {scheduleDay.taskSlots.map((slot) => {
             const currentAssignment = slot.assignments[0];
             const requiredSkills = slot.taskType.skillRequirements.map(
@@ -304,4 +385,19 @@ export function ScheduleBoard({
       )}
     </div>
   );
+}
+
+const scenarioOptions = [
+  "ROUTINE",
+  "CLINIC_CLOSED",
+  "DOCTOR_OFF_REDUCED_STAFFING",
+  "CUSTOM",
+] as const;
+
+function formatEnumLabel(value: string) {
+  return value
+    .toLowerCase()
+    .split("_")
+    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+    .join(" ");
 }

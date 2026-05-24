@@ -56,6 +56,8 @@ export function EmployeePortalDashboard({ data }: EmployeePortalDashboardProps) 
         </h1>
         <p className="mt-2 text-sm text-slate-500">
           View upcoming work, PTO status, skills, and recurring availability.
+          Sick and emergency requests are auto-approved; personal and vacation
+          requests wait for manager review.
         </p>
       </section>
 

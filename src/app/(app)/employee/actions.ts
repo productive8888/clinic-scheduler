@@ -9,7 +9,8 @@ export async function createMyPtoRequestAction(formData: FormData) {
   const actor = await requireActor();
 
   if (actor.isDevFallback) {
-    throw new Error("Self-service PTO requires a linked employee profile.");
+    revalidatePath("/employee");
+    return;
   }
 
   const values = ptoRequestValuesFromFormData(formData);

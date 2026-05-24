@@ -35,8 +35,9 @@ export default async function AdminPtoPage() {
           Time off and unavailability
         </h1>
         <p className="mt-2 max-w-2xl text-sm text-slate-500">
-          Approvals regenerate existing affected schedule days and return them to draft
-          review when assignments change.
+          Personal and vacation requests require approval and deduct PTO balance.
+          Sick and emergency requests auto-approve. Personal or vacation approval is
+          denied when it would put the employee below -24 PTO hours.
         </p>
         <div className="mt-4 inline-flex items-center gap-2 rounded-md bg-amber-50 px-3 py-2 text-sm font-semibold text-amber-800">
           <CalendarCheck2 size={16} aria-hidden="true" />

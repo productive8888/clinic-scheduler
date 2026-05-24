@@ -2,6 +2,13 @@ import type { RequestStatus } from "@prisma/client";
 import { writeAuditLog } from "@/lib/audit";
 import { getDb } from "@/lib/db";
 import { generateScheduleForDate } from "@/lib/db/schedule";
+import {
+  calculatePtoHours,
+  deductsPtoBalance,
+  isAutoApprovedPtoType,
+  PTO_BALANCE_APPROVAL_FLOOR_HOURS,
+  wouldPutPtoBalanceBelowFloor,
+} from "@/lib/pto/policy";
 import type { PTORequestFormValues } from "@/lib/validation/pto";
 import { enumerateIsoDates, parseIsoDate, toIsoDate } from "@/lib/utils/date";
 
@@ -55,15 +62,18 @@ export async function createPtoRequest(input: {
   actorEmployeeId?: string | null;
   action?: string;
 }) {
+  const autoApprove = isAutoApprovedPtoType(input.values.type);
   const request = await getDb().pTORequest.create({
     data: {
       employeeId: input.employeeId,
       type: input.values.type,
+      status: autoApprove ? "APPROVED" : "PENDING",
       startDate: parseIsoDate(input.values.startDate),
       endDate: parseIsoDate(input.values.endDate),
       startMinute: input.values.startMinute,
       endMinute: input.values.endMinute,
       reason: input.values.reason,
+      reviewedAt: autoApprove ? new Date() : undefined,
     },
   });
 
@@ -74,6 +84,24 @@ export async function createPtoRequest(input: {
     entityId: request.id,
     after: request,
   });
+
+  if (autoApprove) {
+    const regeneratedDates = await regenerateExistingScheduleDaysForRequest({
+      requestId: request.id,
+      startDate: toIsoDate(request.startDate),
+      endDate: toIsoDate(request.endDate),
+      actorEmployeeId: input.actorEmployeeId,
+    });
+
+    await writeAuditLog({
+      actorEmployeeId: input.actorEmployeeId,
+      action: "pto_request.auto_approve",
+      entityType: "PTORequest",
+      entityId: request.id,
+      after: request,
+      metadata: { regeneratedDates },
+    });
+  }
 
   return request;
 }
@@ -94,14 +122,74 @@ export async function reviewPtoRequest(input: {
     throw new Error("Only pending PTO requests can be reviewed.");
   }
 
-  const reviewed = await db.pTORequest.update({
-    where: { id: input.requestId },
-    data: {
-      status: input.status,
-      managerNote: input.managerNote,
-      reviewedByEmployeeId: input.actorEmployeeId ?? null,
-      reviewedAt: new Date(),
-    },
+  const requestHours = calculatePtoHours({
+    startDate: toIsoDate(before.startDate),
+    endDate: toIsoDate(before.endDate),
+    startMinute: before.startMinute,
+    endMinute: before.endMinute,
+  });
+
+  if (
+    input.status === "APPROVED" &&
+    deductsPtoBalance(before.type) &&
+    wouldPutPtoBalanceBelowFloor({
+      currentBalanceHours: Number(before.employee.ptoBalanceHours),
+      requestHours,
+    })
+  ) {
+    const denialReason = `Denied automatically: approval would put PTO balance below ${PTO_BALANCE_APPROVAL_FLOOR_HOURS} hours.`;
+    const reviewed = await db.pTORequest.update({
+      where: { id: input.requestId },
+      data: {
+        status: "REJECTED",
+        managerNote: input.managerNote
+          ? `${input.managerNote}\n${denialReason}`
+          : denialReason,
+        reviewedByEmployeeId: input.actorEmployeeId ?? null,
+        reviewedAt: new Date(),
+      },
+    });
+
+    await writeAuditLog({
+      actorEmployeeId: input.actorEmployeeId,
+      action: "pto_request.balance_denied",
+      entityType: "PTORequest",
+      entityId: reviewed.id,
+      before,
+      after: reviewed,
+      metadata: {
+        requestHours,
+        previousBalanceHours: Number(before.employee.ptoBalanceHours),
+        floorHours: PTO_BALANCE_APPROVAL_FLOOR_HOURS,
+      },
+    });
+
+    return { reviewed, regeneratedDates: [] };
+  }
+
+  const reviewed = await db.$transaction(async (tx) => {
+    const updated = await tx.pTORequest.update({
+      where: { id: input.requestId },
+      data: {
+        status: input.status,
+        managerNote: input.managerNote,
+        reviewedByEmployeeId: input.actorEmployeeId ?? null,
+        reviewedAt: new Date(),
+      },
+    });
+
+    if (input.status === "APPROVED" && deductsPtoBalance(before.type)) {
+      await tx.employee.update({
+        where: { id: before.employeeId },
+        data: {
+          ptoBalanceHours: {
+            decrement: requestHours,
+          },
+        },
+      });
+    }
+
+    return updated;
   });
 
   const regeneratedDates =
@@ -124,7 +212,7 @@ export async function reviewPtoRequest(input: {
     entityId: reviewed.id,
     before,
     after: reviewed,
-    metadata: { regeneratedDates },
+    metadata: { regeneratedDates, requestHours },
   });
 
   return { reviewed, regeneratedDates };

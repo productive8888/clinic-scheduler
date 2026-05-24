@@ -20,7 +20,7 @@ export async function createPtoForEmployeeAction(formData: FormData) {
     values,
     employeeId: values.employeeId,
     actorEmployeeId: auditActorId(actor),
-    action: "pto_request.manager_create",
+    action: "pto_request.override",
   });
 
   revalidatePath("/admin/pto");

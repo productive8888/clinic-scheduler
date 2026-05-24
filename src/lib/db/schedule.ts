@@ -2,6 +2,7 @@ import { createHash } from "node:crypto";
 import {
   AssignmentSource,
   AssignmentStatus,
+  type ClinicScenario,
   Prisma,
   TaskSlotStatus,
 } from "@prisma/client";
@@ -26,6 +27,7 @@ export async function getScheduleBoard(date: string) {
     where: { date: parseIsoDate(date) },
     include: {
       taskSlots: {
+        where: { status: { not: "CANCELLED" } },
         orderBy: [
           { taskType: { sortOrder: "asc" } },
           { slotIndex: "asc" },
@@ -71,26 +73,30 @@ export async function getSchedulePageData(date: string) {
 export async function ensureScheduleDayWithDefaultSlots(
   date: string,
   actorEmployeeId?: string | null,
+  scenario?: ClinicScenario,
 ) {
   const db = getDb();
   const dateValue = parseIsoDate(date);
 
   const scheduleDay = await db.scheduleDay.upsert({
     where: { date: dateValue },
-    update: {},
+    update: scenario ? { scenario } : {},
     create: {
       date: dateValue,
       status: "DRAFT",
+      scenario: scenario ?? "ROUTINE",
     },
   });
 
+  await reconcileSlotsForScenario(scheduleDay.id, scheduleDay.scenario);
+
   const taskTypes = await db.taskType.findMany({
-    where: { active: true },
+    where: getDefaultTaskTypeWhere(scheduleDay.scenario),
     orderBy: { sortOrder: "asc" },
   });
 
   for (const taskType of taskTypes) {
-    const slot = await db.taskSlot.upsert({
+    const existingSlot = await db.taskSlot.findUnique({
       where: {
         scheduleDayId_taskTypeId_slotIndex: {
           scheduleDayId: scheduleDay.id,
@@ -98,19 +104,23 @@ export async function ensureScheduleDayWithDefaultSlots(
           slotIndex: 1,
         },
       },
-      update: {},
-      create: {
-        scheduleDayId: scheduleDay.id,
-        taskTypeId: taskType.id,
-        slotIndex: 1,
-        label: taskType.name,
-        startMinute: DEFAULT_SLOT_START_MINUTE,
-        endMinute: DEFAULT_SLOT_END_MINUTE,
-        status: "OPEN",
-        minStaff: 1,
-        requiredStaff: 1,
-      },
     });
+
+    const slot =
+      existingSlot ??
+      (await db.taskSlot.create({
+        data: {
+          scheduleDayId: scheduleDay.id,
+          taskTypeId: taskType.id,
+          slotIndex: 1,
+          label: taskType.name,
+          startMinute: DEFAULT_SLOT_START_MINUTE,
+          endMinute: DEFAULT_SLOT_END_MINUTE,
+          status: "OPEN",
+          minStaff: 1,
+          requiredStaff: 1,
+        },
+      }));
 
     if (slot.startMinute === null || slot.endMinute === null) {
       await db.taskSlot.update({
@@ -121,6 +131,16 @@ export async function ensureScheduleDayWithDefaultSlots(
         },
       });
     }
+
+    if (slot.status === "CANCELLED") {
+      await db.taskSlot.update({
+        where: { id: slot.id },
+        data: {
+          status: "OPEN",
+          notes: null,
+        },
+      });
+    }
   }
 
   await writeAuditLog({
@@ -128,10 +148,124 @@ export async function ensureScheduleDayWithDefaultSlots(
     action: "schedule_day.ensure_default_slots",
     entityType: "ScheduleDay",
     entityId: scheduleDay.id,
-    after: { date, taskSlotCount: taskTypes.length },
+    after: { date, scenario: scheduleDay.scenario, taskSlotCount: taskTypes.length },
   });
 
   return scheduleDay;
+}
+
+export async function setScheduleScenario(input: {
+  date: string;
+  scenario: ClinicScenario;
+  actorEmployeeId?: string | null;
+}) {
+  const db = getDb();
+  const dateValue = parseIsoDate(input.date);
+
+  const before = await db.scheduleDay.findUnique({
+    where: { date: dateValue },
+  });
+
+  const scheduleDay = await db.scheduleDay.upsert({
+    where: { date: dateValue },
+    update: {
+      scenario: input.scenario,
+      status: before?.status === "PUBLISHED" ? "GENERATED" : undefined,
+      publishedAt: null,
+      publishedByEmployeeId: null,
+    },
+    create: {
+      date: dateValue,
+      scenario: input.scenario,
+      status: "DRAFT",
+    },
+  });
+
+  await reconcileSlotsForScenario(scheduleDay.id, input.scenario);
+
+  await writeAuditLog({
+    actorEmployeeId: input.actorEmployeeId,
+    action: "schedule_day.set_scenario",
+    entityType: "ScheduleDay",
+    entityId: scheduleDay.id,
+    before,
+    after: scheduleDay,
+  });
+
+  return scheduleDay;
+}
+
+export async function addTaskSlotToScheduleDay(input: {
+  date: string;
+  taskTypeId: string;
+  actorEmployeeId?: string | null;
+}) {
+  const db = getDb();
+  const dateValue = parseIsoDate(input.date);
+
+  const [scheduleDay, taskType] = await Promise.all([
+    db.scheduleDay.upsert({
+      where: { date: dateValue },
+      update: {},
+      create: {
+        date: dateValue,
+        status: "DRAFT",
+        scenario: "CUSTOM",
+      },
+    }),
+    db.taskType.findUniqueOrThrow({
+      where: { id: input.taskTypeId },
+    }),
+  ]);
+
+  const existing = await db.taskSlot.aggregate({
+    where: {
+      scheduleDayId: scheduleDay.id,
+      taskTypeId: input.taskTypeId,
+    },
+    _max: { slotIndex: true },
+  });
+  const slotIndex = (existing._max.slotIndex ?? 0) + 1;
+
+  const slot = await db.taskSlot.create({
+    data: {
+      scheduleDayId: scheduleDay.id,
+      taskTypeId: input.taskTypeId,
+      slotIndex,
+      label: `${taskType.name} #${slotIndex}`,
+      startMinute: DEFAULT_SLOT_START_MINUTE,
+      endMinute: DEFAULT_SLOT_END_MINUTE,
+      status: "OPEN",
+      minStaff: 1,
+      requiredStaff: 1,
+    },
+  });
+
+  if (scheduleDay.status === "PUBLISHED") {
+    await db.scheduleDay.update({
+      where: { id: scheduleDay.id },
+      data: {
+        status: "GENERATED",
+        publishedAt: null,
+        publishedByEmployeeId: null,
+      },
+    });
+  }
+
+  await writeAuditLog({
+    actorEmployeeId: input.actorEmployeeId,
+    action: "task_slot.add_manual",
+    entityType: "TaskSlot",
+    entityId: slot.id,
+    after: {
+      date: input.date,
+      taskTypeId: input.taskTypeId,
+      taskTypeCode: taskType.code,
+      optional: taskType.optional,
+    },
+  });
+
+  return slot;
 }
 
 export async function manuallyAssignSlot(input: {
@@ -579,6 +713,106 @@ function jsonRecord(value: Prisma.JsonValue) {
   }
 
   return value as Record<string, unknown>;
+}
+
+function getDefaultTaskTypeWhere(scenario: ClinicScenario): Prisma.TaskTypeWhereInput {
+  if (scenario === "CLINIC_CLOSED" || scenario === "CUSTOM") {
+    return { id: "__no_default_task_types__" };
+  }
+
+  if (scenario === "DOCTOR_OFF_REDUCED_STAFFING") {
+    return {
+      active: true,
+      optional: false,
+      defaultForReduced: true,
+    };
+  }
+
+  return {
+    active: true,
+    optional: false,
+    defaultForRoutine: true,
+  };
+}
+
+async function reconcileSlotsForScenario(
+  scheduleDayId: string,
+  scenario: ClinicScenario,
+) {
+  if (scenario === "ROUTINE" || scenario === "CUSTOM") {
+    return;
+  }
+
+  const db = getDb();
+  const desiredTaskTypes = await db.taskType.findMany({
+    where: getDefaultTaskTypeWhere(scenario),
+    select: { id: true },
+  });
+  const desiredTaskTypeIds = new Set(
+    desiredTaskTypes.map((taskType) => taskType.id),
+  );
+  const slots = await db.taskSlot.findMany({
+    where: {
+      scheduleDayId,
+      status: { not: "CANCELLED" },
+    },
+    include: {
+      taskType: true,
+      assignments: {
+        where: { status: "ACTIVE" },
+      },
+    },
+  });
+
+  for (const slot of slots) {
+    const shouldCancel =
+      scenario === "CLINIC_CLOSED" ||
+      (!slot.taskType.optional && !desiredTaskTypeIds.has(slot.taskTypeId));
+
+    if (!shouldCancel) {
+      continue;
+    }
+
+    const lockedAssignmentCount = slot.assignments.filter(
+      (assignment) => assignment.locked,
+    ).length;
+
+    if (lockedAssignmentCount > 0) {
+      await db.taskSlot.update({
+        where: { id: slot.id },
+        data: {
+          status: "SHORTAGE",
+          notes:
+            scenario === "CLINIC_CLOSED"
+              ? "Clinic is closed, but a locked manual assignment was preserved."
+              : "Reduced staffing removed this default slot, but a locked manual assignment was preserved.",
+        },
+      });
+      continue;
+    }
+
+    await db.assignment.updateMany({
+      where: {
+        taskSlotId: slot.id,
+        status: "ACTIVE",
+      },
+      data: {
+        status: "REMOVED",
+        removedAt: new Date(),
+      },
+    });
+
+    await db.taskSlot.update({
+      where: { id: slot.id },
+      data: {
+        status: "CANCELLED",
+        notes:
+          scenario === "CLINIC_CLOSED"
+            ? "Cancelled because the clinic is closed."
+            : "Cancelled by reduced staffing scenario.",
+      },
+    });
+  }
 }
 
 function sortNumberRecord(record: Record<string, number>) {

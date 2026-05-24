@@ -15,7 +15,12 @@ type PTORequestFormProps = {
   submitLabel?: string;
 };
 
-const requestTypes = Object.values(PTORequestType);
+const visibleRequestTypes: PTORequestType[] = [
+  "PERSONAL",
+  "VACATION",
+  "SICK",
+  "EMERGENCY",
+];
 
 export function PTORequestForm({
   action,
@@ -49,15 +54,19 @@ export function PTORequestForm({
           Request type
           <select
             name="type"
-            defaultValue="PTO"
+            defaultValue="PERSONAL"
             className="h-10 rounded-md border border-slate-300 bg-white px-3 text-slate-950 outline-none focus:border-emerald-700"
           >
-            {requestTypes.map((type) => (
+            {visibleRequestTypes.map((type) => (
               <option key={type} value={type}>
                 {formatEnumLabel(type)}
               </option>
             ))}
           </select>
+          <span className="text-xs font-normal text-slate-500">
+            Personal and vacation requests need manager approval. Sick and
+            emergency requests are approved automatically.
+          </span>
         </label>
         <label className="grid gap-1 text-sm font-medium text-slate-700">
           Start date
@@ -81,6 +90,18 @@ export function PTORequestForm({
         </label>
       </div>
 
+      <label className="grid gap-1 text-sm font-medium text-slate-700">
+        Time coverage
+        <select
+          name="duration"
+          defaultValue="FULL_DAY"
+          className="h-10 rounded-md border border-slate-300 bg-white px-3 text-slate-950 outline-none focus:border-emerald-700"
+        >
+          <option value="FULL_DAY">Full day or full date range</option>
+          <option value="PARTIAL_DAY">Specific time window</option>
+        </select>
+      </label>
+
       <div className="grid gap-4 md:grid-cols-2">
         <label className="grid gap-1 text-sm font-medium text-slate-700">
           Start time
@@ -99,6 +120,10 @@ export function PTORequestForm({
           />
         </label>
       </div>
+      <p className="-mt-2 text-xs text-slate-500">
+        Leave time coverage on full day for all-day PTO or absence. Use a specific
+        time window for partial-day unavailability.
+      </p>
 
       <label className="grid gap-1 text-sm font-medium text-slate-700">
         Reason

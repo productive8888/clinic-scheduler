@@ -1,8 +1,10 @@
 import {
+  Activity,
   CalendarDays,
   CalendarCheck2,
   ClipboardList,
   Settings,
+  SlidersHorizontal,
   UserRound,
   Users,
 } from "lucide-react";
@@ -24,6 +26,8 @@ const managerNavItems = [
   { href: "/admin", label: "Admin", icon: Settings },
   { href: "/admin/employees", label: "Employees", icon: Users },
   { href: "/admin/pto", label: "PTO", icon: CalendarCheck2 },
+  { href: "/admin/rules", label: "Rules", icon: SlidersHorizontal },
+  { href: "/admin/audit", label: "Audit", icon: Activity },
 ];
 
 export async function AppShell({ children }: { children: React.ReactNode }) {

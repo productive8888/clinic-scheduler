@@ -55,11 +55,14 @@ export function getRuleScore(
     const weight = rule.weight || 0;
 
     switch (rule.type) {
+      case "PREFER_EMPLOYEE_FOR_TASK":
       case "PREFER_EMPLOYEE_TASK":
       case "PRIORITY_BOOST":
       case "SKILL_WEIGHT":
         return score + Math.abs(weight);
+      case "AVOID_EMPLOYEE_FOR_TASK":
       case "AVOID_EMPLOYEE_TASK":
+      case "PRIORITY_PENALTY":
         return score - Math.abs(weight);
       case "BACKUP_ONLY":
         return score - (Math.abs(weight) || 250);

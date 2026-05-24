@@ -19,6 +19,10 @@ enum EmployeeStatus {
 }
 
 enum PTORequestType {
+  PERSONAL
+  VACATION
+  SICK
+  EMERGENCY
   PTO
   ABSENCE
   UNAVAILABILITY
@@ -37,6 +41,13 @@ enum ScheduleDayStatus {
   GENERATED
   PUBLISHED
   LOCKED
+}
+
+enum ClinicScenario {
+  ROUTINE
+  CLINIC_CLOSED
+  DOCTOR_OFF_REDUCED_STAFFING
+  CUSTOM
 }
 
 enum TaskSlotStatus {
@@ -60,9 +71,12 @@ enum AssignmentStatus {
 }
 
 enum SchedulingRuleType {
+  PREFER_EMPLOYEE_FOR_TASK
+  AVOID_EMPLOYEE_FOR_TASK
   PREFER_EMPLOYEE_TASK
   AVOID_EMPLOYEE_TASK
   PRIORITY_BOOST
+  PRIORITY_PENALTY
   PREFERRED_DAY
   MIN_ASSIGNMENTS
   MAX_ASSIGNMENTS
@@ -154,6 +168,9 @@ model TaskType {
   interchangeableGroup String?
   difficultyWeight     Int      @default(0)
   active               Boolean  @default(true)
+  optional             Boolean  @default(false)
+  defaultForRoutine    Boolean  @default(true)
+  defaultForReduced    Boolean  @default(true)
   sortOrder            Int      @default(0)
   createdAt            DateTime @default(now())
   updatedAt            DateTime @updatedAt
@@ -163,6 +180,7 @@ model TaskType {
   schedulingRules   SchedulingRule[]
 
   @@index([active, sortOrder])
+  @@index([optional])
   @@index([interchangeableGroup])
 }
 
@@ -222,6 +240,7 @@ model ScheduleDay {
   id                    String            @id @default(cuid())
   date                  DateTime          @unique @db.Date
   status                ScheduleDayStatus @default(DRAFT)
+  scenario              ClinicScenario    @default(ROUTINE)
   notes                 String?
   publishedAt           DateTime?
   publishedByEmployeeId String?
@@ -291,6 +310,7 @@ model SchedulingRule {
   effectiveStartDate  DateTime?          @db.Date
   effectiveEndDate    DateTime?          @db.Date
   parameters          Json?
+  notes               String?
   createdByEmployeeId String?
   createdAt           DateTime           @default(now())
   updatedAt           DateTime           @updatedAt

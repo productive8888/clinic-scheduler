@@ -64,9 +64,12 @@ export type ExistingAssignment = {
 };
 
 export type SchedulerRuleType =
+  | "PREFER_EMPLOYEE_FOR_TASK"
+  | "AVOID_EMPLOYEE_FOR_TASK"
   | "PREFER_EMPLOYEE_TASK"
   | "AVOID_EMPLOYEE_TASK"
   | "PRIORITY_BOOST"
+  | "PRIORITY_PENALTY"
   | "PREFERRED_DAY"
   | "MIN_ASSIGNMENTS"
   | "MAX_ASSIGNMENTS"

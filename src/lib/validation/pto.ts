@@ -3,19 +3,29 @@ import { z } from "zod";
 import { timeStringToMinute } from "@/lib/utils/time";
 
 const optionalTrimmedString = z
-  .string()
-  .trim()
-  .optional()
-  .transform((value) => (value ? value : null));
-
-export const ptoRequestFormSchema = z
-  .object({
-    employeeId: z
+  .preprocess(
+    (value) => (value === null ? undefined : value),
+    z
       .string()
       .trim()
       .optional()
       .transform((value) => (value ? value : null)),
+  );
+
+const optionalId = z.preprocess(
+  (value) => (value === null || value === "" ? undefined : value),
+  z
+    .string()
+    .trim()
+    .optional()
+    .transform((value) => (value ? value : null)),
+);
+
+export const ptoRequestFormSchema = z
+  .object({
+    employeeId: optionalId,
     type: z.nativeEnum(PTORequestType),
+    duration: z.enum(["FULL_DAY", "PARTIAL_DAY"]).default("FULL_DAY"),
     startDate: z.string().min(1, "Start date is required"),
     endDate: z.string().min(1, "End date is required"),
     startMinute: z.number().int().min(0).max(1439).nullable(),
@@ -31,14 +41,15 @@ export const ptoRequestFormSchema = z
       });
     }
 
-    if (
-      (value.startMinute === null && value.endMinute !== null) ||
-      (value.startMinute !== null && value.endMinute === null)
-    ) {
+    if (value.duration === "FULL_DAY") {
+      return;
+    }
+
+    if (value.startMinute === null || value.endMinute === null) {
       context.addIssue({
         code: "custom",
         path: ["startMinute"],
-        message: "Provide both start and end times, or leave both blank",
+        message: "Provide start and end times for a specific time window",
       });
     }
 
@@ -64,13 +75,22 @@ export type PTORequestFormValues = z.infer<typeof ptoRequestFormSchema>;
 export type PTOReviewFormValues = z.infer<typeof ptoReviewFormSchema>;
 
 export function ptoRequestValuesFromFormData(formData: FormData) {
+  const duration = String(formData.get("duration") || "FULL_DAY");
+
   return ptoRequestFormSchema.parse({
     employeeId: formData.get("employeeId"),
     type: formData.get("type"),
+    duration,
     startDate: formData.get("startDate"),
     endDate: formData.get("endDate"),
-    startMinute: timeStringToMinute(String(formData.get("startTime") || "")),
-    endMinute: timeStringToMinute(String(formData.get("endTime") || "")),
+    startMinute:
+      duration === "PARTIAL_DAY"
+        ? timeStringToMinute(String(formData.get("startTime") || ""))
+        : null,
+    endMinute:
+      duration === "PARTIAL_DAY"
+        ? timeStringToMinute(String(formData.get("endTime") || ""))
+        : null,
     reason: formData.get("reason"),
   });
 }
