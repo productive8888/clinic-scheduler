@@ -1,0 +1,353 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum EmployeeRole {
+  EMPLOYEE
+  MANAGER
+  ADMIN
+}
+
+enum EmployeeStatus {
+  ACTIVE
+  INACTIVE
+}
+
+enum PTORequestType {
+  PTO
+  ABSENCE
+  UNAVAILABILITY
+  SCHEDULE_CHANGE
+}
+
+enum RequestStatus {
+  PENDING
+  APPROVED
+  REJECTED
+  CANCELLED
+}
+
+enum ScheduleDayStatus {
+  DRAFT
+  GENERATED
+  PUBLISHED
+  LOCKED
+}
+
+enum TaskSlotStatus {
+  OPEN
+  FILLED
+  SHORTAGE
+  CANCELLED
+}
+
+enum AssignmentSource {
+  GENERATED
+  MANUAL_OVERRIDE
+  COVERAGE_REPLACEMENT
+  IMPORTED
+}
+
+enum AssignmentStatus {
+  ACTIVE
+  REMOVED
+  CANCELLED
+}
+
+enum SchedulingRuleType {
+  PREFER_EMPLOYEE_TASK
+  AVOID_EMPLOYEE_TASK
+  PRIORITY_BOOST
+  PREFERRED_DAY
+  MIN_ASSIGNMENTS
+  MAX_ASSIGNMENTS
+  BACKUP_ONLY
+  SKILL_WEIGHT
+  CUSTOM
+}
+
+enum GenerationStatus {
+  PENDING
+  RUNNING
+  COMPLETED
+  FAILED
+}
+
+enum ExportType {
+  GOOGLE_CALENDAR
+  GOOGLE_SHEETS
+  PRINTABLE
+}
+
+enum ExportStatus {
+  QUEUED
+  COMPLETED
+  FAILED
+}
+
+model Employee {
+  id                    String         @id @default(cuid())
+  authProviderId        String?        @unique
+  email                 String         @unique
+  fullName              String
+  role                  EmployeeRole   @default(EMPLOYEE)
+  status                EmployeeStatus @default(ACTIVE)
+  ptoBalanceHours       Decimal        @default(0) @db.Decimal(7, 2)
+  weeklyAssignmentLimit Int?
+  startDate             DateTime       @db.Date
+  endDate               DateTime?      @db.Date
+  notes                 String?
+  createdAt             DateTime       @default(now())
+  updatedAt             DateTime       @updatedAt
+
+  skills                  EmployeeSkill[]
+  availability            WeeklyAvailability[]
+  ptoRequests             PTORequest[]            @relation("EmployeePtoRequests")
+  reviewedPtoRequests     PTORequest[]            @relation("PtoReviewer")
+  assignments             Assignment[]            @relation("AssignedEmployee")
+  assignedAssignments     Assignment[]            @relation("AssignedByEmployee")
+  schedulingRules         SchedulingRule[]        @relation("RuleEmployee")
+  createdSchedulingRules  SchedulingRule[]        @relation("RuleCreator")
+  requestedGenerationRuns ScheduleGenerationRun[] @relation("GenerationRequester")
+  auditLogs               AuditLog[]              @relation("AuditActor")
+  exportLogs              ExportLog[]             @relation("ExportRequester")
+
+  @@index([status])
+  @@index([role])
+}
+
+model Skill {
+  id          String   @id @default(cuid())
+  code        String   @unique
+  name        String
+  description String?
+  active      Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  employees        EmployeeSkill[]
+  taskRequirements TaskSkillRequirement[]
+}
+
+model EmployeeSkill {
+  employeeId String
+  skillId    String
+  assignedAt DateTime @default(now())
+
+  employee Employee @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+  skill    Skill    @relation(fields: [skillId], references: [id], onDelete: Cascade)
+
+  @@id([employeeId, skillId])
+}
+
+model TaskType {
+  id                   String   @id @default(cuid())
+  code                 String   @unique
+  name                 String
+  description          String?
+  interchangeableGroup String?
+  difficultyWeight     Int      @default(0)
+  active               Boolean  @default(true)
+  sortOrder            Int      @default(0)
+  createdAt            DateTime @default(now())
+  updatedAt            DateTime @updatedAt
+
+  skillRequirements TaskSkillRequirement[]
+  taskSlots         TaskSlot[]
+  schedulingRules   SchedulingRule[]
+
+  @@index([active, sortOrder])
+  @@index([interchangeableGroup])
+}
+
+model TaskSkillRequirement {
+  id         String  @id @default(cuid())
+  taskTypeId String
+  skillId    String
+  required   Boolean @default(true)
+
+  taskType TaskType @relation(fields: [taskTypeId], references: [id], onDelete: Cascade)
+  skill    Skill    @relation(fields: [skillId], references: [id], onDelete: Cascade)
+
+  @@unique([taskTypeId, skillId])
+}
+
+model WeeklyAvailability {
+  id                 String    @id @default(cuid())
+  employeeId         String
+  weekday            Int
+  startMinute        Int
+  endMinute          Int
+  effectiveStartDate DateTime  @db.Date
+  effectiveEndDate   DateTime? @db.Date
+  active             Boolean   @default(true)
+  createdAt          DateTime  @default(now())
+  updatedAt          DateTime  @updatedAt
+
+  employee Employee @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+
+  @@index([employeeId, weekday, active])
+}
+
+model PTORequest {
+  id                   String         @id @default(cuid())
+  employeeId           String
+  type                 PTORequestType
+  status               RequestStatus  @default(PENDING)
+  startDate            DateTime       @db.Date
+  endDate              DateTime       @db.Date
+  startMinute          Int?
+  endMinute            Int?
+  reason               String?
+  managerNote          String?
+  reviewedByEmployeeId String?
+  reviewedAt           DateTime?
+  createdAt            DateTime       @default(now())
+  updatedAt            DateTime       @updatedAt
+
+  employee   Employee  @relation("EmployeePtoRequests", fields: [employeeId], references: [id], onDelete: Cascade)
+  reviewedBy Employee? @relation("PtoReviewer", fields: [reviewedByEmployeeId], references: [id])
+
+  @@index([employeeId, status, startDate, endDate])
+  @@index([status])
+}
+
+model ScheduleDay {
+  id        String            @id @default(cuid())
+  date      DateTime          @unique @db.Date
+  status    ScheduleDayStatus @default(DRAFT)
+  notes     String?
+  createdAt DateTime          @default(now())
+  updatedAt DateTime          @updatedAt
+
+  taskSlots TaskSlot[]
+}
+
+model TaskSlot {
+  id            String         @id @default(cuid())
+  scheduleDayId String
+  taskTypeId    String
+  slotIndex     Int            @default(1)
+  label         String?
+  startMinute   Int?
+  endMinute     Int?
+  minStaff      Int            @default(1)
+  requiredStaff Int            @default(1)
+  status        TaskSlotStatus @default(OPEN)
+  notes         String?
+  createdAt     DateTime       @default(now())
+  updatedAt     DateTime       @updatedAt
+
+  scheduleDay ScheduleDay  @relation(fields: [scheduleDayId], references: [id], onDelete: Cascade)
+  taskType    TaskType     @relation(fields: [taskTypeId], references: [id])
+  assignments Assignment[]
+
+  @@unique([scheduleDayId, taskTypeId, slotIndex])
+  @@index([scheduleDayId, status])
+}
+
+model Assignment {
+  id                   String           @id @default(cuid())
+  taskSlotId           String
+  employeeId           String
+  source               AssignmentSource @default(GENERATED)
+  status               AssignmentStatus @default(ACTIVE)
+  locked               Boolean          @default(false)
+  assignedByEmployeeId String?
+  generationRunId      String?
+  assignedAt           DateTime         @default(now())
+  removedAt            DateTime?
+  notes                String?
+
+  taskSlot      TaskSlot               @relation(fields: [taskSlotId], references: [id], onDelete: Cascade)
+  employee      Employee               @relation("AssignedEmployee", fields: [employeeId], references: [id])
+  assignedBy    Employee?              @relation("AssignedByEmployee", fields: [assignedByEmployeeId], references: [id])
+  generationRun ScheduleGenerationRun? @relation(fields: [generationRunId], references: [id])
+
+  @@index([employeeId, status])
+  @@index([taskSlotId, status])
+  @@index([generationRunId])
+}
+
+model SchedulingRule {
+  id                  String             @id @default(cuid())
+  type                SchedulingRuleType
+  employeeId          String?
+  taskTypeId          String?
+  weight              Int                @default(0)
+  priority            Int                @default(0)
+  active              Boolean            @default(true)
+  effectiveStartDate  DateTime?          @db.Date
+  effectiveEndDate    DateTime?          @db.Date
+  parameters          Json?
+  createdByEmployeeId String?
+  createdAt           DateTime           @default(now())
+  updatedAt           DateTime           @updatedAt
+
+  employee  Employee? @relation("RuleEmployee", fields: [employeeId], references: [id], onDelete: Cascade)
+  taskType  TaskType? @relation(fields: [taskTypeId], references: [id], onDelete: Cascade)
+  createdBy Employee? @relation("RuleCreator", fields: [createdByEmployeeId], references: [id])
+
+  @@index([active, type])
+  @@index([employeeId, taskTypeId])
+}
+
+model ScheduleGenerationRun {
+  id                    String           @id @default(cuid())
+  dateStart             DateTime         @db.Date
+  dateEnd               DateTime         @db.Date
+  seed                  String
+  engineVersion         String
+  inputHash             String
+  status                GenerationStatus @default(PENDING)
+  requestedByEmployeeId String?
+  summary               Json?
+  createdAt             DateTime         @default(now())
+  completedAt           DateTime?
+
+  requestedBy Employee?    @relation("GenerationRequester", fields: [requestedByEmployeeId], references: [id])
+  assignments Assignment[]
+
+  @@index([dateStart, dateEnd])
+  @@index([status])
+}
+
+model AuditLog {
+  id              String   @id @default(cuid())
+  actorEmployeeId String?
+  action          String
+  entityType      String
+  entityId        String?
+  before          Json?
+  after           Json?
+  metadata        Json?
+  createdAt       DateTime @default(now())
+
+  actor Employee? @relation("AuditActor", fields: [actorEmployeeId], references: [id])
+
+  @@index([entityType, entityId])
+  @@index([actorEmployeeId])
+  @@index([createdAt])
+}
+
+model ExportLog {
+  id                    String       @id @default(cuid())
+  type                  ExportType
+  status                ExportStatus @default(QUEUED)
+  requestedByEmployeeId String?
+  scheduleDayId         String?
+  outputUrl             String?
+  metadata              Json?
+  errorMessage          String?
+  createdAt             DateTime     @default(now())
+  completedAt           DateTime?
+
+  requestedBy Employee? @relation("ExportRequester", fields: [requestedByEmployeeId], references: [id])
+
+  @@index([type, status])
+}
