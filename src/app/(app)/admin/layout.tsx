@@ -11,7 +11,7 @@ export default async function AdminLayout({
   const actor = await getCurrentActor();
 
   if (!actor) {
-    redirect("/sign-in");
+    redirect("/login");
   }
 
   if (!isManagerRole(actor.role)) {

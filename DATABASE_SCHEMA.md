@@ -5,8 +5,12 @@ initial migration in `prisma/migrations/202605240001_initial/migration.sql`.
 
 ## Core Tables
 
-- `Employee`: staff profile, Clerk auth link, role, status, PTO balance, weekly
-  assignment limit, start/end dates.
+- `Employee`: staff profile, Auth.js user link, role, status, PTO balance,
+  weekly assignment limit, start/end dates. Employee role/status remains the
+  source of truth for authorization.
+- `User`, `Account`, `Session`, and `VerificationToken`: Auth.js-owned
+  authentication tables for magic-link users, persistent sessions, and email
+  verification tokens.
 - `Skill` and `EmployeeSkill`: normalized boolean skill checklist.
 - `TaskType`: configurable clinic task catalog with skill requirements,
   difficulty, sort order, scenario-default flags, optional/manual-only flags,

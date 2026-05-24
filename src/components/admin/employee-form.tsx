@@ -59,12 +59,12 @@ export function EmployeeForm({ skills, employee }: EmployeeFormProps) {
           />
         </label>
         <label className="grid gap-1 text-sm font-medium text-slate-700">
-          Clerk user ID
+          Auth.js user ID
           <input
             name="authProviderId"
             defaultValue={employee?.authProviderId ?? ""}
             className="h-10 rounded-md border border-slate-300 bg-white px-3 font-mono text-sm text-slate-950 outline-none focus:border-emerald-700"
-            placeholder="user_..."
+            placeholder="Linked after magic-link sign-in"
           />
         </label>
         <label className="grid gap-1 text-sm font-medium text-slate-700">

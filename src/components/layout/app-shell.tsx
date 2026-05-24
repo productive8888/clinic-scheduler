@@ -4,12 +4,14 @@ import {
   CalendarDays,
   CalendarCheck2,
   ClipboardList,
+  LogOut,
   Settings,
   SlidersHorizontal,
   UserRound,
   Users,
 } from "lucide-react";
 import Link from "next/link";
+import { logoutAction } from "@/app/logout/actions";
 import { DevUserSwitcher } from "@/components/auth/dev-user-switcher";
 import {
   getCurrentActor,
@@ -78,8 +80,27 @@ export async function AppShell({ children }: { children: React.ReactNode }) {
             <div className="font-medium text-slate-900">
               {actor?.fullName ?? "Not signed in"}
             </div>
-            <div className="text-xs text-slate-500">{actor?.role ?? "Guest"}</div>
+            <div className="text-xs text-slate-500">
+              {actor?.isLocalDev
+                ? `${actor.role} · development`
+                : actor?.role ?? "Guest"}
+            </div>
           </div>
+          {actor && !actor.isLocalDev && !actor.isDevFallback ? (
+            <form action={logoutAction}>
+              <button className="inline-flex h-10 items-center gap-2 rounded-md border border-slate-200 bg-white px-3 text-sm font-medium text-slate-700 transition hover:border-slate-300 hover:bg-slate-100">
+                <LogOut size={16} aria-hidden="true" />
+                Logout
+              </button>
+            </form>
+          ) : !actor ? (
+            <Link
+              href="/login"
+              className="inline-flex h-10 items-center gap-2 rounded-md border border-slate-200 bg-white px-3 text-sm font-medium text-slate-700 transition hover:border-slate-300 hover:bg-slate-100"
+            >
+              Login
+            </Link>
+          ) : null}
           <DevUserSwitcher
             employees={devEmployees}
             currentEmployeeId={actor?.isDevFallback ? null : actor?.id}

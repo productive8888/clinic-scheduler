@@ -32,8 +32,8 @@ export default async function EmployeesPage() {
           Staff profiles and skills
         </h1>
         <p className="mt-2 max-w-2xl text-sm text-slate-500">
-          Add employees, link Clerk users, maintain skill checklists, and set staffing
-          limits used by the scheduler.
+          Add employees, review Auth.js account links, maintain skill checklists,
+          and set staffing limits used by the scheduler.
         </p>
       </section>
 

@@ -3,8 +3,8 @@
 ## Implemented Foundation
 
 - Prisma/PostgreSQL schema, generated client, seed data, and initial migration.
-- Clerk-shaped auth helpers with role checks and a local development fallback
-  when Clerk keys are not configured.
+- Auth.js magic-link authentication with database-backed sessions, role checks,
+  protected routes, and a local development user switcher.
 - Admin employee CRUD surface for profiles, roles, status, skills, PTO balance,
   and per-weekday recurring availability.
 - Daily schedule board with default task-slot creation, deterministic generation,
@@ -41,7 +41,8 @@
 
 ## Next Phases
 
-1. Configure Clerk keys, set up Clerk webhooks, and map Clerk users to employees.
+1. Configure production SMTP credentials and rotate `AUTH_SECRET` through the
+   hosting environment.
 2. Add drag/drop assignment interactions on top of the existing manual override
    server action.
 3. Add historical effective-date management for recurring availability changes.

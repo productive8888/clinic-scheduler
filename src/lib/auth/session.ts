@@ -1,6 +1,6 @@
-import { auth } from "@clerk/nextjs/server";
 import type { Employee, EmployeeRole } from "@prisma/client";
 import { cookies } from "next/headers";
+import { auth } from "@/auth";
 import { getDb } from "@/lib/db";
 import { isManagerRole } from "./roles";
 
@@ -15,6 +15,7 @@ export type DevSwitchEmployee = Pick<
 >;
 
 export const DEV_ACTOR_COOKIE = "clinic_dev_employee_id";
+const DISABLE_LOCAL_DEV_AUTH = "true";
 
 const devFallbackActor: AuthActor = {
   id: "local-dev-admin",
@@ -24,15 +25,23 @@ const devFallbackActor: AuthActor = {
   isDevFallback: true,
 };
 
-export function clerkConfigured() {
-  return Boolean(
-    process.env.CLERK_SECRET_KEY &&
-      process.env.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY,
-  );
+export function authSecretConfigured() {
+  return Boolean(process.env.AUTH_SECRET);
+}
+
+export function authEmailConfigured() {
+  return Boolean(process.env.EMAIL_SERVER && process.env.EMAIL_FROM);
+}
+
+export function authConfigured() {
+  return authSecretConfigured() && authEmailConfigured();
 }
 
 export function localDevAuthEnabled() {
-  return process.env.NODE_ENV === "development" && !clerkConfigured();
+  return (
+    process.env.NODE_ENV === "development" &&
+    process.env.DISABLE_LOCAL_DEV_AUTH !== DISABLE_LOCAL_DEV_AUTH
+  );
 }
 
 export async function getCurrentActor(): Promise<AuthActor | null> {
@@ -40,19 +49,35 @@ export async function getCurrentActor(): Promise<AuthActor | null> {
     return getLocalDevActor();
   }
 
-  if (!clerkConfigured()) {
+  if (!authSecretConfigured()) {
     return null;
   }
 
   const session = await auth();
-  const userId = session.userId;
+  const employeeId = session?.user?.employeeId;
+  const email = session?.user?.email;
 
-  if (!userId) {
+  if (!employeeId && !email) {
     return null;
   }
 
-  const employee = await getDb().employee.findUnique({
-    where: { authProviderId: userId },
+  const employee = await getDb().employee.findFirst({
+    where: {
+      status: "ACTIVE",
+      OR: [
+        ...(employeeId ? [{ id: employeeId }] : []),
+        ...(email
+          ? [
+              {
+                email: {
+                  equals: email,
+                  mode: "insensitive" as const,
+                },
+              },
+            ]
+          : []),
+      ],
+    },
     select: {
       id: true,
       email: true,

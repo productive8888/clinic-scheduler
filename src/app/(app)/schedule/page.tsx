@@ -1,5 +1,7 @@
+import { redirect } from "next/navigation";
 import { ScheduleBoard } from "@/components/schedule/schedule-board";
 import { SetupRequired } from "@/components/layout/setup-required";
+import { getCurrentActor, isManagerRole } from "@/lib/auth";
 import { getSchedulePageData } from "@/lib/db/schedule";
 import { todayIsoDate } from "@/lib/utils/date";
 
@@ -13,7 +15,16 @@ export default async function SchedulePage({
   const params = await searchParams;
   const date =
     typeof params.date === "string" && params.date ? params.date : todayIsoDate();
+  const actor = await getCurrentActor();
   let data: Awaited<ReturnType<typeof getSchedulePageData>>;
+
+  if (!actor) {
+    redirect("/login");
+  }
+
+  if (!isManagerRole(actor.role)) {
+    redirect("/employee");
+  }
 
   try {
     data = await getSchedulePageData(date);

@@ -1,6 +1,8 @@
 export {
   auditActorId,
-  clerkConfigured,
+  authConfigured,
+  authEmailConfigured,
+  authSecretConfigured,
   DEV_ACTOR_COOKIE,
   getLocalDevSwitchEmployees,
   getCurrentActor,

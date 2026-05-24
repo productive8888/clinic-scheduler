@@ -7,7 +7,7 @@ export default async function HomePage() {
   const actor = await getCurrentActor();
 
   if (!actor) {
-    redirect("/sign-in");
+    redirect("/login");
   }
 
   redirect(isManagerRole(actor.role) ? "/schedule" : "/employee");
