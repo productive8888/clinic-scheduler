@@ -7,24 +7,39 @@ import {
   Users,
 } from "lucide-react";
 import Link from "next/link";
-import { getCurrentActor } from "@/lib/auth";
+import { DevUserSwitcher } from "@/components/auth/dev-user-switcher";
+import {
+  getCurrentActor,
+  getLocalDevSwitchEmployees,
+  isManagerRole,
+} from "@/lib/auth";
 
-const navItems = [
-  { href: "/schedule", label: "Schedule", icon: CalendarDays },
+const employeeNavItems = [
   { href: "/employee", label: "My profile", icon: UserRound },
+];
+
+const managerNavItems = [
+  { href: "/schedule", label: "Schedule", icon: CalendarDays },
+  ...employeeNavItems,
   { href: "/admin", label: "Admin", icon: Settings },
   { href: "/admin/employees", label: "Employees", icon: Users },
   { href: "/admin/pto", label: "PTO", icon: CalendarCheck2 },
 ];
 
 export async function AppShell({ children }: { children: React.ReactNode }) {
-  const actor = await getCurrentActor();
+  const [actor, devEmployees] = await Promise.all([
+    getCurrentActor(),
+    getLocalDevSwitchEmployees(),
+  ]);
+  const canManage = Boolean(actor && isManagerRole(actor.role));
+  const navItems = canManage ? managerNavItems : employeeNavItems;
+  const homeHref = canManage ? "/schedule" : "/employee";
 
   return (
     <div className="min-h-screen bg-stone-50 text-slate-950">
       <header className="border-b border-slate-200 bg-white">
         <div className="mx-auto flex max-w-7xl flex-col gap-4 px-4 py-4 sm:px-6 lg:flex-row lg:items-center lg:justify-between lg:px-8">
-          <Link href="/schedule" className="flex items-center gap-3">
+          <Link href={homeHref} className="flex items-center gap-3">
             <span className="flex size-10 items-center justify-center rounded-md bg-emerald-700 text-white">
               <ClipboardList size={20} aria-hidden="true" />
             </span>
@@ -59,6 +74,10 @@ export async function AppShell({ children }: { children: React.ReactNode }) {
             </div>
             <div className="text-xs text-slate-500">{actor?.role ?? "Guest"}</div>
           </div>
+          <DevUserSwitcher
+            employees={devEmployees}
+            currentEmployeeId={actor?.isDevFallback ? null : actor?.id}
+          />
         </div>
       </header>
       <main className="mx-auto w-full max-w-7xl px-4 py-6 sm:px-6 lg:px-8">

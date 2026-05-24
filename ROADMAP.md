@@ -13,6 +13,10 @@
   visible shortage indicators.
 - PTO/unavailability request submission, manager approval/rejection, and
   regeneration of existing affected schedule days.
+- Employee-facing portal for upcoming assignments, PTO status, PTO balance,
+  skills, and recurring availability.
+- Role-aware navigation, admin route protection, and a development-only seeded
+  employee switcher for local testing.
 - Seeded demo employees, skills, task types, and Monday-Friday recurring
   availability for a complete generated schedule.
 - Pure scheduler modules for constraints, scoring, fairness, assignment, and
