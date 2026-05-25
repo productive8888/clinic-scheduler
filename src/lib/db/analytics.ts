@@ -111,6 +111,7 @@ export async function getStaffingAnalyticsPageData(
         id: slot.id,
         taskTypeId: slot.taskTypeId,
         status: slot.status,
+        requirementLevel: slot.requirementLevel,
         requiredStaff: slot.requiredStaff,
         shortNotice: slot.shortNotice,
         taskType: toAnalyticsTaskType(slot.taskType),

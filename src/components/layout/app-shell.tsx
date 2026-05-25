@@ -4,6 +4,7 @@ import {
   CalendarDays,
   CalendarCheck2,
   ClipboardList,
+  Layers3,
   LogOut,
   Settings,
   SlidersHorizontal,
@@ -30,6 +31,7 @@ const managerNavItems = [
   { href: "/admin/employees", label: "Employees", icon: Users },
   { href: "/admin/pto", label: "PTO", icon: CalendarCheck2 },
   { href: "/admin/analytics", label: "Analytics", icon: BarChart3 },
+  { href: "/admin/staffing", label: "Staffing", icon: Layers3 },
   { href: "/admin/rules", label: "Rules", icon: SlidersHorizontal },
   { href: "/admin/audit", label: "Audit", icon: Activity },
 ];

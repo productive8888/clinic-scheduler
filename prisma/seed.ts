@@ -110,8 +110,8 @@ const taskTypes = [
     requiredSkillCodes: ["ALLERGY_SHOT"],
   },
   {
-    code: "PROCEDURES",
-    name: "Procedures",
+    code: "PROCEDURE",
+    name: "Procedure",
     interchangeableGroup: null,
     difficultyWeight: 3,
     sortOrder: 90,
@@ -119,6 +119,61 @@ const taskTypes = [
     defaultForRoutine: true,
     defaultForReduced: false,
     requiredSkillCodes: ["PROCEDURE"],
+  },
+  {
+    code: "ENDOSCOPY",
+    name: "Endoscopy",
+    interchangeableGroup: null,
+    difficultyWeight: 3,
+    sortOrder: 95,
+    optional: false,
+    defaultForRoutine: false,
+    defaultForReduced: false,
+    requiredSkillCodes: ["PROCEDURE"],
+  },
+  {
+    code: "CLINICAL_A",
+    name: "Clinical A",
+    interchangeableGroup: null,
+    difficultyWeight: 1,
+    sortOrder: 96,
+    optional: false,
+    defaultForRoutine: false,
+    defaultForReduced: false,
+    requiredSkillCodes: [],
+  },
+  {
+    code: "CLINICAL_B",
+    name: "Clinical B",
+    interchangeableGroup: null,
+    difficultyWeight: 1,
+    sortOrder: 97,
+    optional: false,
+    defaultForRoutine: false,
+    defaultForReduced: false,
+    requiredSkillCodes: [],
+  },
+  {
+    code: "IT",
+    name: "IT",
+    interchangeableGroup: null,
+    difficultyWeight: 0,
+    sortOrder: 98,
+    optional: false,
+    defaultForRoutine: false,
+    defaultForReduced: false,
+    requiredSkillCodes: [],
+  },
+  {
+    code: "PHYSICIAN_ASSISTANT_MD",
+    name: "Physician Assistant / MD",
+    interchangeableGroup: null,
+    difficultyWeight: 2,
+    sortOrder: 99,
+    optional: false,
+    defaultForRoutine: false,
+    defaultForReduced: false,
+    requiredSkillCodes: [],
   },
   {
     code: "RESEARCH",
@@ -275,6 +330,8 @@ const demoEmployees = [
 
 async function main() {
   const skillByCode = new Map<string, string>();
+  const taskTypeByCode = new Map<string, string>();
+  let demoAdminId: string | null = null;
 
   for (const skill of skills) {
     const record = await prisma.skill.upsert({
@@ -340,7 +397,18 @@ async function main() {
         },
       });
     }
+
+    taskTypeByCode.set(record.code, record.id);
   }
+
+  await prisma.taskType.updateMany({
+    where: { code: "PROCEDURES" },
+    data: {
+      active: false,
+      defaultForRoutine: false,
+      defaultForReduced: false,
+    },
+  });
 
   for (const employee of demoEmployees) {
     const record = await prisma.employee.upsert({
@@ -394,6 +462,54 @@ async function main() {
         endMinute: window.endMinute,
         effectiveStartDate: new Date("2026-01-01T00:00:00.000Z"),
       })),
+    });
+
+    if (employee.role === "ADMIN" && demoAdminId === null) {
+      demoAdminId = record.id;
+    }
+  }
+
+  await prisma.staffingRequirementRule.deleteMany({
+    where: {
+      notes: {
+        startsWith: "Seed:",
+      },
+    },
+  });
+
+  const allergyShotsId = taskTypeByCode.get("ALLERGY_SHOTS");
+  const procedureId = taskTypeByCode.get("PROCEDURE");
+
+  if (allergyShotsId) {
+    await prisma.staffingRequirementRule.create({
+      data: {
+        taskTypeId: allergyShotsId,
+        weekday: 6,
+        scenario: "ROUTINE",
+        minRequiredSlots: 1,
+        desiredSlots: 2,
+        maxSlots: 2,
+        requirementLevel: "DESIRED",
+        active: true,
+        createdByEmployeeId: demoAdminId,
+        notes: "Seed: Saturday routine allergy shots can carry a second desired slot.",
+      },
+    });
+  }
+
+  if (procedureId) {
+    await prisma.staffingRequirementRule.create({
+      data: {
+        taskTypeId: procedureId,
+        scenario: "DOCTOR_OFF_REDUCED_STAFFING",
+        minRequiredSlots: 0,
+        desiredSlots: 0,
+        maxSlots: 1,
+        requirementLevel: "CONDITIONAL",
+        active: true,
+        createdByEmployeeId: demoAdminId,
+        notes: "Seed: reduced staffing removes routine procedure slots unless added manually.",
+      },
     });
   }
 }

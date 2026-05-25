@@ -28,6 +28,7 @@ export type SchedulerTaskSlot = {
   date: IsoDate;
   taskTypeId: string;
   slotIndex: number;
+  requirementLevel?: "REQUIRED" | "DESIRED" | "OPTIONAL" | "CONDITIONAL";
   startMinute?: number | null;
   endMinute?: number | null;
   minStaff?: number;

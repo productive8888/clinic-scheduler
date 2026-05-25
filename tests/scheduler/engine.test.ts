@@ -23,6 +23,7 @@ import {
   isShortNoticeForDateRange,
   isShortNoticeScheduleChange,
 } from "../../src/lib/schedule/short-notice";
+import { selectStaffingSlotSpecs } from "../../src/lib/staffing/requirements";
 import { enumerateIsoDates } from "../../src/lib/utils/date";
 
 const monday = "2026-06-01";
@@ -293,6 +294,40 @@ describe("generateSchedule", () => {
     );
   });
 
+  it("restores availability when a PTO window is reversed", () => {
+    const blocked = generateSchedule({
+      seed: "pto-before-reversal",
+      employees: [
+        {
+          id: "available-after-reversal",
+          fullName: "Available After Reversal",
+          skillIds: [],
+          availability: allDayMonday,
+          unavailable: [{ startDate: monday, endDate: monday }],
+        },
+      ],
+      taskTypes,
+      slots: [slots[1]],
+    });
+    const restored = generateSchedule({
+      seed: "pto-after-reversal",
+      employees: [
+        {
+          id: "available-after-reversal",
+          fullName: "Available After Reversal",
+          skillIds: [],
+          availability: allDayMonday,
+          unavailable: [],
+        },
+      ],
+      taskTypes,
+      slots: [slots[1]],
+    });
+
+    assert.equal(blocked.assignments.length, 0);
+    assert.equal(restored.assignments[0].employeeId, "available-after-reversal");
+  });
+
   it("preserves locked manual overrides during generation", () => {
     const result = generateSchedule({
       seed: "override-preservation",
@@ -475,6 +510,85 @@ describe("generateSchedule", () => {
       ["alice", "blake"],
     );
   });
+
+  it("fills required slots before desired or conditional slots", () => {
+    const result = generateSchedule({
+      seed: "requirement-order",
+      employees: [
+        {
+          id: "single-employee",
+          fullName: "Single Employee",
+          skillIds: [],
+          availability: allDayMonday,
+        },
+      ],
+      taskTypes,
+      slots: [
+        {
+          id: "desired-front",
+          date: monday,
+          taskTypeId: "front-desk",
+          slotIndex: 2,
+          requirementLevel: "DESIRED",
+        },
+        {
+          id: "required-front",
+          date: monday,
+          taskTypeId: "front-desk",
+          slotIndex: 1,
+          requirementLevel: "REQUIRED",
+        },
+      ],
+    });
+
+    assert.deepEqual(
+      result.assignments.map((assignment) => assignment.slotId),
+      ["required-front"],
+    );
+    assert.equal(result.conflicts[0].slotId, "desired-front");
+  });
+
+  it("does not generate multiple same-day assignments for one employee", () => {
+    const result = generateSchedule({
+      seed: "same-day-single-assignment",
+      employees: [
+        {
+          id: "solo",
+          fullName: "Solo Staff",
+          skillIds: [],
+          availability: allDayMonday,
+        },
+      ],
+      taskTypes,
+      slots: [
+        {
+          id: "front-morning",
+          date: monday,
+          taskTypeId: "front-desk",
+          slotIndex: 1,
+          startMinute: 480,
+          endMinute: 600,
+        },
+        {
+          id: "front-afternoon",
+          date: monday,
+          taskTypeId: "front-desk",
+          slotIndex: 2,
+          startMinute: 780,
+          endMinute: 900,
+        },
+      ],
+    });
+
+    assert.equal(result.assignments.length, 1);
+    assert.equal(result.conflicts.length, 1);
+    assert.equal(
+      result.conflicts[0].rejectedCandidates[0].reasons.includes(
+        "Would double-book employee",
+      ),
+      true,
+    );
+  });
 });
 
 describe("resolveDirectReplacement", () => {
@@ -643,6 +757,225 @@ describe("clinic scenarios", () => {
     manuallyAddedTaskIds.push("research");
 
     assert.equal(manuallyAddedTaskIds.includes("research"), true);
+  });
+});
+
+describe("staffing requirement rules", () => {
+  const staffingTaskTypes = [
+    {
+      id: "allergy-shots",
+      name: "Allergy Shots",
+      optional: false,
+      defaultForRoutine: true,
+      defaultForReduced: true,
+      sortOrder: 10,
+    },
+    {
+      id: "procedures",
+      name: "Procedure",
+      optional: false,
+      defaultForRoutine: true,
+      defaultForReduced: false,
+      sortOrder: 20,
+    },
+    {
+      id: "research",
+      name: "Research",
+      optional: true,
+      defaultForRoutine: false,
+      defaultForReduced: false,
+      sortOrder: 30,
+    },
+  ];
+
+  it("creates multiple slots for one task type from staffing rules", () => {
+    const specs = selectStaffingSlotSpecs({
+      date: saturday,
+      scenario: "ROUTINE",
+      taskTypes: staffingTaskTypes,
+      rules: [
+        {
+          id: "sat-allergy",
+          taskTypeId: "allergy-shots",
+          weekday: 6,
+          scenario: "ROUTINE",
+          minRequiredSlots: 2,
+          desiredSlots: 2,
+          maxSlots: 2,
+          requirementLevel: "DESIRED",
+          active: true,
+        },
+      ],
+    });
+
+    assert.deepEqual(
+      specs
+        .filter((spec) => spec.taskTypeId === "allergy-shots")
+        .map((spec) => [spec.slotIndex, spec.requirementLevel]),
+      [
+        [1, "REQUIRED"],
+        [2, "REQUIRED"],
+      ],
+    );
+  });
+
+  it("varies staffing rules by day of week", () => {
+    const rules = [
+      {
+        id: "sat-allergy",
+        taskTypeId: "allergy-shots",
+        weekday: 6,
+        scenario: "ROUTINE" as const,
+        minRequiredSlots: 2,
+        desiredSlots: 2,
+        maxSlots: 2,
+        requirementLevel: "DESIRED" as const,
+        active: true,
+      },
+    ];
+
+    assert.equal(
+      selectStaffingSlotSpecs({
+        date: monday,
+        scenario: "ROUTINE",
+        taskTypes: staffingTaskTypes,
+        rules,
+      }).filter((spec) => spec.taskTypeId === "allergy-shots").length,
+      1,
+    );
+    assert.equal(
+      selectStaffingSlotSpecs({
+        date: saturday,
+        scenario: "ROUTINE",
+        taskTypes: staffingTaskTypes,
+        rules,
+      }).filter((spec) => spec.taskTypeId === "allergy-shots").length,
+      2,
+    );
+  });
+
+  it("varies staffing rules by scenario", () => {
+    const rules = [
+      {
+        id: "reduced-procedure-removal",
+        taskTypeId: "procedures",
+        weekday: null,
+        scenario: "DOCTOR_OFF_REDUCED_STAFFING" as const,
+        minRequiredSlots: 0,
+        desiredSlots: 0,
+        maxSlots: 1,
+        requirementLevel: "CONDITIONAL" as const,
+        active: true,
+      },
+    ];
+
+    assert.equal(
+      selectStaffingSlotSpecs({
+        date: monday,
+        scenario: "ROUTINE",
+        taskTypes: staffingTaskTypes,
+        rules,
+      }).some((spec) => spec.taskTypeId === "procedures"),
+      true,
+    );
+    assert.equal(
+      selectStaffingSlotSpecs({
+        date: monday,
+        scenario: "DOCTOR_OFF_REDUCED_STAFFING",
+        taskTypes: staffingTaskTypes,
+        rules,
+      }).some((spec) => spec.taskTypeId === "procedures"),
+      false,
+    );
+  });
+
+  it("lets future schedule preparation change when a rule changes", () => {
+    const baseRule = {
+      id: "allergy-volume",
+      taskTypeId: "allergy-shots",
+      weekday: 6,
+      scenario: "ROUTINE" as const,
+      minRequiredSlots: 1,
+      desiredSlots: 2,
+      maxSlots: 3,
+      requirementLevel: "DESIRED" as const,
+      active: true,
+    };
+    const before = selectStaffingSlotSpecs({
+      date: saturday,
+      scenario: "ROUTINE",
+      taskTypes: staffingTaskTypes,
+      rules: [baseRule],
+    });
+    const after = selectStaffingSlotSpecs({
+      date: saturday,
+      scenario: "ROUTINE",
+      taskTypes: staffingTaskTypes,
+      rules: [{ ...baseRule, desiredSlots: 3 }],
+    });
+
+    assert.equal(
+      before.filter((spec) => spec.taskTypeId === "allergy-shots").length,
+      2,
+    );
+    assert.equal(
+      after.filter((spec) => spec.taskTypeId === "allergy-shots").length,
+      3,
+    );
+  });
+
+  it("only includes optional tasks when manually added or rule-configured", () => {
+    const defaults = selectStaffingSlotSpecs({
+      date: monday,
+      scenario: "ROUTINE",
+      taskTypes: staffingTaskTypes,
+      rules: [],
+    });
+    const withRule = selectStaffingSlotSpecs({
+      date: monday,
+      scenario: "ROUTINE",
+      taskTypes: staffingTaskTypes,
+      rules: [
+        {
+          id: "research-rule",
+          taskTypeId: "research",
+          weekday: null,
+          scenario: "ROUTINE",
+          minRequiredSlots: 0,
+          desiredSlots: 1,
+          maxSlots: 1,
+          requirementLevel: "OPTIONAL",
+          active: true,
+        },
+      ],
+    });
+
+    assert.equal(defaults.some((spec) => spec.taskTypeId === "research"), false);
+    assert.equal(withRule.some((spec) => spec.taskTypeId === "research"), true);
+  });
+
+  it("creates no default slots for clinic closed days", () => {
+    assert.deepEqual(
+      selectStaffingSlotSpecs({
+        date: monday,
+        scenario: "CLINIC_CLOSED",
+        taskTypes: staffingTaskTypes,
+        rules: [
+          {
+            id: "global-allergy",
+            taskTypeId: "allergy-shots",
+            weekday: null,
+            scenario: null,
+            minRequiredSlots: 2,
+            desiredSlots: 2,
+            maxSlots: 2,
+            requirementLevel: "REQUIRED",
+            active: true,
+          },
+        ],
+      }),
+      [],
+    );
   });
 });
 

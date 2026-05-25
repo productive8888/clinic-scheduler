@@ -1,8 +1,12 @@
 import type { Employee, PTORequest } from "@prisma/client";
-import { CalendarX, Check, X } from "lucide-react";
+import { CalendarX, Check, RotateCcw, ShieldAlert, Undo2, X } from "lucide-react";
 import {
   approvePtoRequestAction,
+  cancelPtoAsAdminAction,
+  overridePtoRequestAction,
   rejectPtoRequestAction,
+  returnPtoToPendingAction,
+  reversePtoApprovalAction,
 } from "@/app/(app)/admin/pto/actions";
 import { cancelMyPtoRequestAction } from "@/app/(app)/employee/actions";
 import { ShortNoticeBadge } from "@/components/ui/short-notice-badge";
@@ -24,6 +28,8 @@ const statusStyles = {
   APPROVED: "bg-emerald-50 text-emerald-800",
   REJECTED: "bg-rose-50 text-rose-800",
   CANCELLED: "bg-slate-100 text-slate-600",
+  REVERSED: "bg-sky-50 text-sky-800",
+  OVERRIDDEN: "bg-violet-50 text-violet-800",
 };
 
 export function PTORequestList({ requests, mode }: PTORequestListProps) {
@@ -95,37 +101,8 @@ export function PTORequestList({ requests, mode }: PTORequestListProps) {
               ) : null}
             </div>
 
-            {mode === "manager" && request.status === "PENDING" ? (
-              <div className="grid gap-2 sm:grid-cols-2 lg:min-w-96">
-                <form
-                  action={approvePtoRequestAction.bind(null, request.id)}
-                  className="grid gap-2"
-                >
-                  <input
-                    name="managerNote"
-                    placeholder="Approval note"
-                    className="h-10 rounded-md border border-slate-300 bg-white px-3 text-sm outline-none focus:border-emerald-700"
-                  />
-                  <button className="inline-flex h-10 items-center justify-center gap-2 rounded-md bg-emerald-700 px-3 text-sm font-semibold text-white hover:bg-emerald-800">
-                    <Check size={16} aria-hidden="true" />
-                    Approve
-                  </button>
-                </form>
-                <form
-                  action={rejectPtoRequestAction.bind(null, request.id)}
-                  className="grid gap-2"
-                >
-                  <input
-                    name="managerNote"
-                    placeholder="Rejection note"
-                    className="h-10 rounded-md border border-slate-300 bg-white px-3 text-sm outline-none focus:border-rose-700"
-                  />
-                  <button className="inline-flex h-10 items-center justify-center gap-2 rounded-md border border-rose-200 px-3 text-sm font-semibold text-rose-700 hover:bg-rose-50">
-                    <X size={16} aria-hidden="true" />
-                    Reject
-                  </button>
-                </form>
-              </div>
+            {mode === "manager" ? (
+              <ManagerPtoActions request={request} />
             ) : null}
 
             {mode === "employee" && request.status === "PENDING" ? (
@@ -140,6 +117,119 @@ export function PTORequestList({ requests, mode }: PTORequestListProps) {
         </article>
       ))}
     </div>
+  );
+}
+
+function ManagerPtoActions({ request }: { request: PTORequestRecord }) {
+  if (request.status === "PENDING") {
+    return (
+      <div className="grid gap-2 sm:grid-cols-2 lg:min-w-96 xl:grid-cols-4">
+        <PtoActionForm
+          action={approvePtoRequestAction.bind(null, request.id)}
+          notePlaceholder="Approval note"
+          buttonLabel="Approve"
+          tone="approve"
+          icon={<Check size={16} aria-hidden="true" />}
+        />
+        <PtoActionForm
+          action={rejectPtoRequestAction.bind(null, request.id)}
+          notePlaceholder="Rejection note"
+          buttonLabel="Reject"
+          tone="reject"
+          icon={<X size={16} aria-hidden="true" />}
+        />
+        <PtoActionForm
+          action={overridePtoRequestAction.bind(null, request.id)}
+          notePlaceholder="Override note"
+          buttonLabel="Override"
+          tone="neutral"
+          icon={<ShieldAlert size={16} aria-hidden="true" />}
+        />
+        <PtoActionForm
+          action={cancelPtoAsAdminAction.bind(null, request.id)}
+          notePlaceholder="Cancel note"
+          buttonLabel="Cancel"
+          tone="neutral"
+          icon={<X size={16} aria-hidden="true" />}
+        />
+      </div>
+    );
+  }
+
+  if (request.status === "APPROVED" || request.status === "OVERRIDDEN") {
+    return (
+      <div className="lg:min-w-72">
+        <PtoActionForm
+          action={reversePtoApprovalAction.bind(null, request.id)}
+          notePlaceholder="Reversal note"
+          buttonLabel="Reverse approval"
+          tone="neutral"
+          icon={<RotateCcw size={16} aria-hidden="true" />}
+        />
+      </div>
+    );
+  }
+
+  if (
+    request.status === "REJECTED" ||
+    request.status === "REVERSED" ||
+    request.status === "CANCELLED"
+  ) {
+    return (
+      <div className="grid gap-2 sm:grid-cols-2 lg:min-w-96">
+        <PtoActionForm
+          action={returnPtoToPendingAction.bind(null, request.id)}
+          notePlaceholder="Pending note"
+          buttonLabel="Return pending"
+          tone="neutral"
+          icon={<Undo2 size={16} aria-hidden="true" />}
+        />
+        <PtoActionForm
+          action={overridePtoRequestAction.bind(null, request.id)}
+          notePlaceholder="Override note"
+          buttonLabel="Override"
+          tone="neutral"
+          icon={<ShieldAlert size={16} aria-hidden="true" />}
+        />
+      </div>
+    );
+  }
+
+  return null;
+}
+
+function PtoActionForm({
+  action,
+  notePlaceholder,
+  buttonLabel,
+  tone,
+  icon,
+}: {
+  action: (formData: FormData) => void | Promise<void>;
+  notePlaceholder: string;
+  buttonLabel: string;
+  tone: "approve" | "reject" | "neutral";
+  icon: React.ReactNode;
+}) {
+  const buttonClassName =
+    tone === "approve"
+      ? "inline-flex h-10 items-center justify-center gap-2 rounded-md bg-emerald-700 px-3 text-sm font-semibold text-white hover:bg-emerald-800"
+      : tone === "reject"
+        ? "inline-flex h-10 items-center justify-center gap-2 rounded-md border border-rose-200 px-3 text-sm font-semibold text-rose-700 hover:bg-rose-50"
+        : "inline-flex h-10 items-center justify-center gap-2 rounded-md border border-slate-300 px-3 text-sm font-semibold text-slate-700 hover:bg-slate-100";
+
+  return (
+    <form action={action} className="grid gap-2">
+      <input
+        name="managerNote"
+        placeholder={notePlaceholder}
+        className="h-10 rounded-md border border-slate-300 bg-white px-3 text-sm outline-none focus:border-emerald-700"
+      />
+      <button className={buttonClassName}>
+        {icon}
+        {buttonLabel}
+      </button>
+    </form>
   );
 }
 

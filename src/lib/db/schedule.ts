@@ -18,6 +18,10 @@ import {
   type SchedulerTaskType,
 } from "@/lib/scheduler";
 import { isShortNoticeScheduleChange } from "@/lib/schedule/short-notice";
+import {
+  selectStaffingSlotSpecs,
+  type StaffingSlotSpec,
+} from "@/lib/staffing/requirements";
 import { parseIsoDate, toIsoDate } from "@/lib/utils/date";
 
 const DEFAULT_SLOT_START_MINUTE = 8 * 60;
@@ -89,67 +93,18 @@ export async function ensureScheduleDayWithDefaultSlots(
     },
   });
 
-  await reconcileSlotsForScenario(scheduleDay.id, scheduleDay.scenario);
-
-  const taskTypes = await db.taskType.findMany({
-    where: getDefaultTaskTypeWhere(scheduleDay.scenario),
-    orderBy: { sortOrder: "asc" },
+  const taskSlotCount = await reconcileSlotsForStaffingRequirements({
+    scheduleDayId: scheduleDay.id,
+    date,
+    scenario: scheduleDay.scenario,
   });
-
-  for (const taskType of taskTypes) {
-    const existingSlot = await db.taskSlot.findUnique({
-      where: {
-        scheduleDayId_taskTypeId_slotIndex: {
-          scheduleDayId: scheduleDay.id,
-          taskTypeId: taskType.id,
-          slotIndex: 1,
-        },
-      },
-    });
-
-    const slot =
-      existingSlot ??
-      (await db.taskSlot.create({
-        data: {
-          scheduleDayId: scheduleDay.id,
-          taskTypeId: taskType.id,
-          slotIndex: 1,
-          label: taskType.name,
-          startMinute: DEFAULT_SLOT_START_MINUTE,
-          endMinute: DEFAULT_SLOT_END_MINUTE,
-          status: "OPEN",
-          minStaff: 1,
-          requiredStaff: 1,
-        },
-      }));
-
-    if (slot.startMinute === null || slot.endMinute === null) {
-      await db.taskSlot.update({
-        where: { id: slot.id },
-        data: {
-          startMinute: slot.startMinute ?? DEFAULT_SLOT_START_MINUTE,
-          endMinute: slot.endMinute ?? DEFAULT_SLOT_END_MINUTE,
-        },
-      });
-    }
-
-    if (slot.status === "CANCELLED") {
-      await db.taskSlot.update({
-        where: { id: slot.id },
-        data: {
-          status: "OPEN",
-          notes: null,
-        },
-      });
-    }
-  }
 
   await writeAuditLog({
     actorEmployeeId,
     action: "schedule_day.ensure_default_slots",
     entityType: "ScheduleDay",
     entityId: scheduleDay.id,
-    after: { date, scenario: scheduleDay.scenario, taskSlotCount: taskTypes.length },
+    after: { date, scenario: scheduleDay.scenario, taskSlotCount },
   });
 
   return scheduleDay;
@@ -187,7 +142,11 @@ export async function setScheduleScenario(input: {
     },
   });
 
-  await reconcileSlotsForScenario(scheduleDay.id, input.scenario);
+  await reconcileSlotsForStaffingRequirements({
+    scheduleDayId: scheduleDay.id,
+    date: input.date,
+    scenario: input.scenario,
+  });
 
   await writeAuditLog({
     actorEmployeeId: input.actorEmployeeId,
@@ -251,6 +210,8 @@ export async function addTaskSlotToScheduleDay(input: {
       shortNotice,
       minStaff: 1,
       requiredStaff: 1,
+      requirementLevel: "OPTIONAL",
+      source: "MANUAL",
       createdAt,
     },
   });
@@ -386,7 +347,7 @@ export async function generateScheduleForDate(input: {
         availability: { where: { active: true } },
         ptoRequests: {
           where: {
-            status: "APPROVED",
+            status: { in: ["APPROVED", "OVERRIDDEN"] },
             startDate: { lte: parseIsoDate(input.date) },
             endDate: { gte: parseIsoDate(input.date) },
           },
@@ -513,6 +474,7 @@ export async function generateScheduleForDate(input: {
     endMinute: slot.endMinute,
     minStaff: slot.minStaff,
     requiredStaff: slot.requiredStaff,
+    requirementLevel: slot.requirementLevel,
     lockedEmployeeIds: slot.assignments
       .filter((assignment) => assignment.locked)
       .map((assignment) => assignment.employeeId)
@@ -639,8 +601,13 @@ export async function generateScheduleForDate(input: {
   );
 
   for (const slotId of slotIds) {
+    const schedulerSlot = schedulerSlotsById.get(slotId);
+    const requiredSlot = schedulerSlot?.requirementLevel === "REQUIRED";
+    const hasBlockingConflict =
+      lockedPtoConflictsBySlotId.has(slotId) ||
+      (requiredSlot && conflictSlotIds.has(slotId));
     const status =
-      conflictSlotIds.has(slotId) || lockedPtoConflictsBySlotId.has(slotId)
+      hasBlockingConflict
         ? TaskSlotStatus.SHORTAGE
         : assignedSlotIds.has(slotId)
           ? TaskSlotStatus.FILLED
@@ -693,7 +660,9 @@ export async function publishScheduleForDate(input: {
   }
 
   const shortageCount = scheduleDay.taskSlots.filter(
-    (slot) => slot.status === "SHORTAGE" || slot.assignments.length < slot.requiredStaff,
+    (slot) =>
+      slot.requirementLevel === "REQUIRED" &&
+      (slot.status === "SHORTAGE" || slot.assignments.length < slot.requiredStaff),
   ).length;
 
   if (shortageCount > 0) {
@@ -782,45 +751,57 @@ function jsonRecord(value: Prisma.JsonValue) {
   return value as Record<string, unknown>;
 }
 
-function getDefaultTaskTypeWhere(scenario: ClinicScenario): Prisma.TaskTypeWhereInput {
-  if (scenario === "CLINIC_CLOSED" || scenario === "CUSTOM") {
-    return { id: "__no_default_task_types__" };
-  }
-
-  if (scenario === "DOCTOR_OFF_REDUCED_STAFFING") {
-    return {
-      active: true,
-      optional: false,
-      defaultForReduced: true,
-    };
-  }
-
-  return {
-    active: true,
-    optional: false,
-    defaultForRoutine: true,
-  };
-}
-
-async function reconcileSlotsForScenario(
-  scheduleDayId: string,
-  scenario: ClinicScenario,
-) {
-  if (scenario === "ROUTINE" || scenario === "CUSTOM") {
-    return;
-  }
-
+async function reconcileSlotsForStaffingRequirements(input: {
+  scheduleDayId: string;
+  date: string;
+  scenario: ClinicScenario;
+}) {
   const db = getDb();
-  const desiredTaskTypes = await db.taskType.findMany({
-    where: getDefaultTaskTypeWhere(scenario),
-    select: { id: true },
+  const [taskTypes, rules] = await Promise.all([
+    db.taskType.findMany({
+      where: { active: true },
+      orderBy: [{ sortOrder: "asc" }, { id: "asc" }],
+      select: {
+        id: true,
+        name: true,
+        optional: true,
+        active: true,
+        defaultForRoutine: true,
+        defaultForReduced: true,
+        sortOrder: true,
+      },
+    }),
+    db.staffingRequirementRule.findMany({
+      where: { active: true },
+      orderBy: [{ updatedAt: "desc" }, { createdAt: "desc" }, { id: "asc" }],
+    }),
+  ]);
+  const taskTypesById = new Map(taskTypes.map((taskType) => [taskType.id, taskType]));
+  const specs = selectStaffingSlotSpecs({
+    date: input.date,
+    scenario: input.scenario,
+    taskTypes,
+    rules,
   });
-  const desiredTaskTypeIds = new Set(
-    desiredTaskTypes.map((taskType) => taskType.id),
-  );
+  const desiredKeys = new Set(specs.map(slotSpecKey));
+
+  for (const spec of specs) {
+    const taskType = taskTypesById.get(spec.taskTypeId);
+
+    if (!taskType) {
+      continue;
+    }
+
+    await upsertPreparedTaskSlot({
+      scheduleDayId: input.scheduleDayId,
+      taskTypeName: taskType.name,
+      spec,
+    });
+  }
+
   const slots = await db.taskSlot.findMany({
     where: {
-      scheduleDayId,
+      scheduleDayId: input.scheduleDayId,
       status: { not: "CANCELLED" },
     },
     include: {
@@ -832,9 +813,10 @@ async function reconcileSlotsForScenario(
   });
 
   for (const slot of slots) {
-    const shouldCancel =
-      scenario === "CLINIC_CLOSED" ||
-      (!slot.taskType.optional && !desiredTaskTypeIds.has(slot.taskTypeId));
+    const key = slotSpecKey(slot);
+    const shouldPreserveAsManual =
+      slot.source === "MANUAL" || (slot.taskType.optional && slot.source === "DEFAULT");
+    const shouldCancel = !desiredKeys.has(key) && !shouldPreserveAsManual;
 
     if (!shouldCancel) {
       continue;
@@ -850,9 +832,9 @@ async function reconcileSlotsForScenario(
         data: {
           status: "SHORTAGE",
           notes:
-            scenario === "CLINIC_CLOSED"
+            input.scenario === "CLINIC_CLOSED"
               ? "Clinic is closed, but a locked manual assignment was preserved."
-              : "Reduced staffing removed this default slot, but a locked manual assignment was preserved.",
+              : "Staffing requirements no longer include this slot, but a locked manual assignment was preserved.",
         },
       });
       continue;
@@ -874,12 +856,72 @@ async function reconcileSlotsForScenario(
       data: {
         status: "CANCELLED",
         notes:
-          scenario === "CLINIC_CLOSED"
+          input.scenario === "CLINIC_CLOSED"
             ? "Cancelled because the clinic is closed."
-            : "Cancelled by reduced staffing scenario.",
+            : "Cancelled because current staffing requirements do not include this slot.",
       },
     });
   }
+
+  return specs.length;
+}
+
+async function upsertPreparedTaskSlot(input: {
+  scheduleDayId: string;
+  taskTypeName: string;
+  spec: StaffingSlotSpec;
+}) {
+  const db = getDb();
+  const label = `${input.taskTypeName} #${input.spec.slotIndex}`;
+  const existingSlot = await db.taskSlot.findUnique({
+    where: {
+      scheduleDayId_taskTypeId_slotIndex: {
+        scheduleDayId: input.scheduleDayId,
+        taskTypeId: input.spec.taskTypeId,
+        slotIndex: input.spec.slotIndex,
+      },
+    },
+  });
+
+  if (!existingSlot) {
+    await db.taskSlot.create({
+      data: {
+        scheduleDayId: input.scheduleDayId,
+        taskTypeId: input.spec.taskTypeId,
+        slotIndex: input.spec.slotIndex,
+        label,
+        startMinute: DEFAULT_SLOT_START_MINUTE,
+        endMinute: DEFAULT_SLOT_END_MINUTE,
+        status: "OPEN",
+        minStaff: 1,
+        requiredStaff: 1,
+        requirementLevel: input.spec.requirementLevel,
+        source: input.spec.source,
+        staffingRequirementRuleId: input.spec.staffingRequirementRuleId,
+      },
+    });
+    return;
+  }
+
+  await db.taskSlot.update({
+    where: { id: existingSlot.id },
+    data: {
+      label: existingSlot.label ?? label,
+      startMinute: existingSlot.startMinute ?? DEFAULT_SLOT_START_MINUTE,
+      endMinute: existingSlot.endMinute ?? DEFAULT_SLOT_END_MINUTE,
+      status: existingSlot.status === "CANCELLED" ? "OPEN" : existingSlot.status,
+      notes: existingSlot.status === "CANCELLED" ? null : existingSlot.notes,
+      minStaff: 1,
+      requiredStaff: 1,
+      requirementLevel: input.spec.requirementLevel,
+      source: input.spec.source,
+      staffingRequirementRuleId: input.spec.staffingRequirementRuleId,
+    },
+  });
+}
+
+function slotSpecKey(value: Pick<StaffingSlotSpec, "taskTypeId" | "slotIndex">) {
+  return `${value.taskTypeId}:${value.slotIndex}`;
 }
 
 function sortNumberRecord(record: Record<string, number>) {

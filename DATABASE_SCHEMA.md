@@ -1,7 +1,7 @@
 # Database Schema
 
 The canonical schema lives in `prisma/schema.prisma` and is backed by the
-initial migration in `prisma/migrations/202605240001_initial/migration.sql`.
+versioned migrations in `prisma/migrations`.
 
 ## Core Tables
 
@@ -22,11 +22,17 @@ initial migration in `prisma/migrations/202605240001_initial/migration.sql`.
 - `PTORequest`: PTO, absence, unavailability, and schedule-change requests.
   Personal/vacation requests require approval and can deduct PTO balance.
   Sick/emergency requests auto-approve. Approved requests are consumed by the
-  scheduler as employee unavailability. Requests submitted within 7 days of an
-  affected date are marked short notice.
+  scheduler as employee unavailability. Reversed/cancelled/rejected requests do
+  not block scheduling; overridden requests do. Requests submitted within 7 days
+  of an affected date are marked short notice.
 - `ScheduleDay`: one operational staffing day, including draft/generated/
   published status, clinic scenario, and publish metadata.
-- `TaskSlot`: concrete task opening on a schedule day.
+- `TaskSlot`: concrete task opening on a schedule day, including `slotIndex`,
+  requirement level (`REQUIRED`, `DESIRED`, `OPTIONAL`, or `CONDITIONAL`), and
+  source (`DEFAULT`, `STAFFING_RULE`, or `MANUAL`).
+- `StaffingRequirementRule`: admin-configured multi-slot requirements by task
+  type, weekday, scenario, effective date range, min/desired/max slots,
+  requirement level, active state, and notes.
 - `Assignment`: employee assigned to a task slot, including generated/manual
   source, lock state, short-notice override flag, and removal history.
 - `SchedulingRule`: database-driven preference, priority, avoidance, penalty,
@@ -46,13 +52,17 @@ The system intentionally separates:
 - Task Slot: dated opening, such as `Front Desk #1 on 2026-06-05`.
 - Assignment: employee selected for that slot.
 
+Multi-person staffing is modeled by multiple `TaskSlot` records for the same
+`TaskType`, never by creating duplicate task types such as `Allergy Shots 1`.
+
 ## Clinic Scenarios
 
 Schedule days support `Routine`, `Clinic Closed`, `Doctor Off / Reduced
-Staffing`, and `Custom Scenario`. Clinic-closed and custom days create no
-default task slots. Reduced-staffing days use the task type defaults marked for
-reduced staffing. Optional task types such as Research, Background, Booking,
-Float, and Extra are manual-only and do not appear by default.
+Staffing`, and `Custom Scenario`. Clinic-closed days create no default task
+slots. Routine and reduced-staffing days start from safe defaults unless active
+staffing requirement rules override them. Optional task types such as Research,
+Background, Booking, Float, and Extra appear only when manually added or
+configured by a staffing requirement rule.
 
 ## Analytics
 

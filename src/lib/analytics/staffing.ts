@@ -30,6 +30,7 @@ export type AnalyticsTaskSlot = {
   id: string;
   taskTypeId: string;
   status: string;
+  requirementLevel?: string;
   requiredStaff: number;
   shortNotice: boolean;
   taskType: AnalyticsTaskType;
@@ -165,11 +166,11 @@ export function buildStaffingAnalytics(input: BuildStaffingAnalyticsInput) {
       );
       filledAssignments += activeAssignments.length;
 
-      if (activeAssignments.length < slot.requiredStaff) {
+      if (isRequiredSlot(slot) && activeAssignments.length < slot.requiredStaff) {
         unfilledSlots += 1;
       }
 
-      if (slot.status === "SHORTAGE") {
+      if (isRequiredSlot(slot) && slot.status === "SHORTAGE") {
         shortageConflictCount += 1;
       }
 
@@ -186,7 +187,10 @@ export function buildStaffingAnalytics(input: BuildStaffingAnalyticsInput) {
       if (taskStat) {
         taskStat.frequency += 1;
 
-        if (slot.status === "SHORTAGE" || activeAssignments.length < slot.requiredStaff) {
+        if (
+          isRequiredSlot(slot) &&
+          (slot.status === "SHORTAGE" || activeAssignments.length < slot.requiredStaff)
+        ) {
           taskStat.understaffedCount += 1;
         }
 
@@ -248,7 +252,7 @@ export function buildStaffingAnalytics(input: BuildStaffingAnalyticsInput) {
       date: day.date,
       scenario: day.scenario,
       status: day.status,
-      requiredTaskSlots: slots.length,
+      requiredTaskSlots: slots.filter(isRequiredSlot).length,
       filledAssignments,
       unfilledSlots,
       ptoCount: ptoRequests.filter((request) => isDateWithinRange(day.date, request))
@@ -326,6 +330,10 @@ export function buildStaffingAnalytics(input: BuildStaffingAnalyticsInput) {
     taskTypeStats,
     roleLeaders,
   };
+}
+
+function isRequiredSlot(slot: Pick<AnalyticsTaskSlot, "requirementLevel">) {
+  return !slot.requirementLevel || slot.requirementLevel === "REQUIRED";
 }
 
 function filterSlots(slots: AnalyticsTaskSlot[], filters: StaffingAnalyticsFilters) {

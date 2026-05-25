@@ -109,20 +109,12 @@ export function wouldDoubleBook(
   slot: SchedulerTaskSlot,
   assignments: ExistingAssignment[],
 ) {
-  const start = slotStart(slot);
-  const end = slotEnd(slot);
-
   return assignments.some((assignment) => {
     if (assignment.employeeId !== employeeId || assignment.date !== slot.date) {
       return false;
     }
 
-    return overlaps(
-      start,
-      end,
-      assignment.startMinute ?? FULL_DAY_START,
-      assignment.endMinute ?? FULL_DAY_END,
-    );
+    return true;
   });
 }
 

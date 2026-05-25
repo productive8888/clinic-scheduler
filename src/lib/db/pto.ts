@@ -228,6 +228,193 @@ export async function reviewPtoRequest(input: {
   return { reviewed, regeneratedDates };
 }
 
+export async function overridePtoRequest(input: {
+  requestId: string;
+  managerNote?: string | null;
+  actorEmployeeId?: string | null;
+}) {
+  const db = getDb();
+  const before = await db.pTORequest.findUniqueOrThrow({
+    where: { id: input.requestId },
+  });
+
+  if (before.status === "APPROVED" || before.status === "OVERRIDDEN") {
+    throw new Error("Approved PTO is already schedule-blocking.");
+  }
+
+  const overridden = await db.pTORequest.update({
+    where: { id: input.requestId },
+    data: {
+      status: "OVERRIDDEN",
+      managerNote: combineManagerNote(before.managerNote, input.managerNote),
+      reviewedByEmployeeId: input.actorEmployeeId ?? null,
+      reviewedAt: new Date(),
+    },
+  });
+
+  const regeneratedDates = await regenerateExistingScheduleDaysForRequest({
+    requestId: overridden.id,
+    startDate: toIsoDate(overridden.startDate),
+    endDate: toIsoDate(overridden.endDate),
+    actorEmployeeId: input.actorEmployeeId,
+  });
+
+  await writeAuditLog({
+    actorEmployeeId: input.actorEmployeeId,
+    action: "pto_request.override",
+    entityType: "PTORequest",
+    entityId: overridden.id,
+    before,
+    after: overridden,
+    metadata: { regeneratedDates },
+  });
+
+  return { reviewed: overridden, regeneratedDates };
+}
+
+export async function reversePtoApproval(input: {
+  requestId: string;
+  managerNote?: string | null;
+  actorEmployeeId?: string | null;
+}) {
+  const db = getDb();
+  const before = await db.pTORequest.findUniqueOrThrow({
+    where: { id: input.requestId },
+    include: { employee: true },
+  });
+
+  if (before.status !== "APPROVED" && before.status !== "OVERRIDDEN") {
+    throw new Error("Only approved or overridden PTO can be reversed.");
+  }
+
+  const requestHours = calculatePtoHours({
+    startDate: toIsoDate(before.startDate),
+    endDate: toIsoDate(before.endDate),
+    startMinute: before.startMinute,
+    endMinute: before.endMinute,
+  });
+
+  const reversed = await db.$transaction(async (tx) => {
+    const updated = await tx.pTORequest.update({
+      where: { id: input.requestId },
+      data: {
+        status: "REVERSED",
+        managerNote: combineManagerNote(before.managerNote, input.managerNote),
+        reviewedByEmployeeId: input.actorEmployeeId ?? null,
+        reviewedAt: new Date(),
+      },
+    });
+
+    if (before.status === "APPROVED" && deductsPtoBalance(before.type)) {
+      await tx.employee.update({
+        where: { id: before.employeeId },
+        data: {
+          ptoBalanceHours: {
+            increment: requestHours,
+          },
+        },
+      });
+    }
+
+    return updated;
+  });
+
+  const regeneratedDates = await regenerateExistingScheduleDaysForRequest({
+    requestId: reversed.id,
+    startDate: toIsoDate(reversed.startDate),
+    endDate: toIsoDate(reversed.endDate),
+    actorEmployeeId: input.actorEmployeeId,
+  });
+
+  await writeAuditLog({
+    actorEmployeeId: input.actorEmployeeId,
+    action: "pto_request.reverse_approval",
+    entityType: "PTORequest",
+    entityId: reversed.id,
+    before,
+    after: reversed,
+    metadata: { regeneratedDates, restoredHours: requestHours },
+  });
+
+  return { reviewed: reversed, regeneratedDates };
+}
+
+export async function returnPtoRequestToPending(input: {
+  requestId: string;
+  managerNote?: string | null;
+  actorEmployeeId?: string | null;
+}) {
+  const db = getDb();
+  const before = await db.pTORequest.findUniqueOrThrow({
+    where: { id: input.requestId },
+  });
+
+  if (
+    before.status !== "REJECTED" &&
+    before.status !== "REVERSED" &&
+    before.status !== "CANCELLED"
+  ) {
+    throw new Error("Only rejected, reversed, or cancelled PTO can return to pending.");
+  }
+
+  const pending = await db.pTORequest.update({
+    where: { id: input.requestId },
+    data: {
+      status: "PENDING",
+      managerNote: combineManagerNote(before.managerNote, input.managerNote),
+      reviewedByEmployeeId: null,
+      reviewedAt: null,
+    },
+  });
+
+  await writeAuditLog({
+    actorEmployeeId: input.actorEmployeeId,
+    action: "pto_request.return_to_pending",
+    entityType: "PTORequest",
+    entityId: pending.id,
+    before,
+    after: pending,
+  });
+
+  return pending;
+}
+
+export async function cancelPtoRequestAsAdmin(input: {
+  requestId: string;
+  managerNote?: string | null;
+  actorEmployeeId?: string | null;
+}) {
+  const db = getDb();
+  const before = await db.pTORequest.findUniqueOrThrow({
+    where: { id: input.requestId },
+  });
+
+  if (before.status !== "PENDING" && before.status !== "REJECTED") {
+    throw new Error("Only pending or rejected PTO can be cancelled directly.");
+  }
+
+  const cancelled = await db.pTORequest.update({
+    where: { id: input.requestId },
+    data: {
+      status: "CANCELLED",
+      managerNote: combineManagerNote(before.managerNote, input.managerNote),
+      reviewedByEmployeeId: input.actorEmployeeId ?? null,
+      reviewedAt: new Date(),
+    },
+  });
+
+  await writeAuditLog({
+    actorEmployeeId: input.actorEmployeeId,
+    action: "pto_request.admin_cancel",
+    entityType: "PTORequest",
+    entityId: cancelled.id,
+    before,
+    after: cancelled,
+  });
+
+  return cancelled;
+}
+
 export async function cancelOwnPtoRequest(input: {
   requestId: string;
   employeeId: string;
@@ -295,4 +482,15 @@ async function regenerateExistingScheduleDaysForRequest(input: {
   }
 
   return regeneratedDates;
+}
+
+function combineManagerNote(
+  existingNote: string | null,
+  newNote: string | null | undefined,
+) {
+  if (!newNote) {
+    return existingNote;
+  }
+
+  return existingNote ? `${existingNote}\n${newNote}` : newNote;
 }

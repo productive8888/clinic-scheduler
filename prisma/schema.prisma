@@ -34,6 +34,8 @@ enum RequestStatus {
   APPROVED
   REJECTED
   CANCELLED
+  REVERSED
+  OVERRIDDEN
 }
 
 enum ScheduleDayStatus {
@@ -55,6 +57,13 @@ enum TaskSlotStatus {
   FILLED
   SHORTAGE
   CANCELLED
+}
+
+enum TaskSlotRequirementLevel {
+  REQUIRED
+  DESIRED
+  OPTIONAL
+  CONDITIONAL
 }
 
 enum AssignmentSource {
@@ -122,16 +131,17 @@ model Employee {
 
   skills                  EmployeeSkill[]
   availability            WeeklyAvailability[]
-  ptoRequests             PTORequest[]            @relation("EmployeePtoRequests")
-  reviewedPtoRequests     PTORequest[]            @relation("PtoReviewer")
-  assignments             Assignment[]            @relation("AssignedEmployee")
-  assignedAssignments     Assignment[]            @relation("AssignedByEmployee")
-  schedulingRules         SchedulingRule[]        @relation("RuleEmployee")
-  createdSchedulingRules  SchedulingRule[]        @relation("RuleCreator")
-  requestedGenerationRuns ScheduleGenerationRun[] @relation("GenerationRequester")
-  publishedScheduleDays   ScheduleDay[]           @relation("SchedulePublisher")
-  auditLogs               AuditLog[]              @relation("AuditActor")
-  exportLogs              ExportLog[]             @relation("ExportRequester")
+  ptoRequests             PTORequest[]              @relation("EmployeePtoRequests")
+  reviewedPtoRequests     PTORequest[]              @relation("PtoReviewer")
+  assignments             Assignment[]              @relation("AssignedEmployee")
+  assignedAssignments     Assignment[]              @relation("AssignedByEmployee")
+  schedulingRules         SchedulingRule[]          @relation("RuleEmployee")
+  createdSchedulingRules  SchedulingRule[]          @relation("RuleCreator")
+  createdStaffingRules    StaffingRequirementRule[] @relation("StaffingRuleCreator")
+  requestedGenerationRuns ScheduleGenerationRun[]   @relation("GenerationRequester")
+  publishedScheduleDays   ScheduleDay[]             @relation("SchedulePublisher")
+  auditLogs               AuditLog[]                @relation("AuditActor")
+  exportLogs              ExportLog[]               @relation("ExportRequester")
 
   @@index([status])
   @@index([role])
@@ -225,6 +235,7 @@ model TaskType {
   skillRequirements TaskSkillRequirement[]
   taskSlots         TaskSlot[]
   schedulingRules   SchedulingRule[]
+  staffingRules     StaffingRequirementRule[]
 
   @@index([active, sortOrder])
   @@index([optional])
@@ -302,27 +313,58 @@ model ScheduleDay {
 }
 
 model TaskSlot {
-  id            String         @id @default(cuid())
-  scheduleDayId String
-  taskTypeId    String
-  slotIndex     Int            @default(1)
-  label         String?
-  startMinute   Int?
-  endMinute     Int?
-  minStaff      Int            @default(1)
-  requiredStaff Int            @default(1)
-  status        TaskSlotStatus @default(OPEN)
-  shortNotice   Boolean        @default(false)
-  notes         String?
-  createdAt     DateTime       @default(now())
-  updatedAt     DateTime       @updatedAt
+  id                        String                   @id @default(cuid())
+  scheduleDayId             String
+  taskTypeId                String
+  slotIndex                 Int                      @default(1)
+  label                     String?
+  startMinute               Int?
+  endMinute                 Int?
+  minStaff                  Int                      @default(1)
+  requiredStaff             Int                      @default(1)
+  requirementLevel          TaskSlotRequirementLevel @default(REQUIRED)
+  source                    String                   @default("DEFAULT")
+  staffingRequirementRuleId String?
+  status                    TaskSlotStatus           @default(OPEN)
+  shortNotice               Boolean                  @default(false)
+  notes                     String?
+  createdAt                 DateTime                 @default(now())
+  updatedAt                 DateTime                 @updatedAt
 
-  scheduleDay ScheduleDay  @relation(fields: [scheduleDayId], references: [id], onDelete: Cascade)
-  taskType    TaskType     @relation(fields: [taskTypeId], references: [id])
-  assignments Assignment[]
+  scheduleDay             ScheduleDay              @relation(fields: [scheduleDayId], references: [id], onDelete: Cascade)
+  taskType                TaskType                 @relation(fields: [taskTypeId], references: [id])
+  staffingRequirementRule StaffingRequirementRule? @relation(fields: [staffingRequirementRuleId], references: [id], onDelete: SetNull)
+  assignments             Assignment[]
 
   @@unique([scheduleDayId, taskTypeId, slotIndex])
   @@index([scheduleDayId, status])
+  @@index([staffingRequirementRuleId])
+}
+
+model StaffingRequirementRule {
+  id                  String                   @id @default(cuid())
+  taskTypeId          String
+  weekday             Int?
+  scenario            ClinicScenario?
+  minRequiredSlots    Int                      @default(1)
+  desiredSlots        Int                      @default(1)
+  maxSlots            Int                      @default(1)
+  requirementLevel    TaskSlotRequirementLevel @default(DESIRED)
+  active              Boolean                  @default(true)
+  effectiveStartDate  DateTime?                @db.Date
+  effectiveEndDate    DateTime?                @db.Date
+  notes               String?
+  createdByEmployeeId String?
+  createdAt           DateTime                 @default(now())
+  updatedAt           DateTime                 @updatedAt
+
+  taskType  TaskType   @relation(fields: [taskTypeId], references: [id], onDelete: Cascade)
+  createdBy Employee?  @relation("StaffingRuleCreator", fields: [createdByEmployeeId], references: [id])
+  taskSlots TaskSlot[]
+
+  @@index([active, taskTypeId])
+  @@index([weekday, scenario])
+  @@index([effectiveStartDate, effectiveEndDate])
 }
 
 model Assignment {

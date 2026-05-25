@@ -7,7 +7,6 @@ export const PTO_BALANCE_APPROVAL_FLOOR_HOURS = -24;
 const autoApprovedTypes = new Set<PTORequestType>([
   "SICK",
   "EMERGENCY",
-  "ABSENCE",
 ]);
 
 const balanceDeductingTypes = new Set<PTORequestType>([

@@ -59,15 +59,22 @@ export function ScheduleBoard({
     scheduleDay?.taskSlots.filter((slot) => slot.status !== "FILLED").length ?? 0;
   const shortageCount =
     scheduleDay?.taskSlots.filter((slot) => slot.status === "SHORTAGE").length ?? 0;
+  const requiredShortageCount =
+    scheduleDay?.taskSlots.filter(
+      (slot) =>
+        slot.requirementLevel === "REQUIRED" &&
+        (slot.status === "SHORTAGE" ||
+          slot.assignments.length < slot.requiredStaff),
+    ).length ?? 0;
   const assignedCount =
     scheduleDay?.taskSlots.reduce(
       (count, slot) => count + slot.assignments.length,
       0,
     ) ?? 0;
   const canPublish = Boolean(
-    scheduleDay &&
+      scheduleDay &&
       scheduleDay.status !== "PUBLISHED" &&
-      shortageCount === 0 &&
+      requiredShortageCount === 0 &&
       assignedCount > 0,
   );
   const canUnpublish = scheduleDay?.status === "PUBLISHED";
@@ -320,9 +327,12 @@ export function ScheduleBoard({
                         {slot.label ?? slot.taskType.name}
                       </h2>
                       {slot.shortNotice ? <ShortNoticeBadge /> : null}
+                      <span className={requirementLevelClassName(slot.requirementLevel)}>
+                        {formatEnumLabel(slot.requirementLevel)}
+                      </span>
                     </div>
                     <p className="mt-1 text-sm text-slate-500">
-                      Slot #{slot.slotIndex}
+                      Slot #{slot.slotIndex} · {formatEnumLabel(slot.source)}
                     </p>
                   </div>
                   <span
@@ -364,13 +374,20 @@ export function ScheduleBoard({
                     </div>
                   )}
                   <p className="mt-2 text-xs text-slate-500">
-                    {slot.assignments.length} of {slot.requiredStaff} required staff
+                    {slot.assignments.length} of {slot.requiredStaff}{" "}
+                    {slot.requirementLevel === "REQUIRED" ? "required" : "target"} staff
                     assigned
                   </p>
                 </div>
 
-                {slot.status === "SHORTAGE" && slot.notes ? (
-                  <div className="mt-3 rounded-md border border-amber-200 bg-amber-50 p-3 text-xs text-amber-900">
+                {slot.notes ? (
+                  <div
+                    className={
+                      slot.status === "SHORTAGE"
+                        ? "mt-3 rounded-md border border-amber-200 bg-amber-50 p-3 text-xs text-amber-900"
+                        : "mt-3 rounded-md border border-slate-200 bg-slate-50 p-3 text-xs text-slate-600"
+                    }
+                  >
                     {slot.notes}
                   </div>
                 ) : null}
@@ -431,4 +448,17 @@ function formatEnumLabel(value: string) {
     .split("_")
     .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
     .join(" ");
+}
+
+function requirementLevelClassName(value: string) {
+  switch (value) {
+    case "REQUIRED":
+      return "rounded-md bg-rose-50 px-2 py-1 text-xs font-semibold text-rose-700";
+    case "DESIRED":
+      return "rounded-md bg-sky-50 px-2 py-1 text-xs font-semibold text-sky-700";
+    case "CONDITIONAL":
+      return "rounded-md bg-violet-50 px-2 py-1 text-xs font-semibold text-violet-700";
+    default:
+      return "rounded-md bg-slate-100 px-2 py-1 text-xs font-semibold text-slate-600";
+  }
 }

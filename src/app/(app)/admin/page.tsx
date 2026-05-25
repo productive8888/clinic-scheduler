@@ -4,6 +4,7 @@ import {
   CalendarCheck2,
   CalendarDays,
   Database,
+  Layers3,
   ShieldCheck,
   SlidersHorizontal,
   Users,
@@ -34,6 +35,12 @@ const adminLinks = [
     title: "Staffing analytics",
     description: "Audit staffing health, workload balance, and short-notice changes.",
     icon: BarChart3,
+  },
+  {
+    href: "/admin/staffing",
+    title: "Staffing requirements",
+    description: "Configure tiered multi-person task slot rules by date context.",
+    icon: Layers3,
   },
   {
     href: "/admin/rules",

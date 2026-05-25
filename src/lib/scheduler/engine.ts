@@ -110,6 +110,7 @@ function sortSlots(
     const rightSortOrder = rightTask?.sortOrder ?? 0;
 
     return (
+      requirementPriority(left) - requirementPriority(right) ||
       rightSkillCount - leftSkillCount ||
       rightDifficulty - leftDifficulty ||
       left.date.localeCompare(right.date) ||
@@ -118,6 +119,21 @@ function sortSlots(
       left.id.localeCompare(right.id)
     );
   });
+}
+
+function requirementPriority(slot: SchedulerTaskSlot) {
+  switch (slot.requirementLevel) {
+    case "REQUIRED":
+      return 0;
+    case "DESIRED":
+      return 1;
+    case "CONDITIONAL":
+      return 2;
+    case "OPTIONAL":
+      return 3;
+    default:
+      return 0;
+  }
 }
 
 function sortAssignments(assignments: ScheduleAssignment[]) {

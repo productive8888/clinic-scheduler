@@ -13,12 +13,16 @@
   visible shortage indicators.
 - PTO/unavailability request submission, manager approval/rejection, and
   regeneration of existing affected schedule days.
+- PTO approval reversal, admin override, return-to-pending, and cancel workflows
+  with audit logs and schedule repair.
 - Personal/vacation approval rules, sick/emergency auto-approval, PTO balance
   floor enforcement, and clearer employee/admin PTO status messaging.
 - Clinic scenarios for routine, clinic-closed, reduced-staffing, and custom
   schedule days.
 - Optional manual-only tasks for Research, Background, Booking, Float, and
   Extra.
+- Configurable staffing requirement rules for tiered multi-slot task staffing by
+  task type, weekday, scenario, effective date range, and requirement level.
 - Employee-facing portal for upcoming assignments, PTO status, PTO balance,
   skills, and normal weekly schedule visibility.
 - Role-aware navigation, admin route protection, and a development-only seeded
@@ -29,6 +33,8 @@
   changes.
 - Admin scheduling rule management for employee-task preferences, boosts,
   penalties, and backup-only rules.
+- Admin staffing requirements management for required, desired, conditional, and
+  optional task slots without code changes.
 - Published-schedule ICS calendar exports for managers and employee-specific
   assignment calendars.
 - Seeded demo employees, skills, task types, and mixed Monday-Friday /
@@ -38,7 +44,8 @@
 - Scheduler unit tests for skill enforcement, PTO blocking, double-booking,
   deterministic generation, override preservation, direct coverage replacement,
   priority rule scoring, PTO policy behavior, clinic scenario defaults,
-  short-notice detection, and staffing analytics aggregation.
+  configurable staffing requirements, short-notice detection, and staffing
+  analytics aggregation.
 - Export and webhook route placeholders.
 
 ## Next Phases
@@ -48,4 +55,5 @@
 2. Add drag/drop assignment interactions on top of the existing manual override
    server action.
 3. Add historical effective-date management for recurring availability changes.
-4. Implement Google Calendar, Google Sheets, and printable exports.
+4. Add richer conflict resolution for desired/conditional staffing shortages.
+5. Implement Google Calendar, Google Sheets, and printable exports.
