@@ -8,7 +8,12 @@ import {
   ShieldCheck,
 } from "lucide-react";
 import Link from "next/link";
-import { createMyPtoRequestAction } from "@/app/(app)/employee/actions";
+import {
+  createMyNptoRequestAction,
+  createMyPtoRequestAction,
+} from "@/app/(app)/employee/actions";
+import { NPTORequestForm } from "@/components/npto/npto-request-form";
+import { NPTORequestList } from "@/components/npto/npto-request-list";
 import { PTORequestForm } from "@/components/pto/pto-request-form";
 import { PTORequestList } from "@/components/pto/pto-request-list";
 import { formatMinuteRange, WEEKDAYS } from "@/lib/availability";
@@ -22,7 +27,7 @@ type EmployeePortalDashboardProps = {
 };
 
 export function EmployeePortalDashboard({ data }: EmployeePortalDashboardProps) {
-  const { employee, assignments, ptoRequests } = data;
+  const { employee, assignments, ptoRequests, nptoRequests } = data;
 
   if (!employee) {
     return (
@@ -33,6 +38,9 @@ export function EmployeePortalDashboard({ data }: EmployeePortalDashboardProps) 
   }
 
   const pendingPtoCount = ptoRequests.filter(
+    (request) => request.status === "PENDING",
+  ).length;
+  const pendingNptoCount = nptoRequests.filter(
     (request) => request.status === "PENDING",
   ).length;
   const assignmentsByDate = groupAssignmentsByDate(assignments);
@@ -49,7 +57,8 @@ export function EmployeePortalDashboard({ data }: EmployeePortalDashboardProps) 
         <p className="mt-2 text-sm text-slate-500">
           View upcoming work, PTO status, skills, and recurring availability.
           Sick and emergency requests are auto-approved; personal and vacation
-          requests wait for manager review.
+          requests wait for manager review. NPTO is unpaid and tracked separately
+          from PTO balance.
         </p>
       </section>
 
@@ -219,11 +228,22 @@ export function EmployeePortalDashboard({ data }: EmployeePortalDashboardProps) 
           </h2>
           <span className="inline-flex items-center gap-2 rounded-md bg-amber-50 px-2 py-1 text-xs font-semibold text-amber-800">
             <CheckCircle2 size={14} aria-hidden="true" />
-            {pendingPtoCount} pending
+            {pendingPtoCount + pendingNptoCount} pending
           </span>
         </div>
-        <div className="mt-4">
-          <PTORequestForm action={createMyPtoRequestAction} />
+        <div className="mt-4 grid gap-6 xl:grid-cols-2">
+          <div className="rounded-md border border-slate-200 p-4">
+            <h3 className="font-semibold text-slate-950">PTO</h3>
+            <div className="mt-4">
+              <PTORequestForm action={createMyPtoRequestAction} />
+            </div>
+          </div>
+          <div className="rounded-md border border-slate-200 p-4">
+            <h3 className="font-semibold text-slate-950">NPTO</h3>
+            <div className="mt-4">
+              <NPTORequestForm action={createMyNptoRequestAction} />
+            </div>
+          </div>
         </div>
       </section>
 
@@ -232,6 +252,13 @@ export function EmployeePortalDashboard({ data }: EmployeePortalDashboardProps) 
           PTO request status
         </h2>
         <PTORequestList requests={ptoRequests} mode="employee" />
+      </section>
+
+      <section className="grid gap-3">
+        <h2 className="text-lg font-semibold text-slate-950">
+          NPTO request status
+        </h2>
+        <NPTORequestList requests={nptoRequests} mode="employee" />
       </section>
     </div>
   );

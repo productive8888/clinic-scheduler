@@ -352,6 +352,13 @@ export async function generateScheduleForDate(input: {
             endDate: { gte: parseIsoDate(input.date) },
           },
         },
+        nptoRequests: {
+          where: {
+            status: { in: ["APPROVED", "OVERRIDDEN"] },
+            startDate: { lte: parseIsoDate(input.date) },
+            endDate: { gte: parseIsoDate(input.date) },
+          },
+        },
       },
       orderBy: { fullName: "asc" },
     }),
@@ -443,7 +450,7 @@ export async function generateScheduleForDate(input: {
             left.startMinute - right.startMinute ||
             left.endMinute - right.endMinute,
         ),
-      unavailable: employee.ptoRequests
+      unavailable: [...employee.ptoRequests, ...employee.nptoRequests]
         .map((request) => ({
           startDate: toIsoDate(request.startDate),
           endDate: toIsoDate(request.endDate),
@@ -591,7 +598,7 @@ export async function generateScheduleForDate(input: {
     if (lockedConflictNames.length > 0) {
       lockedPtoConflictsBySlotId.set(
         slot.id,
-        `Locked assignment conflicts with approved PTO/unavailability: ${lockedConflictNames.join(", ")}`,
+        `Locked assignment conflicts with approved PTO/NPTO/unavailability: ${lockedConflictNames.join(", ")}`,
       );
     }
   }

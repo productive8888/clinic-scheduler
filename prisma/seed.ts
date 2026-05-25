@@ -329,6 +329,12 @@ const demoEmployees = [
 ];
 
 async function main() {
+  await prisma.timeOffSettings.upsert({
+    where: { id: "default" },
+    update: { nptoCapHours: 240 },
+    create: { id: "default", nptoCapHours: 240 },
+  });
+
   const skillByCode = new Map<string, string>();
   const taskTypeByCode = new Map<string, string>();
   let demoAdminId: string | null = null;

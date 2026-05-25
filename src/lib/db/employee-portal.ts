@@ -53,9 +53,19 @@ export function getEmployeePortalData(employeeId: string) {
       },
       take: 20,
     }),
-  ]).then(([employee, assignments, ptoRequests]) => ({
+    getDb().nPTORequest.findMany({
+      where: { employeeId },
+      orderBy: [{ createdAt: "desc" }, { startDate: "desc" }],
+      include: {
+        employee: true,
+        reviewedBy: true,
+      },
+      take: 20,
+    }),
+  ]).then(([employee, assignments, ptoRequests, nptoRequests]) => ({
     employee,
     assignments,
     ptoRequests,
+    nptoRequests,
   }));
 }

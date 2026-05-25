@@ -15,6 +15,13 @@ import {
   requiresManagerApproval,
   wouldPutPtoBalanceBelowFloor,
 } from "../../src/lib/pto/policy";
+import {
+  calculateNptoHours,
+  formatNptoCapDenial,
+  isScheduleBlockingNptoStatus,
+  nptoDeductsPtoBalance,
+  wouldExceedNptoCap,
+} from "../../src/lib/npto/policy";
 import { buildStaffingAnalytics } from "../../src/lib/analytics/staffing";
 import { buildAssignmentCalendarEvents } from "../../src/lib/calendar/events";
 import { buildIcsCalendar } from "../../src/lib/calendar/ics";
@@ -708,6 +715,146 @@ describe("PTO workflow helpers", () => {
         shiftDate: "2026-06-01",
       }),
       false,
+    );
+  });
+});
+
+describe("NPTO workflow helpers", () => {
+  it("approved NPTO prevents scheduling", () => {
+    const result = generateSchedule({
+      seed: "approved-npto-blocks",
+      employees: [
+        {
+          id: "npto-employee",
+          fullName: "NPTO Employee",
+          skillIds: [],
+          availability: allDayMonday,
+          unavailable: [{ startDate: monday, endDate: monday }],
+        },
+      ],
+      taskTypes,
+      slots: [slots[1]],
+    });
+
+    assert.equal(result.assignments.length, 0);
+    assert.equal(result.conflicts.length, 1);
+    assert.equal(
+      result.conflicts[0].rejectedCandidates[0].reasons.includes(
+        "PTO or approved unavailability",
+      ),
+      true,
+    );
+  });
+
+  it("does not reduce PTO balance", () => {
+    assert.equal(nptoDeductsPtoBalance(), false);
+    assert.equal(calculateNptoHours({ startDate: monday, endDate: monday }), 8);
+  });
+
+  it("denies NPTO when the configured cap would be exceeded", () => {
+    assert.equal(
+      wouldExceedNptoCap({
+        usedHours: 236,
+        requestHours: 8,
+        capHours: 240,
+      }),
+      true,
+    );
+    assert.equal(
+      formatNptoCapDenial({
+        usedHours: 236,
+        requestHours: 8,
+        capHours: 240,
+      }).includes("exceed the configured 240 hour cap"),
+      true,
+    );
+  });
+
+  it("allows admin override of NPTO cap denial to block scheduling", () => {
+    assert.equal(
+      wouldExceedNptoCap({
+        usedHours: 240,
+        requestHours: 8,
+        capHours: 240,
+      }),
+      true,
+    );
+    assert.equal(isScheduleBlockingNptoStatus("OVERRIDDEN"), true);
+  });
+
+  it("restores availability when NPTO is reversed", () => {
+    const blocked = generateSchedule({
+      seed: "npto-before-reversal",
+      employees: [
+        {
+          id: "npto-after-reversal",
+          fullName: "NPTO After Reversal",
+          skillIds: [],
+          availability: allDayMonday,
+          unavailable: [{ startDate: monday, endDate: monday }],
+        },
+      ],
+      taskTypes,
+      slots: [slots[1]],
+    });
+    const restored = generateSchedule({
+      seed: "npto-after-reversal",
+      employees: [
+        {
+          id: "npto-after-reversal",
+          fullName: "NPTO After Reversal",
+          skillIds: [],
+          availability: allDayMonday,
+          unavailable: [],
+        },
+      ],
+      taskTypes,
+      slots: [slots[1]],
+    });
+
+    assert.equal(blocked.assignments.length, 0);
+    assert.equal(restored.assignments[0].employeeId, "npto-after-reversal");
+  });
+
+  it("preserves locked manual overrides while NPTO creates conflict visibility", () => {
+    const result = generateSchedule({
+      seed: "npto-locked-override",
+      employees: [
+        {
+          id: "locked-npto",
+          fullName: "Locked NPTO",
+          skillIds: [],
+          availability: allDayMonday,
+          unavailable: [{ startDate: monday, endDate: monday }],
+        },
+      ],
+      taskTypes,
+      slots: [
+        {
+          ...slots[1],
+          lockedEmployeeIds: ["locked-npto"],
+        },
+      ],
+    });
+
+    assert.deepEqual(
+      result.assignments.map((assignment) => [
+        assignment.employeeId,
+        assignment.source,
+      ]),
+      [["locked-npto", "LOCKED"]],
+    );
+    assert.equal(result.conflicts.length, 0);
+  });
+
+  it("uses the existing short-notice window for NPTO requests", () => {
+    assert.equal(
+      isShortNoticeForDateRange({
+        createdAt: "2026-05-25",
+        startDate: "2026-06-01",
+        endDate: "2026-06-01",
+      }),
+      true,
     );
   });
 });

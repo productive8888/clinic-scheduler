@@ -13,13 +13,22 @@ not contain scheduling decisions.
 - Approved and overridden PTO/unavailability blocks assignments.
 - Reversed, cancelled, rejected, and pending PTO requests do not block
   assignments.
+- Approved and overridden NPTO blocks assignments through the same scheduler
+  unavailability input, but NPTO is stored separately and never deducts PTO
+  balance.
 - Personal and vacation requests require manager approval before blocking
   scheduling; sick and emergency requests auto-approve and immediately block
   assignments on affected dates.
 - Personal and vacation approvals deduct PTO balance and are denied when they
   would put the balance below -24 hours.
+- NPTO requests are manager-reviewed no-pay time off. The default cap is 240
+  hours and managers can configure it. Requests that exceed the cap are denied
+  with a visible denial reason unless an admin override is used.
 - PTO submitted within 7 days of any affected date is marked short notice.
+- NPTO submitted within 7 days of any affected date is marked short notice.
 - PTO approval, override, and approval reversal regenerate existing affected
+  schedule days and return them to generated draft review.
+- NPTO approval, override, and approval reversal regenerate existing affected
   schedule days and return them to generated draft review.
 - Employees cannot receive more than one generated assignment on the same date.
   Managers can still explicitly create multiple locked manual overrides when

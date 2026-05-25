@@ -25,6 +25,13 @@ versioned migrations in `prisma/migrations`.
   scheduler as employee unavailability. Reversed/cancelled/rejected requests do
   not block scheduling; overridden requests do. Requests submitted within 7 days
   of an affected date are marked short notice.
+- `NPTORequest`: no-pay time off requests stored separately from PTO for future
+  payroll support. Approved or overridden NPTO blocks scheduling but never
+  reduces PTO balance. Each row stores requested/unpaid hours, cap snapshot,
+  used-hours snapshot, denial reason, review metadata, short-notice flag, and a
+  future `payrollProcessedAt` marker.
+- `TimeOffSettings`: singleton time-off configuration, including the
+  manager-configurable NPTO cap. The default NPTO cap is 240 hours.
 - `ScheduleDay`: one operational staffing day, including draft/generated/
   published status, clinic scenario, and publish metadata.
 - `TaskSlot`: concrete task opening on a schedule day, including `slotIndex`,

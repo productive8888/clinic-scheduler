@@ -1,7 +1,6 @@
 import type { RequestStatus } from "@prisma/client";
 import { writeAuditLog } from "@/lib/audit";
 import { getDb } from "@/lib/db";
-import { generateScheduleForDate } from "@/lib/db/schedule";
 import {
   calculatePtoHours,
   deductsPtoBalance,
@@ -9,9 +8,10 @@ import {
   PTO_BALANCE_APPROVAL_FLOOR_HOURS,
   wouldPutPtoBalanceBelowFloor,
 } from "@/lib/pto/policy";
+import { regenerateExistingScheduleDaysForRange } from "@/lib/schedule/regeneration";
 import { isShortNoticeForDateRange } from "@/lib/schedule/short-notice";
 import type { PTORequestFormValues } from "@/lib/validation/pto";
-import { enumerateIsoDates, parseIsoDate, toIsoDate } from "@/lib/utils/date";
+import { parseIsoDate, toIsoDate } from "@/lib/utils/date";
 
 export function getPtoAdminPageData() {
   return Promise.all([
@@ -456,32 +456,12 @@ async function regenerateExistingScheduleDaysForRequest(input: {
   endDate: string;
   actorEmployeeId?: string | null;
 }) {
-  const candidateDates = enumerateIsoDates(input.startDate, input.endDate);
-  const scheduleDays = await getDb().scheduleDay.findMany({
-    where: {
-      date: {
-        in: candidateDates.map(parseIsoDate),
-      },
-      status: { not: "LOCKED" },
-    },
-    orderBy: { date: "asc" },
-    select: { date: true },
+  return regenerateExistingScheduleDaysForRange({
+    seedPrefix: `pto-${input.requestId}`,
+    startDate: input.startDate,
+    endDate: input.endDate,
+    actorEmployeeId: input.actorEmployeeId,
   });
-
-  const regeneratedDates: string[] = [];
-
-  for (const scheduleDay of scheduleDays) {
-    const date = toIsoDate(scheduleDay.date);
-
-    await generateScheduleForDate({
-      date,
-      seed: `pto-${input.requestId}-${date}`,
-      actorEmployeeId: input.actorEmployeeId,
-    });
-    regeneratedDates.push(date);
-  }
-
-  return regeneratedDates;
 }
 
 function combineManagerNote(

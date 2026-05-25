@@ -133,6 +133,8 @@ model Employee {
   availability            WeeklyAvailability[]
   ptoRequests             PTORequest[]              @relation("EmployeePtoRequests")
   reviewedPtoRequests     PTORequest[]              @relation("PtoReviewer")
+  nptoRequests            NPTORequest[]             @relation("EmployeeNptoRequests")
+  reviewedNptoRequests    NPTORequest[]             @relation("NptoReviewer")
   assignments             Assignment[]              @relation("AssignedEmployee")
   assignedAssignments     Assignment[]              @relation("AssignedByEmployee")
   schedulingRules         SchedulingRule[]          @relation("RuleEmployee")
@@ -293,6 +295,42 @@ model PTORequest {
 
   @@index([employeeId, status, startDate, endDate])
   @@index([status])
+}
+
+model NPTORequest {
+  id                    String        @id @default(cuid())
+  employeeId            String
+  status                RequestStatus @default(PENDING)
+  startDate             DateTime      @db.Date
+  endDate               DateTime      @db.Date
+  startMinute           Int?
+  endMinute             Int?
+  requestedHours        Decimal       @db.Decimal(8, 2)
+  unpaidHours           Decimal       @default(0) @db.Decimal(8, 2)
+  capSnapshotHours      Decimal       @default(240) @db.Decimal(8, 2)
+  usedHoursAtSubmission Decimal       @default(0) @db.Decimal(8, 2)
+  shortNotice           Boolean       @default(false)
+  reason                String?
+  denialReason          String?
+  managerNote           String?
+  reviewedByEmployeeId  String?
+  reviewedAt            DateTime?
+  payrollProcessedAt    DateTime?
+  createdAt             DateTime      @default(now())
+  updatedAt             DateTime      @updatedAt
+
+  employee   Employee  @relation("EmployeeNptoRequests", fields: [employeeId], references: [id], onDelete: Cascade)
+  reviewedBy Employee? @relation("NptoReviewer", fields: [reviewedByEmployeeId], references: [id])
+
+  @@index([employeeId, status, startDate, endDate])
+  @@index([status])
+}
+
+model TimeOffSettings {
+  id           String   @id @default("default")
+  nptoCapHours Decimal  @default(240) @db.Decimal(8, 2)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
 }
 
 model ScheduleDay {

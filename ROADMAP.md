@@ -17,6 +17,9 @@
   with audit logs and schedule repair.
 - Personal/vacation approval rules, sick/emergency auto-approval, PTO balance
   floor enforcement, and clearer employee/admin PTO status messaging.
+- NPTO no-pay time off workflow with separate request records, configurable
+  240-hour default cap, cap denial reasons, admin override/reversal, audit logs,
+  short-notice flags, and schedule repair.
 - Clinic scenarios for routine, clinic-closed, reduced-staffing, and custom
   schedule days.
 - Optional manual-only tasks for Research, Background, Booking, Float, and
@@ -43,7 +46,7 @@
   coverage replacement.
 - Scheduler unit tests for skill enforcement, PTO blocking, double-booking,
   deterministic generation, override preservation, direct coverage replacement,
-  priority rule scoring, PTO policy behavior, clinic scenario defaults,
+  priority rule scoring, PTO/NPTO policy behavior, clinic scenario defaults,
   configurable staffing requirements, short-notice detection, and staffing
   analytics aggregation.
 - Export and webhook route placeholders.
@@ -55,5 +58,7 @@
 2. Add drag/drop assignment interactions on top of the existing manual override
    server action.
 3. Add historical effective-date management for recurring availability changes.
-4. Add richer conflict resolution for desired/conditional staffing shortages.
-5. Implement Google Calendar, Google Sheets, and printable exports.
+4. Add payroll/NPTO deduction export infrastructure after payroll rules are
+   finalized.
+5. Add richer conflict resolution for desired/conditional staffing shortages.
+6. Implement Google Calendar, Google Sheets, and printable exports.
