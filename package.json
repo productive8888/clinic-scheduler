@@ -5,10 +5,12 @@
   "scripts": {
     "dev": "next dev",
     "build": "next build",
+    "postinstall": "prisma generate",
     "start": "next start",
     "lint": "eslint",
-    "test": "tsx tests/scheduler/engine.test.ts && tsx tests/payroll/payroll.test.ts",
+    "test": "tsx tests/scheduler/engine.test.ts && tsx tests/payroll/payroll.test.ts && tsx tests/auth/auth.test.ts",
     "typecheck": "tsc --noEmit",
+    "check:deployment": "tsx scripts/check-deployment.ts",
     "prisma:generate": "prisma generate",
     "prisma:migrate": "prisma migrate dev",
     "prisma:seed": "prisma db seed"

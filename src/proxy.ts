@@ -2,7 +2,7 @@ import { NextResponse, type NextRequest } from "next/server";
 import type { Session } from "next-auth";
 import { auth } from "@/auth";
 import { getDb } from "@/lib/db";
-import { localDevAuthEnabled } from "@/lib/auth";
+import { authSecretConfigured, localDevAuthEnabled } from "@/lib/auth";
 import { isManagerRole } from "@/lib/auth/roles";
 
 const protectedPrefixes = ["/admin", "/employee", "/schedule"];
@@ -11,10 +11,6 @@ const authPagePrefixes = ["/login", "/sign-in", "/sign-up"];
 
 export async function proxy(request: NextRequest) {
   const pathname = request.nextUrl.pathname;
-
-  if (localDevAuthEnabled()) {
-    return NextResponse.next();
-  }
 
   const isProtected = protectedPrefixes.some((prefix) =>
     pathname.startsWith(prefix),
@@ -25,8 +21,11 @@ export async function proxy(request: NextRequest) {
     return NextResponse.next();
   }
 
-  const session = await auth();
+  const session = authSecretConfigured() ? await auth() : null;
   const actor = await employeeFromSession(session);
+  const hasAuthJsSession = Boolean(
+    session?.user?.employeeId || session?.user?.email,
+  );
 
   if (isAuthPage && actor) {
     return NextResponse.redirect(
@@ -38,9 +37,16 @@ export async function proxy(request: NextRequest) {
     return NextResponse.next();
   }
 
+  if (!actor && !hasAuthJsSession && localDevAuthEnabled()) {
+    return NextResponse.next();
+  }
+
   if (!actor) {
     const loginUrl = new URL("/login", request.url);
-    loginUrl.searchParams.set("callbackUrl", request.nextUrl.href);
+    loginUrl.searchParams.set(
+      "callbackUrl",
+      `${request.nextUrl.pathname}${request.nextUrl.search}`,
+    );
 
     return NextResponse.redirect(loginUrl);
   }

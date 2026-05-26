@@ -4,7 +4,8 @@
 
 - Prisma/PostgreSQL schema, generated client, seed data, and initial migration.
 - Auth.js magic-link authentication with database-backed sessions, role checks,
-  protected routes, and a local development user switcher.
+  protected routes, real-session-first role resolution, and a local development
+  user switcher.
 - Admin employee CRUD surface for profiles, roles, status, skills, PTO balance,
   and per-weekday recurring availability.
 - Daily schedule board with default task-slot creation, deterministic generation,
@@ -30,6 +31,8 @@
   skills, and normal weekly schedule visibility.
 - Role-aware navigation, admin route protection, and a development-only seeded
   employee switcher for local testing.
+- Development/admin session diagnostics, deployment environment checks, and
+  Vercel deployment documentation for demo readiness.
 - Admin audit log visibility for recent employee, schedule, PTO, and rule events.
 - Admin staffing analytics dashboard for date-level staffing health, employee
   workload, role leaders, task understaffing, manual overrides, and short-notice

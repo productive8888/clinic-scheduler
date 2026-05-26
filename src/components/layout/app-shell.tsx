@@ -5,6 +5,7 @@ import {
   CalendarDays,
   CalendarCheck2,
   ClipboardList,
+  ClipboardCheck,
   Layers3,
   LogOut,
   Settings,
@@ -19,6 +20,7 @@ import {
   getCurrentActor,
   getLocalDevSwitchEmployees,
   isManagerRole,
+  sessionSourceLabel,
 } from "@/lib/auth";
 
 const employeeNavItems = [
@@ -38,13 +40,25 @@ const managerNavItems = [
   { href: "/admin/audit", label: "Audit", icon: Activity },
 ];
 
+const diagnosticsNavItem = {
+  href: "/admin/diagnostics",
+  label: "Diagnostics",
+  icon: ClipboardCheck,
+};
+
 export async function AppShell({ children }: { children: React.ReactNode }) {
-  const [actor, devEmployees] = await Promise.all([
-    getCurrentActor(),
-    getLocalDevSwitchEmployees(),
-  ]);
+  const actor = await getCurrentActor();
+  const devEmployees =
+    actor?.sessionSource === "authjs" ? [] : await getLocalDevSwitchEmployees();
   const canManage = Boolean(actor && isManagerRole(actor.role));
-  const navItems = canManage ? managerNavItems : employeeNavItems;
+  const canViewDiagnostics =
+    process.env.NODE_ENV === "development" || actor?.role === "ADMIN";
+  const navItems = canManage
+    ? [
+        ...managerNavItems,
+        ...(canViewDiagnostics ? [diagnosticsNavItem] : []),
+      ]
+    : employeeNavItems;
   const homeHref = canManage ? "/schedule" : "/employee";
 
   return (
@@ -85,9 +99,9 @@ export async function AppShell({ children }: { children: React.ReactNode }) {
               {actor?.fullName ?? "Not signed in"}
             </div>
             <div className="text-xs text-slate-500">
-              {actor?.isLocalDev
-                ? `${actor.role} · development`
-                : actor?.role ?? "Guest"}
+              {actor
+                ? `${actor.role} · ${sessionSourceLabel(actor.sessionSource)}`
+                : "Guest"}
             </div>
           </div>
           {actor && !actor.isLocalDev && !actor.isDevFallback ? (

@@ -4,6 +4,7 @@ import { AuthError } from "next-auth";
 import { signIn } from "@/auth";
 import { authConfigured } from "@/lib/auth";
 import { getDb } from "@/lib/db";
+import { getMissingAuthSetupLabels } from "@/lib/deployment/env";
 
 export type LoginFormState = {
   message?: string;
@@ -15,9 +16,10 @@ export async function requestMagicLinkAction(
   formData: FormData,
 ): Promise<LoginFormState> {
   if (!authConfigured()) {
+    const missing = getMissingAuthSetupLabels();
+
     return {
-      error:
-        "Email login is not fully configured. Add AUTH_SECRET, EMAIL_SERVER, and EMAIL_FROM.",
+      error: `Email login is not fully configured. Missing: ${missing.join(", ")}.`,
     };
   }
 
@@ -41,7 +43,8 @@ export async function requestMagicLinkAction(
 
   if (!employee) {
     return {
-      error: "No active employee profile is linked to that email address.",
+      message:
+        "If that email is linked to an active employee profile, a secure login link will arrive shortly.",
     };
   }
 
@@ -61,7 +64,8 @@ export async function requestMagicLinkAction(
   }
 
   return {
-    message: "Check your email for a secure login link.",
+    message:
+      "If that email is linked to an active employee profile, a secure login link will arrive shortly.",
   };
 }
 

@@ -7,6 +7,8 @@ const developmentSecret =
   process.env.NODE_ENV === "development"
     ? "clinic-scheduler-local-development-secret"
     : undefined;
+const SESSION_MAX_AGE_SECONDS = 60 * 60 * 24 * 30;
+const SESSION_UPDATE_AGE_SECONDS = 60 * 60 * 24;
 
 function normalizeEmail(email: string | null | undefined) {
   return email?.trim().toLowerCase() ?? null;
@@ -49,8 +51,8 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
   },
   session: {
     strategy: "database",
-    maxAge: 60 * 60 * 24 * 30,
-    updateAge: 60 * 60 * 24,
+    maxAge: SESSION_MAX_AGE_SECONDS,
+    updateAge: SESSION_UPDATE_AGE_SECONDS,
   },
   callbacks: {
     async signIn({ user, email }) {

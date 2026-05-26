@@ -3,9 +3,11 @@ export {
   authConfigured,
   authEmailConfigured,
   authSecretConfigured,
+  authUrlConfigured,
   DEV_ACTOR_COOKIE,
   getLocalDevSwitchEmployees,
   getCurrentActor,
+  getSessionDiagnostics,
   localDevAuthEnabled,
   requireActor,
   requireManager,
@@ -13,6 +15,12 @@ export {
   type AuthActor,
   type DevSwitchEmployee,
 } from "./session";
+export {
+  isLocalDevAuthAvailable,
+  resolveSessionSource,
+  sessionSourceLabel,
+  type SessionSource,
+} from "./session-source";
 export {
   canManageEmployees,
   canOverrideSchedules,
