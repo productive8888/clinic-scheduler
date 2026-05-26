@@ -6,8 +6,9 @@ versioned migrations in `prisma/migrations`.
 ## Core Tables
 
 - `Employee`: staff profile, Auth.js user link, role, status, PTO balance,
-  weekly assignment limit, start/end dates. Employee role/status remains the
-  source of truth for authorization.
+  expected weekly hours, comp-time balance display field, weekly assignment
+  limit, start/end dates. Employee role/status remains the source of truth for
+  authorization.
 - `User`, `Account`, `Session`, and `VerificationToken`: Auth.js-owned
   authentication tables for magic-link users, persistent sessions, and email
   verification tokens.
@@ -32,6 +33,16 @@ versioned migrations in `prisma/migrations`.
   future `payrollProcessedAt` marker.
 - `TimeOffSettings`: singleton time-off configuration, including the
   manager-configurable NPTO cap. The default NPTO cap is 240 hours.
+- `PayrollSettings`: singleton payroll-reporting configuration for default
+  period length, full-time weekly hours, default holiday hours, under-hour
+  flagging, and optional comp-time banking/debit behavior.
+- `PaidHoliday`: manager-configured holiday calendar rows with date, name,
+  hours, pay rule, active state, notes, and creator metadata.
+- `PayrollAdjustmentLedger`: append-only payroll accounting ledger for PTO
+  debits/credits, NPTO unpaid deductions, paid holiday credits, comp-time
+  credits/debits, manual adjustments, and reversal adjustments. Entries keep
+  employee, hours, source entity, optional period range, creator, metadata, and
+  notes.
 - `ScheduleDay`: one operational staffing day, including draft/generated/
   published status, clinic scenario, and publish metadata.
 - `TaskSlot`: concrete task opening on a schedule day, including `slotIndex`,
@@ -76,3 +87,17 @@ configured by a staffing requirement rule.
 The admin staffing analytics dashboard is derived from canonical schedule, PTO,
 assignment, task, and audit records. No cached reporting tables are used in V1,
 which keeps analytics consistent with the current schedule state.
+
+## Payroll Reporting
+
+Payroll reports are manager-reviewable estimates generated from current
+database records. The app does not process payroll or submit data to a payroll
+vendor. Reports combine published/draft schedule assignments, approved PTO,
+approved NPTO, paid holidays, configurable expected weekly hours, comp-time
+settings, and ledger adjustments. The report flags missing schedule data,
+unpublished schedules, unresolved shortages, manual overrides, negative PTO
+balances, PTO below -24 hours, and reversed/cancelled time off in the selected
+period.
+
+The ledger is append-only. PTO/NPTO reversals create reversal entries instead of
+deleting original accounting events.

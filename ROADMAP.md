@@ -40,6 +40,11 @@
   optional task slots without code changes.
 - Published-schedule ICS calendar exports for managers and employee-specific
   assignment calendars.
+- Payroll reporting foundation with biweekly date-range reports, employee paid
+  hour summaries, PTO/NPTO accounting, paid holiday support, comp-time banking
+  settings, warning flags, and CSV export.
+- Append-only payroll adjustment ledger for PTO debits, NPTO unpaid deductions,
+  holiday/comp-time/manual adjustments, and reversal entries.
 - Seeded demo employees, skills, task types, and mixed Monday-Friday /
   Tuesday-Saturday recurring availability for generated schedules.
 - Pure scheduler modules for constraints, scoring, fairness, assignment, and
@@ -47,8 +52,9 @@
 - Scheduler unit tests for skill enforcement, PTO blocking, double-booking,
   deterministic generation, override preservation, direct coverage replacement,
   priority rule scoring, PTO/NPTO policy behavior, clinic scenario defaults,
-  configurable staffing requirements, short-notice detection, and staffing
-  analytics aggregation.
+  configurable staffing requirements, short-notice detection, staffing
+  analytics aggregation, payroll calculations, comp-time banking, holiday
+  credits, warning flags, and CSV export.
 - Export and webhook route placeholders.
 
 ## Next Phases
@@ -58,7 +64,7 @@
 2. Add drag/drop assignment interactions on top of the existing manual override
    server action.
 3. Add historical effective-date management for recurring availability changes.
-4. Add payroll/NPTO deduction export infrastructure after payroll rules are
-   finalized.
+4. Add richer payroll review workflows for manager sign-off and report snapshot
+   history after clinic payroll policies are finalized.
 5. Add richer conflict resolution for desired/conditional staffing shortages.
 6. Implement Google Calendar, Google Sheets, and printable exports.

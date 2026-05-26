@@ -1,6 +1,7 @@
 import {
   Activity,
   BarChart3,
+  Banknote,
   CalendarCheck2,
   CalendarDays,
   Database,
@@ -35,6 +36,12 @@ const adminLinks = [
     title: "Staffing analytics",
     description: "Audit staffing health, workload balance, and short-notice changes.",
     icon: BarChart3,
+  },
+  {
+    href: "/admin/payroll",
+    title: "Payroll reports",
+    description: "Review paid hours, PTO, NPTO, holidays, and comp-time flags.",
+    icon: Banknote,
   },
   {
     href: "/admin/staffing",

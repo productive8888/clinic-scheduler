@@ -251,6 +251,7 @@ const demoEmployees = [
     role: "ADMIN" as const,
     skillCodes: ["ALLERGY_SHOT"],
     ptoBalanceHours: 80,
+    expectedWeeklyHours: 40,
     weeklyAssignmentLimit: 5,
     availability: weekdayWindows([1, 2, 3, 4, 5]),
   },
@@ -260,6 +261,7 @@ const demoEmployees = [
     role: "MANAGER" as const,
     skillCodes: [],
     ptoBalanceHours: 64,
+    expectedWeeklyHours: 40,
     weeklyAssignmentLimit: 5,
     availability: weekdayWindows([2, 3, 4, 5, 6]),
   },
@@ -269,6 +271,7 @@ const demoEmployees = [
     role: "EMPLOYEE" as const,
     skillCodes: ["CIVIL_SURGEON"],
     ptoBalanceHours: 72,
+    expectedWeeklyHours: 40,
     weeklyAssignmentLimit: 5,
     availability: weekdayWindows([1, 2, 3, 4, 5], 7 * 60 + 30, 17 * 60),
   },
@@ -278,6 +281,7 @@ const demoEmployees = [
     role: "EMPLOYEE" as const,
     skillCodes: ["PROCEDURE"],
     ptoBalanceHours: 56,
+    expectedWeeklyHours: 40,
     weeklyAssignmentLimit: 5,
     availability: weekdayWindows([1, 2, 3, 4, 5], 8 * 60, 18 * 60),
   },
@@ -287,6 +291,7 @@ const demoEmployees = [
     role: "EMPLOYEE" as const,
     skillCodes: ["ALLERGY_SHOT", "PROCEDURE"],
     ptoBalanceHours: 48,
+    expectedWeeklyHours: 40,
     weeklyAssignmentLimit: 5,
     availability: weekdayWindows([2, 3, 4, 5, 6]),
   },
@@ -296,6 +301,7 @@ const demoEmployees = [
     role: "EMPLOYEE" as const,
     skillCodes: [],
     ptoBalanceHours: 60,
+    expectedWeeklyHours: 32,
     weeklyAssignmentLimit: 5,
     availability: weekdayWindows([1, 2, 4, 5]),
   },
@@ -305,6 +311,7 @@ const demoEmployees = [
     role: "EMPLOYEE" as const,
     skillCodes: [],
     ptoBalanceHours: 40,
+    expectedWeeklyHours: 40,
     weeklyAssignmentLimit: 5,
     availability: weekdayWindows([1, 3, 4, 5, 6]),
   },
@@ -314,6 +321,7 @@ const demoEmployees = [
     role: "EMPLOYEE" as const,
     skillCodes: [],
     ptoBalanceHours: 52,
+    expectedWeeklyHours: 40,
     weeklyAssignmentLimit: 5,
     availability: weekdayWindows([2, 3, 4, 5, 6]),
   },
@@ -323,6 +331,7 @@ const demoEmployees = [
     role: "EMPLOYEE" as const,
     skillCodes: ["CIVIL_SURGEON", "ALLERGY_SHOT"],
     ptoBalanceHours: 44,
+    expectedWeeklyHours: 40,
     weeklyAssignmentLimit: 5,
     availability: weekdayWindows([1, 2, 3, 5, 6]),
   },
@@ -333,6 +342,21 @@ async function main() {
     where: { id: "default" },
     update: { nptoCapHours: 240 },
     create: { id: "default", nptoCapHours: 240 },
+  });
+
+  await prisma.payrollSettings.upsert({
+    where: { id: "default" },
+    update: {
+      defaultPayrollPeriodDays: 14,
+      fullTimeWeeklyHours: 40,
+      paidHolidayDefaultHours: 8,
+    },
+    create: {
+      id: "default",
+      defaultPayrollPeriodDays: 14,
+      fullTimeWeeklyHours: 40,
+      paidHolidayDefaultHours: 8,
+    },
   });
 
   const skillByCode = new Map<string, string>();
@@ -424,6 +448,7 @@ async function main() {
         role: employee.role,
         status: "ACTIVE",
         ptoBalanceHours: employee.ptoBalanceHours,
+        expectedWeeklyHours: employee.expectedWeeklyHours,
         weeklyAssignmentLimit: employee.weeklyAssignmentLimit,
         startDate: new Date("2026-01-01T00:00:00.000Z"),
       },
@@ -433,6 +458,7 @@ async function main() {
         role: employee.role,
         status: "ACTIVE",
         ptoBalanceHours: employee.ptoBalanceHours,
+        expectedWeeklyHours: employee.expectedWeeklyHours,
         weeklyAssignmentLimit: employee.weeklyAssignmentLimit,
         startDate: new Date("2026-01-01T00:00:00.000Z"),
       },
@@ -515,6 +541,38 @@ async function main() {
         active: true,
         createdByEmployeeId: demoAdminId,
         notes: "Seed: reduced staffing removes routine procedure slots unless added manually.",
+      },
+    });
+  }
+
+  for (const holiday of [
+    {
+      date: new Date("2026-07-04T00:00:00.000Z"),
+      name: "Independence Day",
+      hours: 8,
+      notes: "Seed: example paid holiday for payroll report review.",
+    },
+    {
+      date: new Date("2026-12-25T00:00:00.000Z"),
+      name: "Christmas Day",
+      hours: 8,
+      notes: "Seed: example paid holiday for payroll report review.",
+    },
+  ]) {
+    await prisma.paidHoliday.upsert({
+      where: { date: holiday.date },
+      update: {
+        name: holiday.name,
+        hours: holiday.hours,
+        active: true,
+        rule: "PAID_HOLIDAY",
+        notes: holiday.notes,
+        createdByEmployeeId: demoAdminId,
+      },
+      create: {
+        ...holiday,
+        rule: "PAID_HOLIDAY",
+        createdByEmployeeId: demoAdminId,
       },
     });
   }

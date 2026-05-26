@@ -1,6 +1,7 @@
 import type { RequestStatus } from "@prisma/client";
 import { writeAuditLog } from "@/lib/audit";
 import { getDb } from "@/lib/db";
+import { recordPayrollLedgerEntry } from "@/lib/db/payroll";
 import {
   calculatePtoHours,
   deductsPtoBalance,
@@ -212,6 +213,24 @@ export async function reviewPtoRequest(input: {
         })
       : [];
 
+  if (input.status === "APPROVED" && deductsPtoBalance(before.type)) {
+    await recordPayrollLedgerEntry({
+      employeeId: before.employeeId,
+      type: "PTO_DEBIT",
+      hours: -requestHours,
+      effectiveDate: toIsoDate(reviewed.startDate),
+      sourceEntityType: "PTORequest",
+      sourceEntityId: reviewed.id,
+      createdByEmployeeId: input.actorEmployeeId,
+      metadata: {
+        requestHours,
+        requestType: before.type,
+        status: reviewed.status,
+      },
+      notes: "Approved PTO balance debit.",
+    });
+  }
+
   await writeAuditLog({
     actorEmployeeId: input.actorEmployeeId,
     action:
@@ -242,14 +261,36 @@ export async function overridePtoRequest(input: {
     throw new Error("Approved PTO is already schedule-blocking.");
   }
 
-  const overridden = await db.pTORequest.update({
-    where: { id: input.requestId },
-    data: {
-      status: "OVERRIDDEN",
-      managerNote: combineManagerNote(before.managerNote, input.managerNote),
-      reviewedByEmployeeId: input.actorEmployeeId ?? null,
-      reviewedAt: new Date(),
-    },
+  const requestHours = calculatePtoHours({
+    startDate: toIsoDate(before.startDate),
+    endDate: toIsoDate(before.endDate),
+    startMinute: before.startMinute,
+    endMinute: before.endMinute,
+  });
+
+  const overridden = await db.$transaction(async (tx) => {
+    const updated = await tx.pTORequest.update({
+      where: { id: input.requestId },
+      data: {
+        status: "OVERRIDDEN",
+        managerNote: combineManagerNote(before.managerNote, input.managerNote),
+        reviewedByEmployeeId: input.actorEmployeeId ?? null,
+        reviewedAt: new Date(),
+      },
+    });
+
+    if (deductsPtoBalance(before.type)) {
+      await tx.employee.update({
+        where: { id: before.employeeId },
+        data: {
+          ptoBalanceHours: {
+            decrement: requestHours,
+          },
+        },
+      });
+    }
+
+    return updated;
   });
 
   const regeneratedDates = await regenerateExistingScheduleDaysForRequest({
@@ -268,6 +309,24 @@ export async function overridePtoRequest(input: {
     after: overridden,
     metadata: { regeneratedDates },
   });
+
+  if (deductsPtoBalance(before.type)) {
+    await recordPayrollLedgerEntry({
+      employeeId: before.employeeId,
+      type: "PTO_DEBIT",
+      hours: -requestHours,
+      effectiveDate: toIsoDate(overridden.startDate),
+      sourceEntityType: "PTORequest",
+      sourceEntityId: overridden.id,
+      createdByEmployeeId: input.actorEmployeeId,
+      metadata: {
+        requestHours,
+        requestType: before.type,
+        status: overridden.status,
+      },
+      notes: "Manager override PTO balance debit.",
+    });
+  }
 
   return { reviewed: overridden, regeneratedDates };
 }
@@ -305,7 +364,7 @@ export async function reversePtoApproval(input: {
       },
     });
 
-    if (before.status === "APPROVED" && deductsPtoBalance(before.type)) {
+    if (deductsPtoBalance(before.type)) {
       await tx.employee.update({
         where: { id: before.employeeId },
         data: {
@@ -335,6 +394,24 @@ export async function reversePtoApproval(input: {
     after: reversed,
     metadata: { regeneratedDates, restoredHours: requestHours },
   });
+
+  if (deductsPtoBalance(before.type)) {
+    await recordPayrollLedgerEntry({
+      employeeId: before.employeeId,
+      type: "REVERSAL_ADJUSTMENT",
+      hours: requestHours,
+      effectiveDate: toIsoDate(reversed.startDate),
+      sourceEntityType: "PTORequest",
+      sourceEntityId: reversed.id,
+      createdByEmployeeId: input.actorEmployeeId,
+      metadata: {
+        requestHours,
+        requestType: before.type,
+        previousStatus: before.status,
+      },
+      notes: "PTO reversal restored balance.",
+    });
+  }
 
   return { reviewed: reversed, regeneratedDates };
 }

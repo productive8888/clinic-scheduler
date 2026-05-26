@@ -32,7 +32,8 @@ export const employeeFormSchema = z.object({
     .transform((value) => (value ? value : null)),
   role: z.nativeEnum(EmployeeRole),
   status: z.nativeEnum(EmployeeStatus),
-  ptoBalanceHours: z.coerce.number().min(0).default(0),
+  ptoBalanceHours: z.coerce.number().min(-240).default(0),
+  expectedWeeklyHours: z.coerce.number().min(0).max(80).default(40),
   weeklyAssignmentLimit: z.preprocess(
     (value) => (value === "" ? null : value),
     z.coerce.number().int().positive().nullable(),
@@ -53,6 +54,7 @@ export function employeeFormValuesFromFormData(formData: FormData) {
     role: formData.get("role"),
     status: formData.get("status"),
     ptoBalanceHours: formData.get("ptoBalanceHours"),
+    expectedWeeklyHours: formData.get("expectedWeeklyHours"),
     weeklyAssignmentLimit: formData.get("weeklyAssignmentLimit"),
     startDate: formData.get("startDate"),
     endDate: formData.get("endDate"),

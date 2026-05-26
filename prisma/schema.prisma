@@ -114,6 +114,24 @@ enum ExportStatus {
   FAILED
 }
 
+enum HolidayPayRule {
+  PAID_HOLIDAY
+  BANK_AS_COMP_TIME
+  BANK_AS_PTO
+  UNPAID
+}
+
+enum PayrollAdjustmentType {
+  PTO_DEBIT
+  PTO_CREDIT
+  NPTO_UNPAID_DEDUCTION
+  PAID_HOLIDAY_CREDIT
+  COMP_TIME_CREDIT
+  COMP_TIME_DEBIT
+  MANUAL_ADJUSTMENT
+  REVERSAL_ADJUSTMENT
+}
+
 model Employee {
   id                    String         @id @default(cuid())
   authProviderId        String?        @unique
@@ -122,6 +140,8 @@ model Employee {
   role                  EmployeeRole   @default(EMPLOYEE)
   status                EmployeeStatus @default(ACTIVE)
   ptoBalanceHours       Decimal        @default(0) @db.Decimal(7, 2)
+  expectedWeeklyHours   Decimal        @default(40) @db.Decimal(6, 2)
+  compTimeBalanceHours  Decimal        @default(0) @db.Decimal(7, 2)
   weeklyAssignmentLimit Int?
   startDate             DateTime       @db.Date
   endDate               DateTime?      @db.Date
@@ -144,6 +164,9 @@ model Employee {
   publishedScheduleDays   ScheduleDay[]             @relation("SchedulePublisher")
   auditLogs               AuditLog[]                @relation("AuditActor")
   exportLogs              ExportLog[]               @relation("ExportRequester")
+  payrollLedgerEntries    PayrollAdjustmentLedger[] @relation("PayrollLedgerEmployee")
+  createdPayrollEntries   PayrollAdjustmentLedger[] @relation("PayrollLedgerCreator")
+  createdPaidHolidays     PaidHoliday[]             @relation("PaidHolidayCreator")
 
   @@index([status])
   @@index([role])
@@ -333,6 +356,37 @@ model TimeOffSettings {
   updatedAt    DateTime @updatedAt
 }
 
+model PayrollSettings {
+  id                       String   @id @default("default")
+  defaultPayrollPeriodDays Int      @default(14)
+  fullTimeWeeklyHours      Decimal  @default(40) @db.Decimal(6, 2)
+  paidHolidayDefaultHours  Decimal  @default(8) @db.Decimal(6, 2)
+  compTimeBankingEnabled   Boolean  @default(false)
+  bankOverExpectedHours    Boolean  @default(false)
+  deductUnderExpectedHours Boolean  @default(false)
+  flagUnderExpectedHours   Boolean  @default(true)
+  createdAt                DateTime @default(now())
+  updatedAt                DateTime @updatedAt
+}
+
+model PaidHoliday {
+  id                  String         @id @default(cuid())
+  date                DateTime       @unique @db.Date
+  name                String
+  hours               Decimal        @default(8) @db.Decimal(6, 2)
+  rule                HolidayPayRule @default(PAID_HOLIDAY)
+  active              Boolean        @default(true)
+  notes               String?
+  createdByEmployeeId String?
+  createdAt           DateTime       @default(now())
+  updatedAt           DateTime       @updatedAt
+
+  createdBy Employee? @relation("PaidHolidayCreator", fields: [createdByEmployeeId], references: [id])
+
+  @@index([date, active])
+  @@index([createdByEmployeeId])
+}
+
 model ScheduleDay {
   id                    String            @id @default(cuid())
   date                  DateTime          @unique @db.Date
@@ -506,4 +560,30 @@ model ExportLog {
   requestedBy Employee? @relation("ExportRequester", fields: [requestedByEmployeeId], references: [id])
 
   @@index([type, status])
+}
+
+model PayrollAdjustmentLedger {
+  id                  String                @id @default(cuid())
+  employeeId          String
+  type                PayrollAdjustmentType
+  hours               Decimal               @db.Decimal(8, 2)
+  effectiveDate       DateTime              @db.Date
+  periodStartDate     DateTime?             @db.Date
+  periodEndDate       DateTime?             @db.Date
+  sourceEntityType    String?
+  sourceEntityId      String?
+  createdByEmployeeId String?
+  metadata            Json?
+  notes               String?
+  createdAt           DateTime              @default(now())
+
+  employee  Employee  @relation("PayrollLedgerEmployee", fields: [employeeId], references: [id], onDelete: Cascade)
+  createdBy Employee? @relation("PayrollLedgerCreator", fields: [createdByEmployeeId], references: [id])
+
+  @@unique([employeeId, type, sourceEntityType, sourceEntityId])
+  @@index([employeeId, effectiveDate])
+  @@index([periodStartDate, periodEndDate])
+  @@index([type])
+  @@index([sourceEntityType, sourceEntityId])
+  @@index([createdByEmployeeId])
 }

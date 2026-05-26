@@ -95,9 +95,21 @@ export function EmployeeForm({ skills, employee }: EmployeeFormProps) {
           <input
             name="ptoBalanceHours"
             type="number"
-            min="0"
+            min="-240"
             step="0.25"
             defaultValue={employee?.ptoBalanceHours.toString() ?? "0"}
+            className="h-10 rounded-md border border-slate-300 bg-white px-3 text-slate-950 outline-none focus:border-emerald-700"
+          />
+        </label>
+        <label className="grid gap-1 text-sm font-medium text-slate-700">
+          Expected weekly hours
+          <input
+            name="expectedWeeklyHours"
+            type="number"
+            min="0"
+            max="80"
+            step="0.25"
+            defaultValue={employee?.expectedWeeklyHours.toString() ?? "40"}
             className="h-10 rounded-md border border-slate-300 bg-white px-3 text-slate-950 outline-none focus:border-emerald-700"
           />
         </label>

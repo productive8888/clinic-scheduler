@@ -7,7 +7,7 @@
     "build": "next build",
     "start": "next start",
     "lint": "eslint",
-    "test": "tsx tests/scheduler/engine.test.ts",
+    "test": "tsx tests/scheduler/engine.test.ts && tsx tests/payroll/payroll.test.ts",
     "typecheck": "tsc --noEmit",
     "prisma:generate": "prisma generate",
     "prisma:migrate": "prisma migrate dev",

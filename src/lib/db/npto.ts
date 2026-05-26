@@ -1,6 +1,7 @@
 import type { RequestStatus } from "@prisma/client";
 import { writeAuditLog } from "@/lib/audit";
 import { getDb } from "@/lib/db";
+import { recordPayrollLedgerEntry } from "@/lib/db/payroll";
 import {
   calculateNptoHours,
   DEFAULT_NPTO_CAP_HOURS,
@@ -226,6 +227,24 @@ export async function reviewNptoRequest(input: {
     },
   });
 
+  if (input.status === "APPROVED") {
+    await recordPayrollLedgerEntry({
+      employeeId: before.employeeId,
+      type: "NPTO_UNPAID_DEDUCTION",
+      hours: -Number(reviewed.unpaidHours),
+      effectiveDate: toIsoDate(reviewed.startDate),
+      sourceEntityType: "NPTORequest",
+      sourceEntityId: reviewed.id,
+      createdByEmployeeId: input.actorEmployeeId,
+      metadata: {
+        requestHours: Number(before.requestedHours),
+        unpaidHours: Number(reviewed.unpaidHours),
+        status: reviewed.status,
+      },
+      notes: "Approved NPTO unpaid deduction.",
+    });
+  }
+
   return { reviewed, regeneratedDates };
 }
 
@@ -269,6 +288,22 @@ export async function overrideNptoRequest(input: {
     before,
     after: overridden,
     metadata: { regeneratedDates },
+  });
+
+  await recordPayrollLedgerEntry({
+    employeeId: before.employeeId,
+    type: "NPTO_UNPAID_DEDUCTION",
+    hours: -Number(overridden.unpaidHours),
+    effectiveDate: toIsoDate(overridden.startDate),
+    sourceEntityType: "NPTORequest",
+    sourceEntityId: overridden.id,
+    createdByEmployeeId: input.actorEmployeeId,
+    metadata: {
+      requestHours: Number(before.requestedHours),
+      unpaidHours: Number(overridden.unpaidHours),
+      status: overridden.status,
+    },
+    notes: "Manager override NPTO unpaid deduction.",
   });
 
   return { reviewed: overridden, regeneratedDates };
@@ -317,6 +352,22 @@ export async function reverseNptoApproval(input: {
       regeneratedDates,
       reversedUnpaidHours: Number(before.unpaidHours),
     },
+  });
+
+  await recordPayrollLedgerEntry({
+    employeeId: before.employeeId,
+    type: "REVERSAL_ADJUSTMENT",
+    hours: Number(before.unpaidHours),
+    effectiveDate: toIsoDate(reversed.startDate),
+    sourceEntityType: "NPTORequest",
+    sourceEntityId: reversed.id,
+    createdByEmployeeId: input.actorEmployeeId,
+    metadata: {
+      requestHours: Number(before.requestedHours),
+      reversedUnpaidHours: Number(before.unpaidHours),
+      previousStatus: before.status,
+    },
+    notes: "NPTO reversal removed unpaid deduction.",
   });
 
   return { reviewed: reversed, regeneratedDates };

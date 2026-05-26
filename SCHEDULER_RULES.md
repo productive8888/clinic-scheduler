@@ -67,6 +67,20 @@ not contain scheduling decisions.
   decisions.
 - Calendar exports are publish-gated: ICS feeds include active assignments from
   published schedule days only.
+- Payroll reports do not change scheduling decisions. They read schedule,
+  PTO/NPTO, holiday, and payroll ledger records after scheduling has happened
+  and surface warnings for missing/unpublished schedule data or unresolved
+  staffing issues.
+- PTO approvals that deduct balance create payroll ledger debit entries.
+  Reversal/cancellation workflows restore balance when appropriate and create
+  reversal ledger entries rather than deleting history.
+- Approved or overridden NPTO creates unpaid deduction ledger entries and never
+  reduces PTO balance. NPTO reversal creates a reversal ledger entry and removes
+  the deduction from current report totals.
+- Expected hours are configurable per employee. The default is 40 hours per
+  week, which yields an 80-hour biweekly target.
+- Comp-time banking and under-expected-hour debit behavior are configurable
+  payroll reporting policies, not scheduler constraints.
 
 ## Initial Task Types
 
