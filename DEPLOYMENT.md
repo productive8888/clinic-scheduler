@@ -165,6 +165,19 @@ If the Auth.js user exists but the Employee auth link points elsewhere, request
 a new magic link after this fix is deployed. The sign-in callback uses Employee
 email as the source of truth and refreshes stale Auth.js links.
 
+If the Employee exists but Auth.js user is missing and diagnostics show
+outstanding login links, the app is creating tokens but the callback is not
+matching them. Check these in Vercel, redeploy, then request a brand-new link:
+
+- `AUTH_URL` or `NEXTAUTH_URL` must exactly match the deployed app origin, for
+  example `https://your-project.vercel.app`, with no `/login` path and no
+  trailing slash.
+- `AUTH_SECRET` must stay stable. Links created before changing this value will
+  fail.
+- The link must be opened on the same deployment/database that created it.
+- Old magic links are one-time use. Always test with the newest email after an
+  env var change or redeploy.
+
 ## 11. Session Duration
 
 Auth.js uses database sessions with:

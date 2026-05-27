@@ -59,6 +59,57 @@ async function findActiveEmployeeByEmail(email: string) {
   });
 }
 
+async function linkEmployeeToAuthUser(input: {
+  userId: string | null | undefined;
+  email: string | null | undefined;
+}) {
+  const userId = input.userId;
+  const email = normalizeEmail(input.email);
+
+  if (!userId || !email) {
+    return;
+  }
+
+  const employee = await findActiveEmployeeByEmail(email);
+
+  if (!employee || employee.authProviderId === userId) {
+    return;
+  }
+
+  await getDb().$transaction(async (tx) => {
+    await tx.employee.updateMany({
+      where: {
+        authProviderId: userId,
+        id: { not: employee.id },
+      },
+      data: {
+        authProviderId: null,
+      },
+    });
+
+    await tx.employee.update({
+      where: { id: employee.id },
+      data: { authProviderId: userId },
+    });
+  });
+}
+
+async function safelyLinkEmployeeToAuthUser(input: {
+  userId: string | null | undefined;
+  email: string | null | undefined;
+  source: string;
+}) {
+  try {
+    await linkEmployeeToAuthUser(input);
+  } catch (error) {
+    console.warn("[auth] Unable to link employee to Auth.js user", {
+      source: input.source,
+      email: redactEmail(normalizeEmail(input.email)),
+      error: error instanceof Error ? error.message : "unknown",
+    });
+  }
+}
+
 export const { handlers, auth, signIn, signOut } = NextAuth({
   adapter: PrismaAdapter(getDb()),
   secret: process.env.AUTH_SECRET ?? developmentSecret,
@@ -102,25 +153,6 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
         return "/login?error=AccessDenied";
       }
 
-      if (!email?.verificationRequest && user.id && employee.authProviderId !== user.id) {
-        await getDb().$transaction(async (tx) => {
-          await tx.employee.updateMany({
-            where: {
-              authProviderId: user.id,
-              id: { not: employee.id },
-            },
-            data: {
-              authProviderId: null,
-            },
-          });
-
-          await tx.employee.update({
-            where: { id: employee.id },
-            data: { authProviderId: user.id },
-          });
-        });
-      }
-
       return true;
     },
     async session({ session, user }) {
@@ -136,6 +168,12 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
         return session;
       }
 
+      await safelyLinkEmployeeToAuthUser({
+        userId: user.id,
+        email: employee.email,
+        source: "session",
+      });
+
       session.user = {
         ...session.user,
         id: user.id,
@@ -146,6 +184,22 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
       };
 
       return session;
+    },
+  },
+  events: {
+    async createUser({ user }) {
+      await safelyLinkEmployeeToAuthUser({
+        userId: user.id,
+        email: user.email,
+        source: "createUser",
+      });
+    },
+    async updateUser({ user }) {
+      await safelyLinkEmployeeToAuthUser({
+        userId: user.id,
+        email: user.email,
+        source: "updateUser",
+      });
     },
   },
 });

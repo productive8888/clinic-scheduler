@@ -111,5 +111,17 @@ function formatAuthError(error: string) {
     return "Sign-in could not be completed. Confirm the email belongs to one active employee profile, then request a fresh link.";
   }
 
+  if (error === "Configuration") {
+    return "Authentication is not configured correctly for this deployment. Check the app URL, auth secret, and email settings, then request a fresh link.";
+  }
+
+  if (error === "UntrustedHost") {
+    return "This deployment URL is not trusted by the auth configuration. Check AUTH_URL or NEXTAUTH_URL, then request a fresh link.";
+  }
+
+  if (error === "AdapterError" || error === "CallbackRouteError") {
+    return "The login callback could not read or write the auth database records. Check deployment logs, then request a fresh link.";
+  }
+
   return "Sign-in could not be completed. Request a new login link.";
 }

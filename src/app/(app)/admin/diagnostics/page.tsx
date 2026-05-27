@@ -121,6 +121,17 @@ export default async function DiagnosticsPage({
                   label="Email"
                   value={emailLookup.user?.email ?? lookupEmail ?? "None"}
                 />
+                <DiagnosticRow
+                  label="Outstanding links"
+                  value={String(emailLookup.verificationTokenCount)}
+                />
+                <DiagnosticRow
+                  label="Newest link expires"
+                  value={
+                    emailLookup.latestVerificationToken?.expires.toISOString() ??
+                    "None"
+                  }
+                />
               </dl>
             </div>
           </div>
@@ -210,38 +221,55 @@ export default async function DiagnosticsPage({
 }
 
 async function getEmailLookup(email: string) {
-  const [employee, user] = await Promise.all([
-    getDb().employee.findFirst({
-      where: {
-        email: {
-          equals: email,
-          mode: "insensitive",
+  const [employee, user, verificationTokenCount, latestVerificationToken] =
+    await Promise.all([
+      getDb().employee.findFirst({
+        where: {
+          email: {
+            equals: email,
+            mode: "insensitive",
+          },
         },
-      },
-      select: {
-        id: true,
-        email: true,
-        fullName: true,
-        role: true,
-        status: true,
-        authProviderId: true,
-      },
-    }),
-    getDb().user.findFirst({
-      where: {
-        email: {
-          equals: email,
-          mode: "insensitive",
+        select: {
+          id: true,
+          email: true,
+          fullName: true,
+          role: true,
+          status: true,
+          authProviderId: true,
         },
-      },
-      select: {
-        id: true,
-        email: true,
-      },
-    }),
-  ]);
+      }),
+      getDb().user.findFirst({
+        where: {
+          email: {
+            equals: email,
+            mode: "insensitive",
+          },
+        },
+        select: {
+          id: true,
+          email: true,
+        },
+      }),
+      getDb().verificationToken.count({
+        where: {
+          identifier: email,
+        },
+      }),
+      getDb().verificationToken.findFirst({
+        where: {
+          identifier: email,
+        },
+        select: {
+          expires: true,
+        },
+        orderBy: {
+          expires: "desc",
+        },
+      }),
+    ]);
 
-  return { employee, user };
+  return { employee, user, verificationTokenCount, latestVerificationToken };
 }
 
 function normalizeEmail(value: string) {
