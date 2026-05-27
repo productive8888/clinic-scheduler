@@ -14,6 +14,32 @@ function normalizeEmail(email: string | null | undefined) {
   return email?.trim().toLowerCase() ?? null;
 }
 
+function emailFromSignInCallback(input: {
+  userEmail?: string | null;
+  email?: unknown;
+}) {
+  const providerEmail =
+    input.email && typeof input.email === "object" && "identifier" in input.email
+      ? String(input.email.identifier ?? "")
+      : null;
+
+  return normalizeEmail(input.userEmail ?? providerEmail);
+}
+
+function redactEmail(email: string | null) {
+  if (!email) {
+    return "missing";
+  }
+
+  const [name, domain] = email.split("@");
+
+  if (!domain) {
+    return "invalid";
+  }
+
+  return `${name.slice(0, 2)}***@${domain}`;
+}
+
 async function findActiveEmployeeByEmail(email: string) {
   return getDb().employee.findFirst({
     where: {
@@ -56,22 +82,42 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
   },
   callbacks: {
     async signIn({ user, email }) {
-      const emailAddress = normalizeEmail(user.email);
+      const emailAddress = emailFromSignInCallback({
+        userEmail: user.email,
+        email,
+      });
 
       if (!emailAddress) {
+        console.warn("[auth] Magic-link sign-in denied: missing email");
         return "/login?error=MissingEmail";
       }
 
       const employee = await findActiveEmployeeByEmail(emailAddress);
 
       if (!employee) {
+        console.warn("[auth] Magic-link sign-in denied: no active employee", {
+          email: redactEmail(emailAddress),
+          verificationRequest: Boolean(email?.verificationRequest),
+        });
         return "/login?error=AccessDenied";
       }
 
       if (!email?.verificationRequest && user.id && employee.authProviderId !== user.id) {
-        await getDb().employee.update({
-          where: { id: employee.id },
-          data: { authProviderId: user.id },
+        await getDb().$transaction(async (tx) => {
+          await tx.employee.updateMany({
+            where: {
+              authProviderId: user.id,
+              id: { not: employee.id },
+            },
+            data: {
+              authProviderId: null,
+            },
+          });
+
+          await tx.employee.update({
+            where: { id: employee.id },
+            data: { authProviderId: user.id },
+          });
         });
       }
 

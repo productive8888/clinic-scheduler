@@ -144,7 +144,28 @@ npm run check:deployment
 The check prints only whether required variables are present. It does not print
 secret values.
 
-## 10. Session Duration
+## 10. Troubleshoot Employee Login
+
+If one email can sign in but another employee email fails:
+
+1. Sign in as an admin.
+2. Open `/admin/diagnostics`.
+3. Use "Login email lookup" with the failing email.
+4. Confirm:
+   - Employee match is `Yes`.
+   - Status is `ACTIVE`.
+   - Role is the expected role.
+   - The email is spelled exactly as intended.
+
+If the Employee match is missing, you are editing a different database than the
+deployed app or the employee was not created in production. Check the Vercel
+`DATABASE_URL`.
+
+If the Auth.js user exists but the Employee auth link points elsewhere, request
+a new magic link after this fix is deployed. The sign-in callback uses Employee
+email as the source of truth and refreshes stale Auth.js links.
+
+## 11. Session Duration
 
 Auth.js uses database sessions with:
 

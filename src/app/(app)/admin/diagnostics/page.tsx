@@ -4,11 +4,19 @@ import {
   getSessionDiagnostics,
   sessionSourceLabel,
 } from "@/lib/auth";
+import { getDb } from "@/lib/db";
 import { getDeploymentEnvStatus } from "@/lib/deployment/env";
 
 export const dynamic = "force-dynamic";
 
-export default async function DiagnosticsPage() {
+export default async function DiagnosticsPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ email?: string | string[] }>;
+}) {
+  const params = await searchParams;
+  const lookupEmail =
+    typeof params.email === "string" ? normalizeEmail(params.email) : null;
   const [session, envStatus] = await Promise.all([
     getSessionDiagnostics(),
     Promise.resolve(getDeploymentEnvStatus()),
@@ -19,6 +27,8 @@ export default async function DiagnosticsPage() {
   if (!canView) {
     redirect("/admin");
   }
+
+  const emailLookup = lookupEmail ? await getEmailLookup(lookupEmail) : null;
 
   return (
     <div className="grid gap-6">
@@ -34,6 +44,85 @@ export default async function DiagnosticsPage() {
           deployment variables are configured. Secret values are intentionally
           hidden.
         </p>
+      </section>
+
+      <section className="rounded-md border border-slate-200 bg-white p-5 shadow-sm">
+        <h2 className="text-lg font-semibold text-slate-950">
+          Login email lookup
+        </h2>
+        <p className="mt-1 max-w-3xl text-sm text-slate-500">
+          Paste an email to verify that this deployed database has an active
+          Employee row for it. This does not send a login email and does not
+          show tokens.
+        </p>
+        <form
+          action="/admin/diagnostics"
+          className="mt-4 grid gap-3 md:grid-cols-[1fr_auto]"
+        >
+          <label className="grid gap-1 text-sm font-medium text-slate-700">
+            Email
+            <input
+              name="email"
+              type="email"
+              defaultValue={lookupEmail ?? ""}
+              className="h-10 rounded-md border border-slate-300 bg-white px-3 text-slate-950 outline-none focus:border-emerald-700"
+              placeholder="employee@example.com"
+            />
+          </label>
+          <button className="h-10 self-end rounded-md bg-emerald-700 px-4 text-sm font-semibold text-white hover:bg-emerald-800">
+            Check email
+          </button>
+        </form>
+        {emailLookup ? (
+          <div className="mt-4 grid gap-3 md:grid-cols-2">
+            <div className="rounded-md bg-slate-50 p-3">
+              <h3 className="text-sm font-semibold text-slate-950">
+                Employee match
+              </h3>
+              <dl className="mt-3 grid gap-2">
+                <DiagnosticRow
+                  label="Found"
+                  value={emailLookup.employee ? "Yes" : "No"}
+                />
+                <DiagnosticRow
+                  label="Status"
+                  value={emailLookup.employee?.status ?? "None"}
+                />
+                <DiagnosticRow
+                  label="Role"
+                  value={emailLookup.employee?.role ?? "None"}
+                />
+                <DiagnosticRow
+                  label="Employee ID"
+                  value={emailLookup.employee?.id ?? "None"}
+                />
+                <DiagnosticRow
+                  label="Auth link present"
+                  value={emailLookup.employee?.authProviderId ? "Yes" : "No"}
+                />
+              </dl>
+            </div>
+            <div className="rounded-md bg-slate-50 p-3">
+              <h3 className="text-sm font-semibold text-slate-950">
+                Auth.js user match
+              </h3>
+              <dl className="mt-3 grid gap-2">
+                <DiagnosticRow
+                  label="Found"
+                  value={emailLookup.user ? "Yes" : "No"}
+                />
+                <DiagnosticRow
+                  label="User ID"
+                  value={emailLookup.user?.id ?? "None"}
+                />
+                <DiagnosticRow
+                  label="Email"
+                  value={emailLookup.user?.email ?? lookupEmail ?? "None"}
+                />
+              </dl>
+            </div>
+          </div>
+        ) : null}
       </section>
 
       <section className="grid gap-4 lg:grid-cols-2">
@@ -116,6 +205,47 @@ export default async function DiagnosticsPage() {
       </section>
     </div>
   );
+}
+
+async function getEmailLookup(email: string) {
+  const [employee, user] = await Promise.all([
+    getDb().employee.findFirst({
+      where: {
+        email: {
+          equals: email,
+          mode: "insensitive",
+        },
+      },
+      select: {
+        id: true,
+        email: true,
+        fullName: true,
+        role: true,
+        status: true,
+        authProviderId: true,
+      },
+    }),
+    getDb().user.findFirst({
+      where: {
+        email: {
+          equals: email,
+          mode: "insensitive",
+        },
+      },
+      select: {
+        id: true,
+        email: true,
+      },
+    }),
+  ]);
+
+  return { employee, user };
+}
+
+function normalizeEmail(value: string) {
+  const email = value.trim().toLowerCase();
+
+  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email) ? email : null;
 }
 
 function DiagnosticRow({ label, value }: { label: string; value: string }) {

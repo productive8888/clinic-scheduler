@@ -107,5 +107,9 @@ function formatAuthError(error: string) {
     return "That login link is invalid or expired. Request a new link.";
   }
 
+  if (error === "Callback") {
+    return "Sign-in could not be completed. Confirm the email belongs to one active employee profile, then request a fresh link.";
+  }
+
   return "Sign-in could not be completed. Request a new login link.";
 }
