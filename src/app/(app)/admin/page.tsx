@@ -4,6 +4,7 @@ import {
   Banknote,
   CalendarCheck2,
   CalendarDays,
+  ClipboardCheck,
   Database,
   Layers3,
   ShieldCheck,
@@ -60,6 +61,12 @@ const adminLinks = [
     title: "Audit log",
     description: "Review recent employee, PTO, schedule, and rule changes.",
     icon: Activity,
+  },
+  {
+    href: "/admin/diagnostics",
+    title: "Diagnostics",
+    description: "Check session source, deployment env readiness, and login emails.",
+    icon: ClipboardCheck,
   },
 ];
 

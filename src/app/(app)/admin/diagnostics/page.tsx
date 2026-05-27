@@ -2,6 +2,7 @@ import { ShieldCheck } from "lucide-react";
 import { redirect } from "next/navigation";
 import {
   getSessionDiagnostics,
+  isManagerRole,
   sessionSourceLabel,
 } from "@/lib/auth";
 import { getDb } from "@/lib/db";
@@ -22,7 +23,8 @@ export default async function DiagnosticsPage({
     Promise.resolve(getDeploymentEnvStatus()),
   ]);
   const canView =
-    process.env.NODE_ENV === "development" || session.actor?.role === "ADMIN";
+    process.env.NODE_ENV === "development" ||
+    Boolean(session.actor && isManagerRole(session.actor.role));
 
   if (!canView) {
     redirect("/admin");

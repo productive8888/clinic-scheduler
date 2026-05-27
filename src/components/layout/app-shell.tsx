@@ -52,7 +52,7 @@ export async function AppShell({ children }: { children: React.ReactNode }) {
     actor?.sessionSource === "authjs" ? [] : await getLocalDevSwitchEmployees();
   const canManage = Boolean(actor && isManagerRole(actor.role));
   const canViewDiagnostics =
-    process.env.NODE_ENV === "development" || actor?.role === "ADMIN";
+    process.env.NODE_ENV === "development" || canManage;
   const navItems = canManage
     ? [
         ...managerNavItems,
