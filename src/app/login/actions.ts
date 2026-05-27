@@ -1,8 +1,8 @@
 "use server";
 
-import { AuthError } from "next-auth";
-import { signIn } from "@/auth";
+import { headers } from "next/headers";
 import { authConfigured } from "@/lib/auth";
+import { sendClinicMagicLink, safeCallbackUrl } from "@/lib/auth/magic-link";
 import { getDb } from "@/lib/db";
 import { getMissingAuthSetupLabels } from "@/lib/deployment/env";
 
@@ -49,18 +49,20 @@ export async function requestMagicLinkAction(
   }
 
   try {
-    await signIn("nodemailer", {
+    await sendClinicMagicLink({
       email,
-      redirectTo: callbackUrl,
+      callbackUrl,
+      origin: await requestOrigin(),
     });
   } catch (error) {
-    if (error instanceof AuthError) {
-      return {
-        error: "Unable to send a login link. Check the email settings and try again.",
-      };
-    }
+    console.error("[auth] Unable to send clinic magic link", {
+      email: redactEmail(email),
+      error: error instanceof Error ? error.message : "unknown",
+    });
 
-    throw error;
+    return {
+      error: "Unable to send a login link. Check the email settings and try again.",
+    };
   }
 
   return {
@@ -75,14 +77,35 @@ function normalizeEmail(value: string) {
   return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email) ? email : null;
 }
 
-function safeCallbackUrl(value: string) {
-  if (!value || !value.startsWith("/")) {
-    return "/";
+async function requestOrigin() {
+  const requestHeaders = await headers();
+  const protocol = requestHeaders.get("x-forwarded-proto") ?? "http";
+  const host = requestHeaders.get("x-forwarded-host") ?? requestHeaders.get("host");
+
+  if (host) {
+    return `${protocol}://${host}`;
   }
 
-  if (value.startsWith("//")) {
-    return "/";
+  const configuredOrigin =
+    process.env.AUTH_URL ?? process.env.NEXTAUTH_URL ?? null;
+
+  if (configuredOrigin) {
+    return configuredOrigin;
   }
 
-  return value;
+  throw new Error("Unable to determine app origin");
+}
+
+function redactEmail(email: string | null) {
+  if (!email) {
+    return "missing";
+  }
+
+  const [name, domain] = email.split("@");
+
+  if (!domain) {
+    return "invalid";
+  }
+
+  return `${name.slice(0, 2)}***@${domain}`;
 }
