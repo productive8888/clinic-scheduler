@@ -7,6 +7,10 @@ import {
 } from "@/lib/auth";
 import { getDb } from "@/lib/db";
 import { getDeploymentEnvStatus } from "@/lib/deployment/env";
+import {
+  repairAllAuthAccountsAction,
+  repairAuthAccountAction,
+} from "./actions";
 
 export const dynamic = "force-dynamic";
 
@@ -136,6 +140,21 @@ export default async function DiagnosticsPage({
             </div>
           </div>
         ) : null}
+        <div className="mt-4 flex flex-wrap gap-2">
+          {lookupEmail ? (
+            <form action={repairAuthAccountAction}>
+              <input type="hidden" name="email" value={lookupEmail} />
+              <button className="h-10 rounded-md border border-emerald-700 px-3 text-sm font-semibold text-emerald-800 hover:bg-emerald-50">
+                Repair this login
+              </button>
+            </form>
+          ) : null}
+          <form action={repairAllAuthAccountsAction}>
+            <button className="h-10 rounded-md border border-slate-300 px-3 text-sm font-semibold text-slate-700 hover:bg-slate-100">
+              Repair all active logins
+            </button>
+          </form>
+        </div>
       </section>
 
       <section className="grid gap-4 lg:grid-cols-2">

@@ -63,8 +63,9 @@ export function EmployeeForm({ skills, employee }: EmployeeFormProps) {
           <input
             name="authProviderId"
             defaultValue={employee?.authProviderId ?? ""}
+            readOnly
             className="h-10 rounded-md border border-slate-300 bg-white px-3 font-mono text-sm text-slate-950 outline-none focus:border-emerald-700"
-            placeholder="Linked after magic-link sign-in"
+            placeholder="Provisioned automatically"
           />
         </label>
         <label className="grid gap-1 text-sm font-medium text-slate-700">

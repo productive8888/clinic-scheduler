@@ -3,6 +3,7 @@
 import type { Prisma } from "@prisma/client";
 import { revalidatePath } from "next/cache";
 import { auditActorId, requireManager } from "@/lib/auth";
+import { ensureAuthUserForEmployeeInTransaction } from "@/lib/auth/accounts";
 import { writeAuditLog } from "@/lib/audit";
 import { getDb } from "@/lib/db";
 import {
@@ -20,7 +21,6 @@ export async function createEmployeeAction(formData: FormData) {
       data: {
         fullName: values.fullName,
         email: values.email,
-        authProviderId: values.authProviderId,
         role: values.role,
         status: values.status,
         ptoBalanceHours: values.ptoBalanceHours,
@@ -37,6 +37,7 @@ export async function createEmployeeAction(formData: FormData) {
     });
 
     await replaceEmployeeAvailability(tx, record.id, values);
+    await ensureAuthUserForEmployeeInTransaction(tx, record.id);
 
     return record;
   });
@@ -70,7 +71,6 @@ export async function updateEmployeeAction(employeeId: string, formData: FormDat
       data: {
         fullName: values.fullName,
         email: values.email,
-        authProviderId: values.authProviderId,
         role: values.role,
         status: values.status,
         ptoBalanceHours: values.ptoBalanceHours,
@@ -87,6 +87,7 @@ export async function updateEmployeeAction(employeeId: string, formData: FormDat
     });
 
     await replaceEmployeeAvailability(tx, employeeId, values);
+    await ensureAuthUserForEmployeeInTransaction(tx, employeeId);
 
     return record;
   });

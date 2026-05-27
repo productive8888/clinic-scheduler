@@ -24,7 +24,7 @@ const availabilitySchema = z
 
 export const employeeFormSchema = z.object({
   fullName: z.string().trim().min(1, "Full name is required"),
-  email: z.string().trim().email("A valid email is required"),
+  email: z.string().trim().toLowerCase().email("A valid email is required"),
   authProviderId: z
     .string()
     .trim()
