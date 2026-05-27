@@ -54,12 +54,6 @@ export default async function LoginPage({
           </p>
         </div>
 
-        {error ? (
-          <p className="rounded-md border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-800">
-            {formatAuthError(error)}
-          </p>
-        ) : null}
-
         {!authConfigured() ? (
           <p className="rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-900">
             Email login is not ready. Missing:{" "}
@@ -72,7 +66,10 @@ export default async function LoginPage({
           </p>
         ) : null}
 
-        <LoginForm callbackUrl={callbackUrl} />
+        <LoginForm
+          callbackUrl={callbackUrl}
+          initialError={error ? formatAuthError(error) : null}
+        />
 
         {devEmployees.length ? (
           <div className="grid gap-3 border-t border-slate-200 pt-5">

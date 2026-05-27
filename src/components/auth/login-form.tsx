@@ -1,18 +1,30 @@
 "use client";
 
-import { useActionState } from "react";
+import { useActionState, useState } from "react";
 import { requestMagicLinkAction, type LoginFormState } from "@/app/login/actions";
 
 const initialState: LoginFormState = {};
 
-export function LoginForm({ callbackUrl }: { callbackUrl: string }) {
+export function LoginForm({
+  callbackUrl,
+  initialError,
+}: {
+  callbackUrl: string;
+  initialError?: string | null;
+}) {
+  const [pageError, setPageError] = useState(initialError);
   const [state, formAction, pending] = useActionState(
     requestMagicLinkAction,
     initialState,
   );
 
+  function action(formData: FormData) {
+    setPageError(null);
+    formAction(formData);
+  }
+
   return (
-    <form action={formAction} className="grid gap-4">
+    <form action={action} className="grid gap-4">
       <input type="hidden" name="callbackUrl" value={callbackUrl} />
       <label className="grid gap-1 text-sm font-medium text-slate-700">
         Email address
@@ -25,6 +37,12 @@ export function LoginForm({ callbackUrl }: { callbackUrl: string }) {
           placeholder="you@clinic.com"
         />
       </label>
+
+      {pageError ? (
+        <p className="rounded-md border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-800">
+          {pageError}
+        </p>
+      ) : null}
 
       {state.error ? (
         <p className="rounded-md border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-800">
