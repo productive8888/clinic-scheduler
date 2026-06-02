@@ -4,6 +4,7 @@ import {
   AssignmentStatus,
   type ClinicScenario,
   Prisma,
+  type ShiftBlock,
   TaskSlotStatus,
 } from "@prisma/client";
 import { writeAuditLog } from "@/lib/audit";
@@ -18,14 +19,16 @@ import {
   type SchedulerTaskType,
 } from "@/lib/scheduler";
 import { isShortNoticeScheduleChange } from "@/lib/schedule/short-notice";
+import { buildShiftBlockSnapshot } from "@/lib/shifts/templates";
 import {
   selectStaffingSlotSpecs,
   type StaffingSlotSpec,
 } from "@/lib/staffing/requirements";
 import { parseIsoDate, toIsoDate } from "@/lib/utils/date";
 
-const DEFAULT_SLOT_START_MINUTE = 8 * 60;
-const DEFAULT_SLOT_END_MINUTE = 17 * 60;
+const FALLBACK_SHIFT_START_MINUTE = 8 * 60;
+const FALLBACK_SHIFT_END_MINUTE = 17 * 60;
+const FALLBACK_SHIFT_PAID_HOURS = 9;
 
 export async function getScheduleBoard(date: string) {
   return getDb().scheduleDay.findUnique({
@@ -34,10 +37,12 @@ export async function getScheduleBoard(date: string) {
       taskSlots: {
         where: { status: { not: "CANCELLED" } },
         orderBy: [
+          { shiftBlock: { startMinute: "asc" } },
           { taskType: { sortOrder: "asc" } },
           { slotIndex: "asc" },
         ],
         include: {
+          shiftBlock: true,
           taskType: {
             include: {
               skillRequirements: {
@@ -51,6 +56,10 @@ export async function getScheduleBoard(date: string) {
             orderBy: { assignedAt: "desc" },
           },
         },
+      },
+      shiftBlocks: {
+        where: { active: true },
+        orderBy: [{ startMinute: "asc" }, { name: "asc" }],
       },
       publishedBy: true,
     },
@@ -164,6 +173,7 @@ export async function setScheduleScenario(input: {
 export async function addTaskSlotToScheduleDay(input: {
   date: string;
   taskTypeId: string;
+  shiftBlockId?: string | null;
   actorEmployeeId?: string | null;
 }) {
   const db = getDb();
@@ -189,9 +199,23 @@ export async function addTaskSlotToScheduleDay(input: {
     }),
   ]);
 
+  const shiftBlocks = await ensureShiftBlocksForScheduleDay({
+    scheduleDayId: scheduleDay.id,
+    date: input.date,
+    scenario: scheduleDay.scenario,
+  });
+  const selectedShiftBlock =
+    shiftBlocks.find((shiftBlock) => shiftBlock.id === input.shiftBlockId) ??
+    selectDefaultShiftBlock(shiftBlocks);
+
+  if (!selectedShiftBlock) {
+    throw new Error("No shift block is available for this date.");
+  }
+
   const existing = await db.taskSlot.aggregate({
     where: {
       scheduleDayId: scheduleDay.id,
+      shiftBlockId: selectedShiftBlock.id,
       taskTypeId: input.taskTypeId,
     },
     _max: { slotIndex: true },
@@ -201,11 +225,12 @@ export async function addTaskSlotToScheduleDay(input: {
   const slot = await db.taskSlot.create({
     data: {
       scheduleDayId: scheduleDay.id,
+      shiftBlockId: selectedShiftBlock.id,
       taskTypeId: input.taskTypeId,
       slotIndex,
       label: `${taskType.name} #${slotIndex}`,
-      startMinute: DEFAULT_SLOT_START_MINUTE,
-      endMinute: DEFAULT_SLOT_END_MINUTE,
+      startMinute: selectedShiftBlock.startMinute,
+      endMinute: selectedShiftBlock.endMinute,
       status: "OPEN",
       shortNotice,
       minStaff: 1,
@@ -236,6 +261,8 @@ export async function addTaskSlotToScheduleDay(input: {
       date: input.date,
       taskTypeId: input.taskTypeId,
       taskTypeCode: taskType.code,
+      shiftBlockId: selectedShiftBlock.id,
+      shiftBlockName: selectedShiftBlock.name,
       optional: taskType.optional,
       shortNotice,
     },
@@ -338,7 +365,20 @@ export async function generateScheduleForDate(input: {
 }) {
   await ensureScheduleDayWithDefaultSlots(input.date, input.actorEmployeeId);
 
-  const [scheduleDay, employees, historicalAssignments, rules] = await Promise.all([
+  const fairnessSettingPromise = getDb().fairnessSetting.upsert({
+    where: { id: "default" },
+    update: {},
+    create: { id: "default" },
+  });
+  const fairnessSetting = await fairnessSettingPromise;
+  const fairnessWindow = getFairnessWindow(input.date, fairnessSetting);
+  const [
+    scheduleDay,
+    employees,
+    historicalAssignments,
+    rules,
+    shortageRules,
+  ] = await Promise.all([
     getScheduleBoard(input.date),
     getDb().employee.findMany({
       where: { status: "ACTIVE" },
@@ -363,8 +403,26 @@ export async function generateScheduleForDate(input: {
       orderBy: { fullName: "asc" },
     }),
     getDb().assignment.findMany({
-      where: { status: "ACTIVE" },
-      include: { taskSlot: true },
+      where: {
+        status: "ACTIVE",
+        taskSlot: {
+          scheduleDay: {
+            date: {
+              gte: parseIsoDate(fairnessWindow.startDate),
+              lte: parseIsoDate(fairnessWindow.endDate),
+            },
+          },
+        },
+      },
+      include: {
+        taskSlot: {
+          include: {
+            scheduleDay: true,
+            shiftBlock: true,
+            taskType: true,
+          },
+        },
+      },
       orderBy: [{ employeeId: "asc" }, { taskSlotId: "asc" }, { id: "asc" }],
     }),
     getDb().schedulingRule.findMany({
@@ -387,6 +445,26 @@ export async function generateScheduleForDate(input: {
       },
       orderBy: [{ priority: "desc" }, { createdAt: "asc" }, { id: "asc" }],
     }),
+    getDb().shortageRule.findMany({
+      where: {
+        active: true,
+        AND: [
+          {
+            OR: [
+              { effectiveStartDate: null },
+              { effectiveStartDate: { lte: parseIsoDate(input.date) } },
+            ],
+          },
+          {
+            OR: [
+              { effectiveEndDate: null },
+              { effectiveEndDate: { gte: parseIsoDate(input.date) } },
+            ],
+          },
+        ],
+      },
+      orderBy: [{ closurePriority: "asc" }, { updatedAt: "desc" }, { id: "asc" }],
+    }),
   ]);
 
   if (!scheduleDay) {
@@ -406,12 +484,21 @@ export async function generateScheduleForDate(input: {
         interchangeableGroup: slot.taskType.interchangeableGroup,
         difficultyWeight: slot.taskType.difficultyWeight,
         sortOrder: slot.taskType.sortOrder,
+        isClinical: slot.taskType.isClinical,
+        isBackground: slot.taskType.isBackground,
+        isSkilled: slot.taskType.isSkilled,
+        isEndoscopy: slot.taskType.isEndoscopy,
+        isFloat: slot.taskType.isFloat,
       } satisfies SchedulerTaskType,
     ]),
   );
 
   const historicalCountByEmployee = new Map<string, number>();
   const historicalTaskCountByEmployee = new Map<string, Record<string, number>>();
+  const historicalClinicalCountByEmployee = new Map<string, number>();
+  const historicalHoursByEmployee = new Map<string, number>();
+  const historicalSaturdayCountByEmployee = new Map<string, number>();
+  const historicalEndoscopyCountByEmployee = new Map<string, number>();
 
   for (const assignment of historicalAssignments) {
     historicalCountByEmployee.set(
@@ -424,6 +511,39 @@ export async function generateScheduleForDate(input: {
     taskCounts[assignment.taskSlot.taskTypeId] =
       (taskCounts[assignment.taskSlot.taskTypeId] ?? 0) + 1;
     historicalTaskCountByEmployee.set(assignment.employeeId, taskCounts);
+
+    if (assignment.taskSlot.taskType.isClinical) {
+      historicalClinicalCountByEmployee.set(
+        assignment.employeeId,
+        (historicalClinicalCountByEmployee.get(assignment.employeeId) ?? 0) + 1,
+      );
+    }
+
+    historicalHoursByEmployee.set(
+      assignment.employeeId,
+      (historicalHoursByEmployee.get(assignment.employeeId) ?? 0) +
+        Number(assignment.taskSlot.shiftBlock.paidHours),
+    );
+
+    if (
+      assignment.taskSlot.shiftBlock.shiftCategory === "SATURDAY" ||
+      assignment.taskSlot.scheduleDay.date.getUTCDay() === 6
+    ) {
+      historicalSaturdayCountByEmployee.set(
+        assignment.employeeId,
+        (historicalSaturdayCountByEmployee.get(assignment.employeeId) ?? 0) + 1,
+      );
+    }
+
+    if (
+      assignment.taskSlot.taskType.isEndoscopy ||
+      assignment.taskSlot.shiftBlock.shiftCategory === "ENDO"
+    ) {
+      historicalEndoscopyCountByEmployee.set(
+        assignment.employeeId,
+        (historicalEndoscopyCountByEmployee.get(assignment.employeeId) ?? 0) + 1,
+      );
+    }
   }
 
   const schedulerEmployees: SchedulerEmployee[] = employees
@@ -469,12 +589,24 @@ export async function generateScheduleForDate(input: {
       historicalTaskAssignments: sortNumberRecord(
         historicalTaskCountByEmployee.get(employee.id) ?? {},
       ),
+      historicalClinicalAssignments:
+        historicalClinicalCountByEmployee.get(employee.id) ?? 0,
+      historicalScheduledHours: historicalHoursByEmployee.get(employee.id) ?? 0,
+      historicalSaturdayAssignments:
+        historicalSaturdayCountByEmployee.get(employee.id) ?? 0,
+      historicalEndoscopyAssignments:
+        historicalEndoscopyCountByEmployee.get(employee.id) ?? 0,
     }))
     .sort((left, right) => left.id.localeCompare(right.id));
 
   const slots: SchedulerTaskSlot[] = scheduleDay.taskSlots.map((slot) => ({
     id: slot.id,
     date: input.date,
+    shiftBlockId: slot.shiftBlockId,
+    shiftTemplateId: slot.shiftBlock.shiftTemplateId,
+    shiftCategory: slot.shiftBlock.shiftCategory,
+    shiftName: slot.shiftBlock.name,
+    paidHours: Number(slot.shiftBlock.paidHours),
     taskTypeId: slot.taskTypeId,
     slotIndex: slot.slotIndex,
     startMinute: slot.startMinute,
@@ -512,6 +644,13 @@ export async function generateScheduleForDate(input: {
       parameters: jsonRecord(rule.parameters),
     })),
     existingAssignments,
+    fairness: {
+      clinicalShiftWeight: fairnessSetting.clinicalShiftWeight,
+      totalShiftWeight: fairnessSetting.totalShiftWeight,
+      totalHoursWeight: fairnessSetting.totalHoursWeight,
+      saturdayShiftWeight: fairnessSetting.saturdayShiftWeight,
+      endoscopyShiftWeight: fairnessSetting.endoscopyShiftWeight,
+    },
   };
 
   const inputHash = createHash("sha256")
@@ -577,6 +716,7 @@ export async function generateScheduleForDate(input: {
     schedulerEmployees.map((employee) => [employee.id, employee]),
   );
   const schedulerSlotsById = new Map(slots.map((slot) => [slot.id, slot]));
+  const dbSlotsById = new Map(scheduleDay.taskSlots.map((slot) => [slot.id, slot]));
   const lockedPtoConflictsBySlotId = new Map<string, string>();
 
   for (const slot of scheduleDay.taskSlots) {
@@ -627,7 +767,14 @@ export async function generateScheduleForDate(input: {
         notes:
           lockedPtoConflictsBySlotId.get(slotId) ??
           (conflictsBySlotId.has(slotId)
-            ? formatConflictNote(conflictsBySlotId.get(slotId)!)
+            ? formatConflictNote(
+                conflictsBySlotId.get(slotId)!,
+                selectShortageInstruction({
+                  slot: dbSlotsById.get(slotId),
+                  scenario: scheduleDay.scenario,
+                  shortageRules,
+                }),
+              )
             : null),
       },
     });
@@ -739,15 +886,69 @@ export async function unpublishScheduleForDate(input: {
 function formatConflictNote(conflict: {
   reason: string;
   rejectedCandidates: { employeeId: string; reasons: string[] }[];
-}) {
+}, managerInstruction?: string | null) {
   const rejectionSummary = conflict.rejectedCandidates
     .slice(0, 4)
     .map((candidate) => `${candidate.employeeId}: ${candidate.reasons.join(", ")}`)
     .join(" | ");
 
-  return rejectionSummary
+  const baseNote = rejectionSummary
     ? `${conflict.reason}. ${rejectionSummary}`
     : conflict.reason;
+
+  return managerInstruction
+    ? `${baseNote}. Recommendation: ${managerInstruction}`
+    : baseNote;
+}
+
+function selectShortageInstruction(input: {
+  slot:
+    | {
+        taskTypeId: string;
+        shiftBlock: {
+          shiftTemplateId: string | null;
+          shiftCategory: string;
+        };
+      }
+    | undefined;
+  scenario: ClinicScenario;
+  shortageRules: {
+    taskTypeId: string | null;
+    shiftTemplateId: string | null;
+    shiftCategory: string | null;
+    scenario: ClinicScenario | null;
+    managerInstruction: string;
+  }[];
+}) {
+  if (!input.slot) {
+    return null;
+  }
+
+  return input.shortageRules.find((rule) => {
+    if (rule.taskTypeId && rule.taskTypeId !== input.slot?.taskTypeId) {
+      return false;
+    }
+
+    if (
+      rule.shiftTemplateId &&
+      rule.shiftTemplateId !== input.slot?.shiftBlock.shiftTemplateId
+    ) {
+      return false;
+    }
+
+    if (
+      rule.shiftCategory &&
+      rule.shiftCategory !== input.slot?.shiftBlock.shiftCategory
+    ) {
+      return false;
+    }
+
+    if (rule.scenario && rule.scenario !== input.scenario) {
+      return false;
+    }
+
+    return true;
+  })?.managerInstruction ?? null;
 }
 
 function jsonRecord(value: Prisma.JsonValue) {
@@ -764,6 +965,7 @@ async function reconcileSlotsForStaffingRequirements(input: {
   scenario: ClinicScenario;
 }) {
   const db = getDb();
+  const shiftBlocks = await ensureShiftBlocksForScheduleDay(input);
   const [taskTypes, rules] = await Promise.all([
     db.taskType.findMany({
       where: { active: true },
@@ -789,19 +991,29 @@ async function reconcileSlotsForStaffingRequirements(input: {
     scenario: input.scenario,
     taskTypes,
     rules,
+    shiftBlocks: shiftBlocks.map((shiftBlock) => ({
+      id: shiftBlock.id,
+      shiftTemplateId: shiftBlock.shiftTemplateId,
+      shiftCategory: shiftBlock.shiftCategory,
+      startMinute: shiftBlock.startMinute,
+      defaultForSchedule: shiftBlock.defaultForSchedule,
+    })),
   });
   const desiredKeys = new Set(specs.map(slotSpecKey));
+  const shiftBlocksById = new Map(shiftBlocks.map((shiftBlock) => [shiftBlock.id, shiftBlock]));
 
   for (const spec of specs) {
     const taskType = taskTypesById.get(spec.taskTypeId);
+    const shiftBlock = shiftBlocksById.get(spec.shiftBlockId);
 
-    if (!taskType) {
+    if (!taskType || !shiftBlock) {
       continue;
     }
 
     await upsertPreparedTaskSlot({
       scheduleDayId: input.scheduleDayId,
       taskTypeName: taskType.name,
+      shiftBlock,
       spec,
     });
   }
@@ -873,17 +1085,123 @@ async function reconcileSlotsForStaffingRequirements(input: {
   return specs.length;
 }
 
+async function ensureShiftBlocksForScheduleDay(input: {
+  scheduleDayId: string;
+  date: string;
+  scenario: ClinicScenario;
+}) {
+  const db = getDb();
+
+  if (input.scenario === "CLINIC_CLOSED") {
+    return [];
+  }
+
+  const dateValue = parseIsoDate(input.date);
+  const weekday = dateValue.getUTCDay();
+  const weekdayTemplateWhere =
+    weekday >= 1 && weekday <= 5
+      ? { OR: [{ dayOfWeek: null }, { dayOfWeek: weekday }] }
+      : { dayOfWeek: weekday };
+  const templates = await db.shiftTemplate.findMany({
+    where: {
+      active: true,
+      ...weekdayTemplateWhere,
+      AND: [
+        {
+          OR: [
+            { effectiveStartDate: null },
+            { effectiveStartDate: { lte: dateValue } },
+          ],
+        },
+        {
+          OR: [
+            { effectiveEndDate: null },
+            { effectiveEndDate: { gte: dateValue } },
+          ],
+        },
+      ],
+    },
+    orderBy: [
+      { defaultForSchedule: "desc" },
+      { startMinute: "asc" },
+      { name: "asc" },
+      { id: "asc" },
+    ],
+  });
+
+  for (const template of templates) {
+    await db.shiftBlock.upsert({
+      where: {
+        scheduleDayId_shiftTemplateId: {
+          scheduleDayId: input.scheduleDayId,
+          shiftTemplateId: template.id,
+        },
+      },
+      update: {},
+      create: {
+        scheduleDayId: input.scheduleDayId,
+        ...buildShiftBlockSnapshot(template),
+      },
+    });
+  }
+
+  const matchingTemplateIds = templates.map((template) => template.id);
+
+  let shiftBlocks = await db.shiftBlock.findMany({
+    where: {
+      scheduleDayId: input.scheduleDayId,
+      active: true,
+      OR: [
+        { shiftTemplateId: null },
+        { shiftTemplateId: { in: matchingTemplateIds } },
+      ],
+    },
+    orderBy: [{ startMinute: "asc" }, { name: "asc" }, { id: "asc" }],
+  });
+
+  if (shiftBlocks.length === 0) {
+    const fallback = await db.shiftBlock.create({
+      data: {
+        scheduleDayId: input.scheduleDayId,
+        name: "Default clinic shift",
+        startMinute: FALLBACK_SHIFT_START_MINUTE,
+        endMinute: FALLBACK_SHIFT_END_MINUTE,
+        paidHours: FALLBACK_SHIFT_PAID_HOURS,
+        shiftCategory: "OTHER",
+        defaultForSchedule: true,
+        source: "FALLBACK",
+        active: true,
+        notes: "Fallback shift block used because no active shift template matched this date.",
+      },
+    });
+
+    shiftBlocks = [fallback];
+  }
+
+  return shiftBlocks;
+}
+
+function selectDefaultShiftBlock(shiftBlocks: ShiftBlock[]) {
+  return (
+    shiftBlocks.find((shiftBlock) => shiftBlock.defaultForSchedule) ??
+    shiftBlocks[0] ??
+    null
+  );
+}
+
 async function upsertPreparedTaskSlot(input: {
   scheduleDayId: string;
   taskTypeName: string;
+  shiftBlock: ShiftBlock;
   spec: StaffingSlotSpec;
 }) {
   const db = getDb();
   const label = `${input.taskTypeName} #${input.spec.slotIndex}`;
   const existingSlot = await db.taskSlot.findUnique({
     where: {
-      scheduleDayId_taskTypeId_slotIndex: {
+      scheduleDayId_shiftBlockId_taskTypeId_slotIndex: {
         scheduleDayId: input.scheduleDayId,
+        shiftBlockId: input.spec.shiftBlockId,
         taskTypeId: input.spec.taskTypeId,
         slotIndex: input.spec.slotIndex,
       },
@@ -894,11 +1212,12 @@ async function upsertPreparedTaskSlot(input: {
     await db.taskSlot.create({
       data: {
         scheduleDayId: input.scheduleDayId,
+        shiftBlockId: input.spec.shiftBlockId,
         taskTypeId: input.spec.taskTypeId,
         slotIndex: input.spec.slotIndex,
         label,
-        startMinute: DEFAULT_SLOT_START_MINUTE,
-        endMinute: DEFAULT_SLOT_END_MINUTE,
+        startMinute: input.shiftBlock.startMinute,
+        endMinute: input.shiftBlock.endMinute,
         status: "OPEN",
         minStaff: 1,
         requiredStaff: 1,
@@ -914,8 +1233,8 @@ async function upsertPreparedTaskSlot(input: {
     where: { id: existingSlot.id },
     data: {
       label: existingSlot.label ?? label,
-      startMinute: existingSlot.startMinute ?? DEFAULT_SLOT_START_MINUTE,
-      endMinute: existingSlot.endMinute ?? DEFAULT_SLOT_END_MINUTE,
+      startMinute: existingSlot.startMinute ?? input.shiftBlock.startMinute,
+      endMinute: existingSlot.endMinute ?? input.shiftBlock.endMinute,
       status: existingSlot.status === "CANCELLED" ? "OPEN" : existingSlot.status,
       notes: existingSlot.status === "CANCELLED" ? null : existingSlot.notes,
       minStaff: 1,
@@ -927,14 +1246,46 @@ async function upsertPreparedTaskSlot(input: {
   });
 }
 
-function slotSpecKey(value: Pick<StaffingSlotSpec, "taskTypeId" | "slotIndex">) {
-  return `${value.taskTypeId}:${value.slotIndex}`;
+function slotSpecKey(
+  value: Pick<StaffingSlotSpec, "shiftBlockId" | "taskTypeId" | "slotIndex">,
+) {
+  return `${value.shiftBlockId}:${value.taskTypeId}:${value.slotIndex}`;
 }
 
 function sortNumberRecord(record: Record<string, number>) {
   return Object.fromEntries(
     Object.entries(record).sort(([left], [right]) => left.localeCompare(right)),
   );
+}
+
+function getFairnessWindow(
+  date: string,
+  setting: {
+    windowType: string;
+    customStartDate: Date | null;
+    customEndDate: Date | null;
+  },
+) {
+  if (
+    setting.windowType === "CUSTOM" &&
+    setting.customStartDate &&
+    setting.customEndDate
+  ) {
+    return {
+      startDate: toIsoDate(setting.customStartDate),
+      endDate: toIsoDate(setting.customEndDate),
+    };
+  }
+
+  const end = parseIsoDate(date);
+  const start = parseIsoDate(date);
+  const days = setting.windowType === "ONE_MONTH" ? 30 : 14;
+  start.setUTCDate(start.getUTCDate() - (days - 1));
+
+  return {
+    startDate: toIsoDate(start),
+    endDate: toIsoDate(end),
+  };
 }
 
 function stableStringify(value: unknown): string {

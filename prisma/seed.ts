@@ -30,6 +30,11 @@ const taskTypes = [
     optional: false,
     defaultForRoutine: true,
     defaultForReduced: false,
+    isClinical: true,
+    isBackground: false,
+    isSkilled: false,
+    isEndoscopy: false,
+    isFloat: false,
     requiredSkillCodes: [],
   },
   {
@@ -41,6 +46,11 @@ const taskTypes = [
     optional: false,
     defaultForRoutine: true,
     defaultForReduced: false,
+    isClinical: true,
+    isBackground: false,
+    isSkilled: false,
+    isEndoscopy: false,
+    isFloat: false,
     requiredSkillCodes: [],
   },
   {
@@ -52,6 +62,11 @@ const taskTypes = [
     optional: false,
     defaultForRoutine: true,
     defaultForReduced: false,
+    isClinical: true,
+    isBackground: false,
+    isSkilled: false,
+    isEndoscopy: false,
+    isFloat: false,
     requiredSkillCodes: [],
   },
   {
@@ -63,6 +78,11 @@ const taskTypes = [
     optional: false,
     defaultForRoutine: true,
     defaultForReduced: false,
+    isClinical: true,
+    isBackground: false,
+    isSkilled: false,
+    isEndoscopy: false,
+    isFloat: false,
     requiredSkillCodes: [],
   },
   {
@@ -74,6 +94,11 @@ const taskTypes = [
     optional: false,
     defaultForRoutine: true,
     defaultForReduced: true,
+    isClinical: true,
+    isBackground: false,
+    isSkilled: false,
+    isEndoscopy: false,
+    isFloat: false,
     requiredSkillCodes: [],
   },
   {
@@ -85,6 +110,11 @@ const taskTypes = [
     optional: false,
     defaultForRoutine: true,
     defaultForReduced: true,
+    isClinical: false,
+    isBackground: false,
+    isSkilled: false,
+    isEndoscopy: false,
+    isFloat: false,
     requiredSkillCodes: [],
   },
   {
@@ -96,6 +126,11 @@ const taskTypes = [
     optional: false,
     defaultForRoutine: true,
     defaultForReduced: false,
+    isClinical: true,
+    isBackground: false,
+    isSkilled: true,
+    isEndoscopy: false,
+    isFloat: false,
     requiredSkillCodes: ["CIVIL_SURGEON"],
   },
   {
@@ -107,6 +142,11 @@ const taskTypes = [
     optional: false,
     defaultForRoutine: true,
     defaultForReduced: true,
+    isClinical: true,
+    isBackground: false,
+    isSkilled: true,
+    isEndoscopy: false,
+    isFloat: false,
     requiredSkillCodes: ["ALLERGY_SHOT"],
   },
   {
@@ -118,6 +158,11 @@ const taskTypes = [
     optional: false,
     defaultForRoutine: true,
     defaultForReduced: false,
+    isClinical: true,
+    isBackground: false,
+    isSkilled: true,
+    isEndoscopy: false,
+    isFloat: false,
     requiredSkillCodes: ["PROCEDURE"],
   },
   {
@@ -129,6 +174,11 @@ const taskTypes = [
     optional: false,
     defaultForRoutine: false,
     defaultForReduced: false,
+    isClinical: true,
+    isBackground: false,
+    isSkilled: true,
+    isEndoscopy: true,
+    isFloat: false,
     requiredSkillCodes: ["PROCEDURE"],
   },
   {
@@ -140,6 +190,11 @@ const taskTypes = [
     optional: false,
     defaultForRoutine: false,
     defaultForReduced: false,
+    isClinical: true,
+    isBackground: false,
+    isSkilled: false,
+    isEndoscopy: false,
+    isFloat: false,
     requiredSkillCodes: [],
   },
   {
@@ -151,6 +206,11 @@ const taskTypes = [
     optional: false,
     defaultForRoutine: false,
     defaultForReduced: false,
+    isClinical: true,
+    isBackground: false,
+    isSkilled: false,
+    isEndoscopy: false,
+    isFloat: false,
     requiredSkillCodes: [],
   },
   {
@@ -162,6 +222,11 @@ const taskTypes = [
     optional: false,
     defaultForRoutine: false,
     defaultForReduced: false,
+    isClinical: false,
+    isBackground: true,
+    isSkilled: false,
+    isEndoscopy: false,
+    isFloat: false,
     requiredSkillCodes: [],
   },
   {
@@ -173,6 +238,11 @@ const taskTypes = [
     optional: false,
     defaultForRoutine: false,
     defaultForReduced: false,
+    isClinical: true,
+    isBackground: false,
+    isSkilled: true,
+    isEndoscopy: false,
+    isFloat: false,
     requiredSkillCodes: [],
   },
   {
@@ -184,6 +254,11 @@ const taskTypes = [
     optional: true,
     defaultForRoutine: false,
     defaultForReduced: false,
+    isClinical: false,
+    isBackground: true,
+    isSkilled: false,
+    isEndoscopy: false,
+    isFloat: false,
     requiredSkillCodes: [],
   },
   {
@@ -195,6 +270,11 @@ const taskTypes = [
     optional: true,
     defaultForRoutine: false,
     defaultForReduced: false,
+    isClinical: false,
+    isBackground: true,
+    isSkilled: false,
+    isEndoscopy: false,
+    isFloat: false,
     requiredSkillCodes: [],
   },
   {
@@ -206,6 +286,11 @@ const taskTypes = [
     optional: true,
     defaultForRoutine: false,
     defaultForReduced: false,
+    isClinical: false,
+    isBackground: true,
+    isSkilled: false,
+    isEndoscopy: false,
+    isFloat: false,
     requiredSkillCodes: [],
   },
   {
@@ -217,6 +302,11 @@ const taskTypes = [
     optional: true,
     defaultForRoutine: false,
     defaultForReduced: false,
+    isClinical: false,
+    isBackground: true,
+    isSkilled: false,
+    isEndoscopy: false,
+    isFloat: true,
     requiredSkillCodes: [],
   },
   {
@@ -228,7 +318,75 @@ const taskTypes = [
     optional: true,
     defaultForRoutine: false,
     defaultForReduced: false,
+    isClinical: false,
+    isBackground: true,
+    isSkilled: false,
+    isEndoscopy: false,
+    isFloat: false,
     requiredSkillCodes: [],
+  },
+];
+
+const shiftTemplates = [
+  {
+    name: "AM early",
+    dayOfWeek: null,
+    startMinute: 7 * 60,
+    endMinute: 11 * 60 + 30,
+    paidHours: 4.5,
+    shiftCategory: "AM" as const,
+    defaultForSchedule: false,
+    notes: "Seed: spreadsheet AM early shift, 7:00 AM-11:30 AM.",
+  },
+  {
+    name: "AM regular",
+    dayOfWeek: null,
+    startMinute: 8 * 60,
+    endMinute: 12 * 60,
+    paidHours: 4,
+    shiftCategory: "AM" as const,
+    defaultForSchedule: true,
+    notes: "Seed: spreadsheet AM regular shift, 8:00 AM-12:00 PM.",
+  },
+  {
+    name: "PM early/long",
+    dayOfWeek: null,
+    startMinute: 12 * 60 + 30,
+    endMinute: 17 * 60,
+    paidHours: 4.5,
+    shiftCategory: "PM" as const,
+    defaultForSchedule: false,
+    notes: "Seed: spreadsheet PM early/long shift, 12:30 PM-5:00 PM.",
+  },
+  {
+    name: "PM regular",
+    dayOfWeek: null,
+    startMinute: 13 * 60,
+    endMinute: 17 * 60,
+    paidHours: 4,
+    shiftCategory: "PM" as const,
+    defaultForSchedule: false,
+    notes: "Seed: spreadsheet PM regular shift, 1:00 PM-5:00 PM.",
+  },
+  {
+    name: "Saturday long/endoscopy",
+    dayOfWeek: 6,
+    startMinute: 6 * 60,
+    endMinute: 14 * 60,
+    paidHours: 8,
+    shiftCategory: "ENDO" as const,
+    defaultForSchedule: false,
+    notes: "Seed: spreadsheet Saturday long/endoscopy shift, 6:00 AM-2:00 PM.",
+  },
+  {
+    name: "Saturday shorter",
+    dayOfWeek: 6,
+    startMinute: 8 * 60,
+    endMinute: 14 * 60,
+    paidHours: 6,
+    shiftCategory: "SATURDAY" as const,
+    defaultForSchedule: true,
+    notes: "Seed: spreadsheet Saturday shorter shift, 8:00 AM-2:00 PM.",
   },
 ];
 
@@ -273,7 +431,7 @@ const demoEmployees = [
     ptoBalanceHours: 72,
     expectedWeeklyHours: 40,
     weeklyAssignmentLimit: 5,
-    availability: weekdayWindows([1, 2, 3, 4, 5], 7 * 60 + 30, 17 * 60),
+    availability: weekdayWindows([1, 2, 3, 4, 5], 7 * 60, 17 * 60),
   },
   {
     email: "dev.procedure@clinic.test",
@@ -359,6 +517,23 @@ async function main() {
     },
   });
 
+  await prisma.fairnessSetting.upsert({
+    where: { id: "default" },
+    update: {
+      windowType: "TWO_WEEKS",
+      active: true,
+      notes:
+        "Seed: configurable fairness defaults. Update when clinic policy is finalized.",
+    },
+    create: {
+      id: "default",
+      windowType: "TWO_WEEKS",
+      active: true,
+      notes:
+        "Seed: configurable fairness defaults. Update when clinic policy is finalized.",
+    },
+  });
+
   const skillByCode = new Map<string, string>();
   const taskTypeByCode = new Map<string, string>();
   let demoAdminId: string | null = null;
@@ -392,6 +567,11 @@ async function main() {
         optional: taskType.optional,
         defaultForRoutine: taskType.defaultForRoutine,
         defaultForReduced: taskType.defaultForReduced,
+        isClinical: taskType.isClinical,
+        isBackground: taskType.isBackground,
+        isSkilled: taskType.isSkilled,
+        isEndoscopy: taskType.isEndoscopy,
+        isFloat: taskType.isFloat,
         active: true,
       },
       create: {
@@ -403,6 +583,11 @@ async function main() {
         optional: taskType.optional,
         defaultForRoutine: taskType.defaultForRoutine,
         defaultForReduced: taskType.defaultForReduced,
+        isClinical: taskType.isClinical,
+        isBackground: taskType.isBackground,
+        isSkilled: taskType.isSkilled,
+        isEndoscopy: taskType.isEndoscopy,
+        isFloat: taskType.isFloat,
       },
     });
 
@@ -429,6 +614,64 @@ async function main() {
     }
 
     taskTypeByCode.set(record.code, record.id);
+  }
+
+  for (const shiftTemplate of shiftTemplates) {
+    const existing = await prisma.shiftTemplate.findFirst({
+      where: { name: shiftTemplate.name },
+    });
+
+    if (existing) {
+      await prisma.shiftTemplate.update({
+        where: { id: existing.id },
+        data: {
+          ...shiftTemplate,
+          active: true,
+        },
+      });
+    } else {
+      await prisma.shiftTemplate.create({
+        data: {
+          ...shiftTemplate,
+          active: true,
+        },
+      });
+    }
+  }
+
+  for (const category of [
+    {
+      code: "ADMIN_OPS",
+      name: "Admin Operations",
+      description: "Non-clinic administrative work obligations.",
+      sortOrder: 10,
+    },
+    {
+      code: "RESEARCH",
+      name: "Research",
+      description: "Research and study support obligations.",
+      sortOrder: 20,
+    },
+    {
+      code: "BOOKING",
+      name: "Booking",
+      description: "Booking and scheduling support obligations.",
+      sortOrder: 30,
+    },
+  ]) {
+    await prisma.backgroundTaskCategory.upsert({
+      where: { code: category.code },
+      update: {
+        name: category.name,
+        description: category.description,
+        sortOrder: category.sortOrder,
+        active: true,
+      },
+      create: {
+        ...category,
+        active: true,
+      },
+    });
   }
 
   await prisma.taskType.updateMany({

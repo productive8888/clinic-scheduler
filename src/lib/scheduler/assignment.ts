@@ -5,6 +5,7 @@ import type {
   ExistingAssignment,
   ScheduleAssignment,
   SchedulerEmployee,
+  SchedulerFairnessSettings,
   SchedulerRule,
   SchedulerTaskSlot,
   SchedulerTaskType,
@@ -21,6 +22,7 @@ export function selectAssignment(input: {
   taskType: SchedulerTaskType;
   employees: SchedulerEmployee[];
   rules: SchedulerRule[];
+  fairness?: SchedulerFairnessSettings;
   assignments: ExistingAssignment[];
 }): AssignmentSelection {
   const rejectedCandidates: CandidateRejection[] = [];
@@ -47,6 +49,7 @@ export function selectAssignment(input: {
           slot: input.slot,
           assignments: input.assignments,
           rules: input.rules,
+          fairness: input.fairness,
         }),
       };
     })
@@ -83,6 +86,7 @@ export function selectAssignment(input: {
 export function toExistingAssignment(
   assignment: ScheduleAssignment,
   slot: SchedulerTaskSlot,
+  taskType?: SchedulerTaskType,
 ): ExistingAssignment {
   return {
     slotId: assignment.slotId,
@@ -91,6 +95,11 @@ export function toExistingAssignment(
     taskTypeId: assignment.taskTypeId,
     startMinute: slot.startMinute,
     endMinute: slot.endMinute,
+    shiftBlockId: slot.shiftBlockId,
+    shiftCategory: slot.shiftCategory,
+    paidHours: slot.paidHours,
+    isClinical: taskType?.isClinical,
+    isEndoscopy: taskType?.isEndoscopy,
     locked: assignment.source === "LOCKED",
   };
 }

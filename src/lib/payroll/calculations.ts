@@ -304,6 +304,7 @@ function applyScheduleHours(input: {
         taskTypeName: slot.taskTypeName,
         startMinute: slot.startMinute,
         endMinute: slot.endMinute,
+        paidHours: slot.paidHours,
         date: scheduleDay.date,
         warnings: input.warnings,
       });
@@ -437,9 +438,14 @@ function slotHoursOrWarning(input: {
   taskTypeName: string;
   startMinute?: number | null;
   endMinute?: number | null;
+  paidHours?: number | null;
   date: string;
   warnings: PayrollWarning[];
 }) {
+  if (input.paidHours !== null && input.paidHours !== undefined) {
+    return roundToTwo(input.paidHours);
+  }
+
   if (
     input.startMinute === null ||
     input.startMinute === undefined ||

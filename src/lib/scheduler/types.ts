@@ -11,6 +11,10 @@ export type SchedulerEmployee = {
   weeklyAssignmentLimit?: number | null;
   historicalAssignments?: number;
   historicalTaskAssignments?: Record<string, number>;
+  historicalClinicalAssignments?: number;
+  historicalScheduledHours?: number;
+  historicalSaturdayAssignments?: number;
+  historicalEndoscopyAssignments?: number;
 };
 
 export type SchedulerTaskType = {
@@ -21,11 +25,21 @@ export type SchedulerTaskType = {
   interchangeableGroup?: string | null;
   difficultyWeight?: number;
   sortOrder?: number;
+  isClinical?: boolean;
+  isBackground?: boolean;
+  isSkilled?: boolean;
+  isEndoscopy?: boolean;
+  isFloat?: boolean;
 };
 
 export type SchedulerTaskSlot = {
   id: string;
   date: IsoDate;
+  shiftBlockId?: string | null;
+  shiftTemplateId?: string | null;
+  shiftCategory?: "AM" | "PM" | "SATURDAY" | "ENDO" | "FLOAT" | "OTHER";
+  shiftName?: string | null;
+  paidHours?: number | null;
   taskTypeId: string;
   slotIndex: number;
   requirementLevel?: "REQUIRED" | "DESIRED" | "OPTIONAL" | "CONDITIONAL";
@@ -61,6 +75,11 @@ export type ExistingAssignment = {
   taskTypeId: string;
   startMinute?: number | null;
   endMinute?: number | null;
+  shiftBlockId?: string | null;
+  shiftCategory?: SchedulerTaskSlot["shiftCategory"];
+  paidHours?: number | null;
+  isClinical?: boolean;
+  isEndoscopy?: boolean;
   locked?: boolean;
 };
 
@@ -98,6 +117,15 @@ export type GenerateScheduleInput = {
   slots: SchedulerTaskSlot[];
   rules?: SchedulerRule[];
   existingAssignments?: ExistingAssignment[];
+  fairness?: SchedulerFairnessSettings;
+};
+
+export type SchedulerFairnessSettings = {
+  clinicalShiftWeight: number;
+  totalShiftWeight: number;
+  totalHoursWeight: number;
+  saturdayShiftWeight: number;
+  endoscopyShiftWeight: number;
 };
 
 export type ScheduleAssignment = {

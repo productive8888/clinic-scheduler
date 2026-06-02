@@ -94,6 +94,7 @@ export async function addTaskSlotAction(formData: FormData) {
   const actor = await requireManager();
   const date = getDateFromForm(formData);
   const taskTypeId = String(formData.get("taskTypeId") || "");
+  const shiftBlockId = String(formData.get("shiftBlockId") || "");
 
   if (!taskTypeId) {
     throw new Error("Task type is required.");
@@ -102,6 +103,7 @@ export async function addTaskSlotAction(formData: FormData) {
   await addTaskSlotToScheduleDay({
     date,
     taskTypeId,
+    shiftBlockId: shiftBlockId || null,
     actorEmployeeId: auditActorId(actor),
   });
   revalidatePath("/schedule");

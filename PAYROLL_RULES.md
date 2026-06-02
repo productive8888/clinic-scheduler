@@ -7,7 +7,8 @@ submit payroll, send payments, or integrate with payroll vendors.
 
 Payroll reports combine:
 
-- Active schedule assignments and task slot start/end times.
+- Active schedule assignments, shift-block paid hours, and task slot start/end
+  times for calendar context.
 - Approved or overridden PTO.
 - Approved or overridden NPTO.
 - Configured paid holidays.
@@ -72,3 +73,14 @@ Reports flag:
 - Manual overrides.
 - Reversed or cancelled PTO/NPTO affecting the period.
 - Missing task slot start/end times.
+
+## Variable Shift Lengths
+
+Scheduled work hours prefer the dated `ShiftBlock.paidHours` snapshot. Task slot
+start/end times remain important for calendar exports and eligibility checks,
+but payroll falls back to duration only when a shift block paid-hour value is
+missing.
+
+Endoscopy overtime, comp-time banking for Saturday/endoscopy shifts, shortened
+future float shifts, and clinic-closure time-back policies are intentionally
+configuration/future-policy items. They are not hardcoded in V1.

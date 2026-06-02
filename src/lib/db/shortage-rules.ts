@@ -1,16 +1,14 @@
 import { writeAuditLog } from "@/lib/audit";
 import { getDb } from "@/lib/db";
-import type { StaffingRequirementFormValues } from "@/lib/validation/staffing-requirement";
+import type { ShortageRuleFormValues } from "@/lib/validation/shortage-rule";
 import { parseIsoDate } from "@/lib/utils/date";
 
-export function getStaffingRequirementsPageData() {
+export function getShortageRulesPageData() {
   return Promise.all([
-    getDb().staffingRequirementRule.findMany({
+    getDb().shortageRule.findMany({
       orderBy: [
         { active: "desc" },
-        { taskType: { sortOrder: "asc" } },
-        { weekday: "asc" },
-        { scenario: "asc" },
+        { closurePriority: "asc" },
         { updatedAt: "desc" },
       ],
       include: {
@@ -22,20 +20,11 @@ export function getStaffingRequirementsPageData() {
     getDb().taskType.findMany({
       where: { active: true },
       orderBy: [{ sortOrder: "asc" }, { name: "asc" }],
-      select: {
-        id: true,
-        name: true,
-        code: true,
-        optional: true,
-      },
+      select: { id: true, name: true, code: true },
     }),
     getDb().shiftTemplate.findMany({
       where: { active: true },
-      orderBy: [
-        { dayOfWeek: "asc" },
-        { startMinute: "asc" },
-        { name: "asc" },
-      ],
+      orderBy: [{ dayOfWeek: "asc" }, { startMinute: "asc" }, { name: "asc" }],
       select: {
         id: true,
         name: true,
@@ -43,24 +32,23 @@ export function getStaffingRequirementsPageData() {
         startMinute: true,
         endMinute: true,
         shiftCategory: true,
-        defaultForSchedule: true,
       },
     }),
   ]);
 }
 
-export async function createStaffingRequirementRule(input: {
-  values: StaffingRequirementFormValues;
+export async function createShortageRule(input: {
+  values: ShortageRuleFormValues;
   actorEmployeeId?: string | null;
 }) {
-  const rule = await getDb().staffingRequirementRule.create({
-    data: toStaffingRuleData(input.values, input.actorEmployeeId),
+  const rule = await getDb().shortageRule.create({
+    data: toShortageRuleData(input.values, input.actorEmployeeId),
   });
 
   await writeAuditLog({
     actorEmployeeId: input.actorEmployeeId,
-    action: "staffing_requirement_rule.create",
-    entityType: "StaffingRequirementRule",
+    action: "shortage_rule.create",
+    entityType: "ShortageRule",
     entityId: rule.id,
     after: rule,
   });
@@ -68,24 +56,24 @@ export async function createStaffingRequirementRule(input: {
   return rule;
 }
 
-export async function updateStaffingRequirementRule(input: {
+export async function updateShortageRule(input: {
   ruleId: string;
-  values: StaffingRequirementFormValues;
+  values: ShortageRuleFormValues;
   actorEmployeeId?: string | null;
 }) {
   const db = getDb();
-  const before = await db.staffingRequirementRule.findUniqueOrThrow({
+  const before = await db.shortageRule.findUniqueOrThrow({
     where: { id: input.ruleId },
   });
-  const rule = await db.staffingRequirementRule.update({
+  const rule = await db.shortageRule.update({
     where: { id: input.ruleId },
-    data: toStaffingRuleData(input.values, undefined),
+    data: toShortageRuleData(input.values, undefined),
   });
 
   await writeAuditLog({
     actorEmployeeId: input.actorEmployeeId,
-    action: "staffing_requirement_rule.update",
-    entityType: "StaffingRequirementRule",
+    action: "shortage_rule.update",
+    entityType: "ShortageRule",
     entityId: rule.id,
     before,
     after: rule,
@@ -94,23 +82,23 @@ export async function updateStaffingRequirementRule(input: {
   return rule;
 }
 
-export async function deactivateStaffingRequirementRule(input: {
+export async function deactivateShortageRule(input: {
   ruleId: string;
   actorEmployeeId?: string | null;
 }) {
   const db = getDb();
-  const before = await db.staffingRequirementRule.findUniqueOrThrow({
+  const before = await db.shortageRule.findUniqueOrThrow({
     where: { id: input.ruleId },
   });
-  const rule = await db.staffingRequirementRule.update({
+  const rule = await db.shortageRule.update({
     where: { id: input.ruleId },
     data: { active: false },
   });
 
   await writeAuditLog({
     actorEmployeeId: input.actorEmployeeId,
-    action: "staffing_requirement_rule.deactivate",
-    entityType: "StaffingRequirementRule",
+    action: "shortage_rule.deactivate",
+    entityType: "ShortageRule",
     entityId: rule.id,
     before,
     after: rule,
@@ -119,20 +107,17 @@ export async function deactivateStaffingRequirementRule(input: {
   return rule;
 }
 
-function toStaffingRuleData(
-  values: StaffingRequirementFormValues,
+function toShortageRuleData(
+  values: ShortageRuleFormValues,
   createdByEmployeeId: string | null | undefined,
 ) {
   return {
     taskTypeId: values.taskTypeId,
     shiftTemplateId: values.shiftTemplateId,
     shiftCategory: values.shiftCategory,
-    weekday: values.weekday,
     scenario: values.scenario,
-    minRequiredSlots: values.minRequiredSlots,
-    desiredSlots: values.desiredSlots,
-    maxSlots: values.maxSlots,
-    requirementLevel: values.requirementLevel,
+    closurePriority: values.closurePriority,
+    managerInstruction: values.managerInstruction,
     active: values.active,
     effectiveStartDate: values.effectiveStartDate
       ? parseIsoDate(values.effectiveStartDate)

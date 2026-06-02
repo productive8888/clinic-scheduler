@@ -15,7 +15,8 @@ versioned migrations in `prisma/migrations`.
 - `Skill` and `EmployeeSkill`: normalized boolean skill checklist.
 - `TaskType`: configurable clinic task catalog with skill requirements,
   difficulty, sort order, scenario-default flags, optional/manual-only flags,
-  and interchangeable task group keys.
+  clinical/background/skilled/endoscopy/float classification flags, and
+  interchangeable task group keys.
 - `TaskSkillRequirement`: required skill mapping per task type.
 - `WeeklyAvailability`: recurring employee normal working schedule by weekday,
   start/end minute, effective date range, and active state. Days without an
@@ -45,12 +46,28 @@ versioned migrations in `prisma/migrations`.
   notes.
 - `ScheduleDay`: one operational staffing day, including draft/generated/
   published status, clinic scenario, and publish metadata.
+- `ShiftTemplate`: editable manager-configured reusable shift definitions with
+  weekday scope, start/end minute, paid hours, shift category, default schedule
+  flag, active status, and effective dates.
+- `ShiftBlock`: concrete dated shift snapshot for a `ScheduleDay`. Task slots
+  attach to shift blocks, preserving historical schedules when future shift
+  templates are edited.
 - `TaskSlot`: concrete task opening on a schedule day, including `slotIndex`,
-  requirement level (`REQUIRED`, `DESIRED`, `OPTIONAL`, or `CONDITIONAL`), and
-  source (`DEFAULT`, `STAFFING_RULE`, or `MANUAL`).
+  `shiftBlockId`, requirement level (`REQUIRED`, `DESIRED`, `OPTIONAL`, or
+  `CONDITIONAL`), and source (`DEFAULT`, `STAFFING_RULE`, or `MANUAL`).
 - `StaffingRequirementRule`: admin-configured multi-slot requirements by task
-  type, weekday, scenario, effective date range, min/desired/max slots,
-  requirement level, active state, and notes.
+  type, shift template or shift category, weekday, scenario, effective date
+  range, min/desired/max slots, requirement level, active state, and notes.
+- `FairnessSetting`: singleton scheduler scoring configuration for fairness
+  window and clinical/total/hour/Saturday/endoscopy weights.
+- `ShortageRule`: manager-facing shortage/cut recommendation storage by task
+  type, shift template/category, scenario, priority, effective dates, and
+  instruction text. These rules provide visible guidance but do not hardcode
+  final closure order.
+- `BackgroundTaskCategory`, `BackgroundTaskDefinition`, and
+  `BackgroundTaskInstance`: foundation for non-clinic work obligations,
+  estimated hours, period type, priority, mentor/owner, eligibility, pullability
+  for clinic coverage, and future period instances.
 - `Assignment`: employee assigned to a task slot, including generated/manual
   source, lock state, short-notice override flag, and removal history.
 - `SchedulingRule`: database-driven preference, priority, avoidance, penalty,
@@ -72,6 +89,8 @@ The system intentionally separates:
 
 Multi-person staffing is modeled by multiple `TaskSlot` records for the same
 `TaskType`, never by creating duplicate task types such as `Allergy Shots 1`.
+With shift blocks, the same `TaskType` can appear more than once on the same
+date by attaching each `TaskSlot` to a different `ShiftBlock`.
 
 ## Clinic Scenarios
 
@@ -92,8 +111,8 @@ which keeps analytics consistent with the current schedule state.
 
 Payroll reports are manager-reviewable estimates generated from current
 database records. The app does not process payroll or submit data to a payroll
-vendor. Reports combine published/draft schedule assignments, approved PTO,
-approved NPTO, paid holidays, configurable expected weekly hours, comp-time
+vendor. Reports combine published/draft schedule assignments, shift-block paid
+hours, approved PTO, approved NPTO, paid holidays, configurable expected weekly hours, comp-time
 settings, and ledger adjustments. The report flags missing schedule data,
 unpublished schedules, unresolved shortages, manual overrides, negative PTO
 balances, PTO below -24 hours, and reversed/cancelled time off in the selected

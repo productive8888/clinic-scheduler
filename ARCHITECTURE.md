@@ -152,10 +152,13 @@ See shortages/conflicts visually
 SCHEDULING MODEL
 The schedule is organized by DAY.
 Each day has:
+Multiple shift blocks
 Multiple task columns
 Assigned staff members inside each task column
 Managers should be able to navigate between dates.
 The schedule UI should resemble a clean operational staffing board.
+Task slots belong to dated shift blocks so the same role can exist in AM, PM,
+Saturday, or endoscopy blocks without duplicating task types.
 Example layout:
 Date: June 5, 2026
 Task

@@ -1,46 +1,37 @@
 import type {
   Employee,
   ShiftTemplate,
-  StaffingRequirementRule,
+  ShortageRule,
   TaskType,
 } from "@prisma/client";
 import { CircleOff } from "lucide-react";
-import { deactivateStaffingRequirementRuleAction } from "@/app/(app)/admin/staffing/actions";
-import { StaffingRequirementForm } from "@/components/admin/staffing-requirement-form";
+import { deactivateShortageRuleAction } from "@/app/(app)/admin/shortages/actions";
+import { ShortageRuleForm } from "@/components/admin/shortage-rule-form";
 import { formatDisplayDate } from "@/lib/utils/date";
 
-type StaffingRuleRecord = StaffingRequirementRule & {
-  taskType: TaskType;
+type ShortageRuleRecord = ShortageRule & {
+  taskType: TaskType | null;
   shiftTemplate: ShiftTemplate | null;
   createdBy: Employee | null;
 };
 
-type StaffingRuleTaskType = Pick<TaskType, "id" | "name" | "code" | "optional">;
-type StaffingRuleShiftTemplate = Pick<
-  ShiftTemplate,
-  | "id"
-  | "name"
-  | "dayOfWeek"
-  | "startMinute"
-  | "endMinute"
-  | "shiftCategory"
-  | "defaultForSchedule"
->;
-
-export function StaffingRequirementList({
+export function ShortageRuleList({
   rules,
   taskTypes,
   shiftTemplates,
 }: {
-  rules: StaffingRuleRecord[];
-  taskTypes: StaffingRuleTaskType[];
-  shiftTemplates: StaffingRuleShiftTemplate[];
+  rules: ShortageRuleRecord[];
+  taskTypes: Pick<TaskType, "id" | "name" | "code">[];
+  shiftTemplates: Pick<
+    ShiftTemplate,
+    "id" | "name" | "shiftCategory" | "dayOfWeek" | "startMinute" | "endMinute"
+  >[];
 }) {
   if (rules.length === 0) {
     return (
       <div className="rounded-md border border-dashed border-slate-300 bg-white p-8 text-center text-sm text-slate-500">
-        No staffing requirement rules yet. Safe defaults will create one required
-        slot for each routine default task type.
+        No shortage rules yet. Shortage slots will still be visible, but manager
+        cut/closure guidance will be blank until rules are configured.
       </div>
     );
   }
@@ -56,7 +47,7 @@ export function StaffingRequirementList({
             <div>
               <div className="flex flex-wrap items-center gap-2">
                 <span className="font-semibold text-slate-950">
-                  {rule.taskType.name}
+                  {rule.taskType?.name ?? "Any task"}
                 </span>
                 <span
                   className={
@@ -67,39 +58,34 @@ export function StaffingRequirementList({
                 >
                   {rule.active ? "ACTIVE" : "INACTIVE"}
                 </span>
-                <span className="rounded-md bg-rose-50 px-2 py-1 text-xs font-semibold text-rose-700">
-                  min {rule.minRequiredSlots}
-                </span>
-                <span className="rounded-md bg-sky-50 px-2 py-1 text-xs font-semibold text-sky-700">
-                  desired {rule.desiredSlots}
-                </span>
-                <span className="rounded-md bg-slate-100 px-2 py-1 text-xs font-semibold text-slate-600">
-                  max {rule.maxSlots}
+                <span className="rounded-md bg-amber-50 px-2 py-1 text-xs font-semibold text-amber-800">
+                  priority {rule.closurePriority}
                 </span>
               </div>
               <p className="mt-2 text-sm text-slate-500">
-                {formatWeekday(rule.weekday)} /{" "}
-                {rule.scenario ? formatEnumLabel(rule.scenario) : "Any scenario"} /{" "}
-                {formatShiftScope(rule)} /{" "}
-                extra slots {formatEnumLabel(rule.requirementLevel)}
+                {rule.shiftTemplate?.name ??
+                  (rule.shiftCategory
+                    ? `${formatEnumLabel(rule.shiftCategory)} shifts`
+                    : "Any shift")}{" "}
+                / {rule.scenario ? formatEnumLabel(rule.scenario) : "Any scenario"}
               </p>
-              {rule.notes ? (
-                <p className="mt-2 text-sm text-slate-600">{rule.notes}</p>
-              ) : null}
+              <p className="mt-2 text-sm font-medium text-slate-700">
+                {rule.managerInstruction}
+              </p>
             </div>
             <div className="text-sm text-slate-500">{formatRuleDates(rule)}</div>
           </summary>
           <div className="grid gap-4 border-t border-slate-200 p-4">
-            <StaffingRequirementForm
+            <ShortageRuleForm
               rule={rule}
               taskTypes={taskTypes}
               shiftTemplates={shiftTemplates}
             />
             {rule.active ? (
-              <form action={deactivateStaffingRequirementRuleAction.bind(null, rule.id)}>
+              <form action={deactivateShortageRuleAction.bind(null, rule.id)}>
                 <button className="inline-flex h-10 items-center gap-2 rounded-md border border-rose-200 px-4 text-sm font-semibold text-rose-700 transition hover:bg-rose-50">
                   <CircleOff size={16} aria-hidden="true" />
-                  Deactivate staffing rule
+                  Deactivate shortage rule
                 </button>
               </form>
             ) : null}
@@ -110,40 +96,12 @@ export function StaffingRequirementList({
   );
 }
 
-function formatShiftScope(rule: StaffingRuleRecord) {
-  if (rule.shiftTemplate) {
-    return rule.shiftTemplate.name;
-  }
-
-  if (rule.shiftCategory) {
-    return `${formatEnumLabel(rule.shiftCategory)} shifts`;
-  }
-
-  return "Default shift";
-}
-
-function formatRuleDates(rule: StaffingRuleRecord) {
+function formatRuleDates(rule: ShortageRuleRecord) {
   if (!rule.effectiveStartDate && !rule.effectiveEndDate) {
     return "Always active";
   }
 
   return `${rule.effectiveStartDate ? formatDisplayDate(rule.effectiveStartDate) : "Any start"} - ${rule.effectiveEndDate ? formatDisplayDate(rule.effectiveEndDate) : "Any end"}`;
-}
-
-function formatWeekday(weekday: number | null) {
-  if (weekday === null) {
-    return "Any weekday";
-  }
-
-  return [
-    "Sunday",
-    "Monday",
-    "Tuesday",
-    "Wednesday",
-    "Thursday",
-    "Friday",
-    "Saturday",
-  ][weekday];
 }
 
 function formatEnumLabel(value: string) {

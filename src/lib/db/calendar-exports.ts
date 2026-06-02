@@ -41,6 +41,7 @@ function getPublishedScheduleDaysForExport(employeeId?: string) {
       taskSlots: {
         where: { status: { not: "CANCELLED" } },
         orderBy: [
+          { shiftBlock: { startMinute: "asc" } },
           { taskType: { sortOrder: "asc" } },
           { slotIndex: "asc" },
         ],

@@ -63,6 +63,23 @@ describe("payroll calculations", () => {
     assert.equal(report.rows[0].assignmentCount, 1);
   });
 
+  it("uses shift paid hours before falling back to slot duration", () => {
+    const report = buildPayrollReport({
+      ...baseInput,
+      scheduleDays: [
+        scheduleDay({
+          date: "2026-06-01",
+          status: "PUBLISHED",
+          startMinute: 8 * 60,
+          endMinute: 17 * 60,
+          paidHours: 4.5,
+        }),
+      ],
+    });
+
+    assert.equal(report.rows[0].scheduledWorkHours, 4.5);
+  });
+
   it("counts approved PTO hours and ignores reversed PTO for paid hours", () => {
     const report = buildPayrollReport({
       ...baseInput,
@@ -266,6 +283,7 @@ function scheduleDay(input: {
   status: string;
   startMinute?: number;
   endMinute?: number;
+  paidHours?: number;
   slotStatus?: string;
   locked?: boolean;
 }) {
@@ -280,6 +298,7 @@ function scheduleDay(input: {
         taskTypeName: "Front Desk",
         startMinute: input.startMinute ?? 8 * 60,
         endMinute: input.endMinute ?? 17 * 60,
+        paidHours: input.paidHours,
         status: input.slotStatus ?? "FILLED",
         requirementLevel: "REQUIRED",
         assignments: [

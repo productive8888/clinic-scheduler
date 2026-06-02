@@ -31,10 +31,32 @@ import {
   isShortNoticeScheduleChange,
 } from "../../src/lib/schedule/short-notice";
 import { selectStaffingSlotSpecs } from "../../src/lib/staffing/requirements";
+import { buildShiftBlockSnapshot } from "../../src/lib/shifts/templates";
 import { enumerateIsoDates } from "../../src/lib/utils/date";
 
 const monday = "2026-06-01";
 const saturday = "2026-06-06";
+const defaultShiftBlock = {
+  id: "am-regular-block",
+  shiftTemplateId: "am-regular-template",
+  shiftCategory: "AM" as const,
+  startMinute: 8 * 60,
+  defaultForSchedule: true,
+};
+const pmShiftBlock = {
+  id: "pm-regular-block",
+  shiftTemplateId: "pm-regular-template",
+  shiftCategory: "PM" as const,
+  startMinute: 13 * 60,
+  defaultForSchedule: false,
+};
+const saturdayShiftBlock = {
+  id: "saturday-shorter-block",
+  shiftTemplateId: "saturday-shorter-template",
+  shiftCategory: "SATURDAY" as const,
+  startMinute: 8 * 60,
+  defaultForSchedule: true,
+};
 const allDayMonday = [
   {
     weekday: 1,
@@ -935,11 +957,38 @@ describe("staffing requirement rules", () => {
     },
   ];
 
+  it("turns shift templates into concrete shift block snapshots", () => {
+    const snapshot = buildShiftBlockSnapshot({
+      id: "am-early-template",
+      name: "AM early",
+      startMinute: 7 * 60,
+      endMinute: 11 * 60 + 30,
+      paidHours: 4.5,
+      shiftCategory: "AM",
+      defaultForSchedule: false,
+      notes: "Spreadsheet default",
+    });
+
+    assert.deepEqual(snapshot, {
+      shiftTemplateId: "am-early-template",
+      name: "AM early",
+      startMinute: 420,
+      endMinute: 690,
+      paidHours: 4.5,
+      shiftCategory: "AM",
+      defaultForSchedule: false,
+      source: "TEMPLATE",
+      active: true,
+      notes: "Spreadsheet default",
+    });
+  });
+
   it("creates multiple slots for one task type from staffing rules", () => {
     const specs = selectStaffingSlotSpecs({
       date: saturday,
       scenario: "ROUTINE",
       taskTypes: staffingTaskTypes,
+      shiftBlocks: [saturdayShiftBlock],
       rules: [
         {
           id: "sat-allergy",
@@ -966,6 +1015,58 @@ describe("staffing requirement rules", () => {
     );
   });
 
+  it("creates task slots for a specific configured shift block", () => {
+    const specs = selectStaffingSlotSpecs({
+      date: monday,
+      scenario: "ROUTINE",
+      taskTypes: staffingTaskTypes,
+      shiftBlocks: [defaultShiftBlock, pmShiftBlock],
+      rules: [
+        {
+          id: "pm-procedure",
+          taskTypeId: "procedures",
+          shiftTemplateId: "pm-regular-template",
+          shiftCategory: null,
+          weekday: 1,
+          scenario: "ROUTINE",
+          minRequiredSlots: 1,
+          desiredSlots: 1,
+          maxSlots: 1,
+          requirementLevel: "REQUIRED",
+          active: true,
+        },
+      ],
+    });
+
+    assert.deepEqual(
+      specs
+        .filter((spec) => spec.staffingRequirementRuleId === "pm-procedure")
+        .map((spec) => [spec.shiftBlockId, spec.slotIndex, spec.requirementLevel]),
+      [
+        ["pm-regular-block", 1, "REQUIRED"],
+      ],
+    );
+  });
+
+  it("does not put safe defaults onto non-default shift blocks", () => {
+    const specs = selectStaffingSlotSpecs({
+      date: monday,
+      scenario: "ROUTINE",
+      taskTypes: staffingTaskTypes,
+      shiftBlocks: [defaultShiftBlock, pmShiftBlock],
+      rules: [],
+    });
+
+    assert.equal(
+      specs.some((spec) => spec.shiftBlockId === "pm-regular-block"),
+      false,
+    );
+    assert.equal(
+      specs.filter((spec) => spec.shiftBlockId === "am-regular-block").length,
+      2,
+    );
+  });
+
   it("varies staffing rules by day of week", () => {
     const rules = [
       {
@@ -986,6 +1087,7 @@ describe("staffing requirement rules", () => {
         date: monday,
         scenario: "ROUTINE",
         taskTypes: staffingTaskTypes,
+        shiftBlocks: [defaultShiftBlock],
         rules,
       }).filter((spec) => spec.taskTypeId === "allergy-shots").length,
       1,
@@ -995,6 +1097,7 @@ describe("staffing requirement rules", () => {
         date: saturday,
         scenario: "ROUTINE",
         taskTypes: staffingTaskTypes,
+        shiftBlocks: [saturdayShiftBlock],
         rules,
       }).filter((spec) => spec.taskTypeId === "allergy-shots").length,
       2,
@@ -1018,19 +1121,21 @@ describe("staffing requirement rules", () => {
 
     assert.equal(
       selectStaffingSlotSpecs({
-        date: monday,
-        scenario: "ROUTINE",
-        taskTypes: staffingTaskTypes,
-        rules,
+      date: monday,
+      scenario: "ROUTINE",
+      taskTypes: staffingTaskTypes,
+      shiftBlocks: [defaultShiftBlock],
+      rules,
       }).some((spec) => spec.taskTypeId === "procedures"),
       true,
     );
     assert.equal(
       selectStaffingSlotSpecs({
-        date: monday,
-        scenario: "DOCTOR_OFF_REDUCED_STAFFING",
-        taskTypes: staffingTaskTypes,
-        rules,
+      date: monday,
+      scenario: "DOCTOR_OFF_REDUCED_STAFFING",
+      taskTypes: staffingTaskTypes,
+      shiftBlocks: [defaultShiftBlock],
+      rules,
       }).some((spec) => spec.taskTypeId === "procedures"),
       false,
     );
@@ -1052,12 +1157,14 @@ describe("staffing requirement rules", () => {
       date: saturday,
       scenario: "ROUTINE",
       taskTypes: staffingTaskTypes,
+      shiftBlocks: [saturdayShiftBlock],
       rules: [baseRule],
     });
     const after = selectStaffingSlotSpecs({
       date: saturday,
       scenario: "ROUTINE",
       taskTypes: staffingTaskTypes,
+      shiftBlocks: [saturdayShiftBlock],
       rules: [{ ...baseRule, desiredSlots: 3 }],
     });
 
@@ -1076,12 +1183,14 @@ describe("staffing requirement rules", () => {
       date: monday,
       scenario: "ROUTINE",
       taskTypes: staffingTaskTypes,
+      shiftBlocks: [defaultShiftBlock],
       rules: [],
     });
     const withRule = selectStaffingSlotSpecs({
       date: monday,
       scenario: "ROUTINE",
       taskTypes: staffingTaskTypes,
+      shiftBlocks: [defaultShiftBlock],
       rules: [
         {
           id: "research-rule",
@@ -1107,6 +1216,7 @@ describe("staffing requirement rules", () => {
         date: monday,
         scenario: "CLINIC_CLOSED",
         taskTypes: staffingTaskTypes,
+        shiftBlocks: [defaultShiftBlock],
         rules: [
           {
             id: "global-allergy",

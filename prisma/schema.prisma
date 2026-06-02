@@ -121,6 +121,28 @@ enum HolidayPayRule {
   UNPAID
 }
 
+enum ShiftCategory {
+  AM
+  PM
+  SATURDAY
+  ENDO
+  FLOAT
+  OTHER
+}
+
+enum FairnessWindowType {
+  TWO_WEEKS
+  ONE_MONTH
+  CUSTOM
+}
+
+enum BackgroundTaskPeriodType {
+  WEEKLY
+  BIWEEKLY
+  MONTHLY
+  CUSTOM
+}
+
 enum PayrollAdjustmentType {
   PTO_DEBIT
   PTO_CREDIT
@@ -151,22 +173,27 @@ model Employee {
 
   skills                  EmployeeSkill[]
   availability            WeeklyAvailability[]
-  ptoRequests             PTORequest[]              @relation("EmployeePtoRequests")
-  reviewedPtoRequests     PTORequest[]              @relation("PtoReviewer")
-  nptoRequests            NPTORequest[]             @relation("EmployeeNptoRequests")
-  reviewedNptoRequests    NPTORequest[]             @relation("NptoReviewer")
-  assignments             Assignment[]              @relation("AssignedEmployee")
-  assignedAssignments     Assignment[]              @relation("AssignedByEmployee")
-  schedulingRules         SchedulingRule[]          @relation("RuleEmployee")
-  createdSchedulingRules  SchedulingRule[]          @relation("RuleCreator")
-  createdStaffingRules    StaffingRequirementRule[] @relation("StaffingRuleCreator")
-  requestedGenerationRuns ScheduleGenerationRun[]   @relation("GenerationRequester")
-  publishedScheduleDays   ScheduleDay[]             @relation("SchedulePublisher")
-  auditLogs               AuditLog[]                @relation("AuditActor")
-  exportLogs              ExportLog[]               @relation("ExportRequester")
-  payrollLedgerEntries    PayrollAdjustmentLedger[] @relation("PayrollLedgerEmployee")
-  createdPayrollEntries   PayrollAdjustmentLedger[] @relation("PayrollLedgerCreator")
-  createdPaidHolidays     PaidHoliday[]             @relation("PaidHolidayCreator")
+  ptoRequests             PTORequest[]                     @relation("EmployeePtoRequests")
+  reviewedPtoRequests     PTORequest[]                     @relation("PtoReviewer")
+  nptoRequests            NPTORequest[]                    @relation("EmployeeNptoRequests")
+  reviewedNptoRequests    NPTORequest[]                    @relation("NptoReviewer")
+  assignments             Assignment[]                     @relation("AssignedEmployee")
+  assignedAssignments     Assignment[]                     @relation("AssignedByEmployee")
+  schedulingRules         SchedulingRule[]                 @relation("RuleEmployee")
+  createdSchedulingRules  SchedulingRule[]                 @relation("RuleCreator")
+  createdStaffingRules    StaffingRequirementRule[]        @relation("StaffingRuleCreator")
+  requestedGenerationRuns ScheduleGenerationRun[]          @relation("GenerationRequester")
+  publishedScheduleDays   ScheduleDay[]                    @relation("SchedulePublisher")
+  auditLogs               AuditLog[]                       @relation("AuditActor")
+  exportLogs              ExportLog[]                      @relation("ExportRequester")
+  payrollLedgerEntries    PayrollAdjustmentLedger[]        @relation("PayrollLedgerEmployee")
+  createdPayrollEntries   PayrollAdjustmentLedger[]        @relation("PayrollLedgerCreator")
+  createdPaidHolidays     PaidHoliday[]                    @relation("PaidHolidayCreator")
+  createdShiftTemplates   ShiftTemplate[]                  @relation("ShiftTemplateCreator")
+  createdShortageRules    ShortageRule[]                   @relation("ShortageRuleCreator")
+  createdBackgroundTasks  BackgroundTaskDefinition[]       @relation("BackgroundTaskCreator")
+  ownedBackgroundTasks    BackgroundTaskDefinition[]       @relation("BackgroundTaskOwner")
+  eligibleBackgroundTasks BackgroundTaskEligibleEmployee[]
 
   @@index([status])
   @@index([role])
@@ -227,8 +254,9 @@ model Skill {
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 
-  employees        EmployeeSkill[]
-  taskRequirements TaskSkillRequirement[]
+  employees                  EmployeeSkill[]
+  taskRequirements           TaskSkillRequirement[]
+  backgroundTaskRequirements BackgroundTaskRequiredSkill[]
 }
 
 model EmployeeSkill {
@@ -253,6 +281,11 @@ model TaskType {
   optional             Boolean  @default(false)
   defaultForRoutine    Boolean  @default(true)
   defaultForReduced    Boolean  @default(true)
+  isClinical           Boolean  @default(true)
+  isBackground         Boolean  @default(false)
+  isSkilled            Boolean  @default(false)
+  isEndoscopy          Boolean  @default(false)
+  isFloat              Boolean  @default(false)
   sortOrder            Int      @default(0)
   createdAt            DateTime @default(now())
   updatedAt            DateTime @updatedAt
@@ -261,9 +294,11 @@ model TaskType {
   taskSlots         TaskSlot[]
   schedulingRules   SchedulingRule[]
   staffingRules     StaffingRequirementRule[]
+  shortageRules     ShortageRule[]
 
   @@index([active, sortOrder])
   @@index([optional])
+  @@index([isClinical, isBackground])
   @@index([interchangeableGroup])
 }
 
@@ -398,15 +433,72 @@ model ScheduleDay {
   createdAt             DateTime          @default(now())
   updatedAt             DateTime          @updatedAt
 
+  shiftBlocks ShiftBlock[]
   taskSlots   TaskSlot[]
-  publishedBy Employee?  @relation("SchedulePublisher", fields: [publishedByEmployeeId], references: [id])
+  publishedBy Employee?    @relation("SchedulePublisher", fields: [publishedByEmployeeId], references: [id])
 
   @@index([publishedByEmployeeId])
+}
+
+model ShiftTemplate {
+  id                  String        @id @default(cuid())
+  name                String
+  dayOfWeek           Int?
+  startMinute         Int
+  endMinute           Int
+  paidHours           Decimal       @db.Decimal(6, 2)
+  shiftCategory       ShiftCategory @default(OTHER)
+  defaultForSchedule  Boolean       @default(false)
+  active              Boolean       @default(true)
+  effectiveStartDate  DateTime?     @db.Date
+  effectiveEndDate    DateTime?     @db.Date
+  notes               String?
+  createdByEmployeeId String?
+  createdAt           DateTime      @default(now())
+  updatedAt           DateTime      @updatedAt
+
+  createdBy     Employee?                 @relation("ShiftTemplateCreator", fields: [createdByEmployeeId], references: [id])
+  shiftBlocks   ShiftBlock[]
+  staffingRules StaffingRequirementRule[]
+  shortageRules ShortageRule[]
+
+  @@index([active, dayOfWeek])
+  @@index([shiftCategory, active])
+  @@index([defaultForSchedule])
+  @@index([effectiveStartDate, effectiveEndDate])
+  @@index([createdByEmployeeId])
+}
+
+model ShiftBlock {
+  id                 String        @id @default(cuid())
+  scheduleDayId      String
+  shiftTemplateId    String?
+  name               String
+  startMinute        Int
+  endMinute          Int
+  paidHours          Decimal       @db.Decimal(6, 2)
+  shiftCategory      ShiftCategory @default(OTHER)
+  defaultForSchedule Boolean       @default(false)
+  source             String        @default("TEMPLATE")
+  active             Boolean       @default(true)
+  notes              String?
+  createdAt          DateTime      @default(now())
+  updatedAt          DateTime      @updatedAt
+
+  scheduleDay   ScheduleDay    @relation(fields: [scheduleDayId], references: [id], onDelete: Cascade)
+  shiftTemplate ShiftTemplate? @relation(fields: [shiftTemplateId], references: [id], onDelete: SetNull)
+  taskSlots     TaskSlot[]
+
+  @@unique([scheduleDayId, shiftTemplateId])
+  @@index([scheduleDayId, active])
+  @@index([shiftTemplateId])
+  @@index([shiftCategory, startMinute])
 }
 
 model TaskSlot {
   id                        String                   @id @default(cuid())
   scheduleDayId             String
+  shiftBlockId              String
   taskTypeId                String
   slotIndex                 Int                      @default(1)
   label                     String?
@@ -424,18 +516,22 @@ model TaskSlot {
   updatedAt                 DateTime                 @updatedAt
 
   scheduleDay             ScheduleDay              @relation(fields: [scheduleDayId], references: [id], onDelete: Cascade)
+  shiftBlock              ShiftBlock               @relation(fields: [shiftBlockId], references: [id], onDelete: Cascade)
   taskType                TaskType                 @relation(fields: [taskTypeId], references: [id])
   staffingRequirementRule StaffingRequirementRule? @relation(fields: [staffingRequirementRuleId], references: [id], onDelete: SetNull)
   assignments             Assignment[]
 
-  @@unique([scheduleDayId, taskTypeId, slotIndex])
+  @@unique([scheduleDayId, shiftBlockId, taskTypeId, slotIndex])
   @@index([scheduleDayId, status])
+  @@index([shiftBlockId])
   @@index([staffingRequirementRuleId])
 }
 
 model StaffingRequirementRule {
   id                  String                   @id @default(cuid())
   taskTypeId          String
+  shiftTemplateId     String?
+  shiftCategory       ShiftCategory?
   weekday             Int?
   scenario            ClinicScenario?
   minRequiredSlots    Int                      @default(1)
@@ -450,13 +546,144 @@ model StaffingRequirementRule {
   createdAt           DateTime                 @default(now())
   updatedAt           DateTime                 @updatedAt
 
-  taskType  TaskType   @relation(fields: [taskTypeId], references: [id], onDelete: Cascade)
-  createdBy Employee?  @relation("StaffingRuleCreator", fields: [createdByEmployeeId], references: [id])
-  taskSlots TaskSlot[]
+  taskType      TaskType       @relation(fields: [taskTypeId], references: [id], onDelete: Cascade)
+  shiftTemplate ShiftTemplate? @relation(fields: [shiftTemplateId], references: [id], onDelete: SetNull)
+  createdBy     Employee?      @relation("StaffingRuleCreator", fields: [createdByEmployeeId], references: [id])
+  taskSlots     TaskSlot[]
 
   @@index([active, taskTypeId])
+  @@index([shiftTemplateId, shiftCategory])
   @@index([weekday, scenario])
   @@index([effectiveStartDate, effectiveEndDate])
+}
+
+model FairnessSetting {
+  id                   String             @id @default("default")
+  windowType           FairnessWindowType @default(TWO_WEEKS)
+  customStartDate      DateTime?          @db.Date
+  customEndDate        DateTime?          @db.Date
+  clinicalShiftWeight  Int                @default(20)
+  totalShiftWeight     Int                @default(10)
+  totalHoursWeight     Int                @default(8)
+  saturdayShiftWeight  Int                @default(12)
+  endoscopyShiftWeight Int                @default(12)
+  active               Boolean            @default(true)
+  notes                String?
+  createdAt            DateTime           @default(now())
+  updatedAt            DateTime           @updatedAt
+}
+
+model ShortageRule {
+  id                  String          @id @default(cuid())
+  taskTypeId          String?
+  shiftTemplateId     String?
+  shiftCategory       ShiftCategory?
+  scenario            ClinicScenario?
+  closurePriority     Int             @default(100)
+  managerInstruction  String
+  active              Boolean         @default(true)
+  effectiveStartDate  DateTime?       @db.Date
+  effectiveEndDate    DateTime?       @db.Date
+  notes               String?
+  createdByEmployeeId String?
+  createdAt           DateTime        @default(now())
+  updatedAt           DateTime        @updatedAt
+
+  taskType      TaskType?      @relation(fields: [taskTypeId], references: [id], onDelete: Cascade)
+  shiftTemplate ShiftTemplate? @relation(fields: [shiftTemplateId], references: [id], onDelete: SetNull)
+  createdBy     Employee?      @relation("ShortageRuleCreator", fields: [createdByEmployeeId], references: [id])
+
+  @@index([active, closurePriority])
+  @@index([taskTypeId, shiftTemplateId, shiftCategory])
+  @@index([scenario])
+  @@index([effectiveStartDate, effectiveEndDate])
+  @@index([createdByEmployeeId])
+}
+
+model BackgroundTaskCategory {
+  id          String   @id @default(cuid())
+  code        String   @unique
+  name        String
+  description String?
+  active      Boolean  @default(true)
+  sortOrder   Int      @default(0)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  definitions BackgroundTaskDefinition[]
+
+  @@index([active, sortOrder])
+}
+
+model BackgroundTaskDefinition {
+  id                      String                   @id @default(cuid())
+  categoryId              String
+  name                    String
+  description             String?
+  estimatedHoursPerPeriod Decimal                  @db.Decimal(6, 2)
+  periodType              BackgroundTaskPeriodType @default(WEEKLY)
+  customPeriodDays        Int?
+  priority                Int                      @default(100)
+  mentor                  String?
+  primaryOwnerEmployeeId  String?
+  canBePulledForClinic    Boolean                  @default(false)
+  rolloverAllowed         Boolean                  @default(true)
+  active                  Boolean                  @default(true)
+  notes                   String?
+  createdByEmployeeId     String?
+  createdAt               DateTime                 @default(now())
+  updatedAt               DateTime                 @updatedAt
+
+  category          BackgroundTaskCategory           @relation(fields: [categoryId], references: [id], onDelete: Cascade)
+  primaryOwner      Employee?                        @relation("BackgroundTaskOwner", fields: [primaryOwnerEmployeeId], references: [id], onDelete: SetNull)
+  createdBy         Employee?                        @relation("BackgroundTaskCreator", fields: [createdByEmployeeId], references: [id], onDelete: SetNull)
+  eligibleEmployees BackgroundTaskEligibleEmployee[]
+  requiredSkills    BackgroundTaskRequiredSkill[]
+  instances         BackgroundTaskInstance[]
+
+  @@index([categoryId, active])
+  @@index([priority, active])
+  @@index([primaryOwnerEmployeeId])
+  @@index([createdByEmployeeId])
+}
+
+model BackgroundTaskEligibleEmployee {
+  definitionId String
+  employeeId   String
+
+  definition BackgroundTaskDefinition @relation(fields: [definitionId], references: [id], onDelete: Cascade)
+  employee   Employee                 @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+
+  @@id([definitionId, employeeId])
+}
+
+model BackgroundTaskRequiredSkill {
+  definitionId String
+  skillId      String
+
+  definition BackgroundTaskDefinition @relation(fields: [definitionId], references: [id], onDelete: Cascade)
+  skill      Skill                    @relation(fields: [skillId], references: [id], onDelete: Cascade)
+
+  @@id([definitionId, skillId])
+}
+
+model BackgroundTaskInstance {
+  id               String   @id @default(cuid())
+  definitionId     String
+  periodStartDate  DateTime @db.Date
+  periodEndDate    DateTime @db.Date
+  estimatedHours   Decimal  @db.Decimal(6, 2)
+  prioritySnapshot Int
+  status           String   @default("OPEN")
+  notes            String?
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  definition BackgroundTaskDefinition @relation(fields: [definitionId], references: [id], onDelete: Cascade)
+
+  @@unique([definitionId, periodStartDate, periodEndDate])
+  @@index([periodStartDate, periodEndDate])
+  @@index([status])
 }
 
 model Assignment {

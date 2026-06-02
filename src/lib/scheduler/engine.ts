@@ -48,7 +48,7 @@ export function generateSchedule(input: GenerateScheduleInput) {
       };
 
       assignments.push(lockedAssignment);
-      occupiedAssignments.push(toExistingAssignment(lockedAssignment, slot));
+      occupiedAssignments.push(toExistingAssignment(lockedAssignment, slot, taskType));
     }
 
     const requiredStaff = Math.max(1, slot.requiredStaff ?? 1);
@@ -61,6 +61,7 @@ export function generateSchedule(input: GenerateScheduleInput) {
         taskType,
         employees: input.employees,
         rules: input.rules ?? [],
+        fairness: input.fairness,
         assignments: occupiedAssignments,
       });
 
@@ -79,7 +80,7 @@ export function generateSchedule(input: GenerateScheduleInput) {
       }
 
       assignments.push(selection.assignment);
-      occupiedAssignments.push(toExistingAssignment(selection.assignment, slot));
+      occupiedAssignments.push(toExistingAssignment(selection.assignment, slot, taskType));
     }
   }
 

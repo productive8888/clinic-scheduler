@@ -1,4 +1,8 @@
-import { ClinicScenario, TaskSlotRequirementLevel } from "@prisma/client";
+import {
+  ClinicScenario,
+  ShiftCategory,
+  TaskSlotRequirementLevel,
+} from "@prisma/client";
 import { z } from "zod";
 
 export const supportedTaskSlotRequirementLevels = [
@@ -12,6 +16,9 @@ const emptyToNull = z.literal("").transform(() => null);
 const optionalId = z.union([z.string().min(1), emptyToNull]).nullable();
 const optionalDate = z.union([z.string().min(1), emptyToNull]).nullable();
 const optionalScenario = z.union([z.nativeEnum(ClinicScenario), emptyToNull]).nullable();
+const optionalShiftCategory = z
+  .union([z.nativeEnum(ShiftCategory), emptyToNull])
+  .nullable();
 const optionalWeekday = z
   .union([z.coerce.number().int().min(0).max(6), emptyToNull])
   .nullable();
@@ -24,6 +31,8 @@ const optionalTrimmedString = z
 export const staffingRequirementFormSchema = z
   .object({
     taskTypeId: z.string().min(1, "Task type is required"),
+    shiftTemplateId: optionalId,
+    shiftCategory: optionalShiftCategory,
     weekday: optionalWeekday,
     scenario: optionalScenario,
     minRequiredSlots: z.coerce.number().int().min(0).max(20),
@@ -73,6 +82,8 @@ export type StaffingRequirementFormValues = z.infer<
 export function staffingRequirementValuesFromFormData(formData: FormData) {
   return staffingRequirementFormSchema.parse({
     taskTypeId: formData.get("taskTypeId"),
+    shiftTemplateId: formData.get("shiftTemplateId"),
+    shiftCategory: formData.get("shiftCategory"),
     weekday: formData.get("weekday"),
     scenario: formData.get("scenario"),
     minRequiredSlots: formData.get("minRequiredSlots"),

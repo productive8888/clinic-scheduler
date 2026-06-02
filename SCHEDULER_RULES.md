@@ -40,9 +40,9 @@ not contain scheduling decisions.
 - Manual locked assignments are preserved during regeneration.
 - Locked assignments that conflict with approved PTO are preserved but surfaced
   as shortage/conflict slots until a manager resolves them.
-- Default generated task slots use 8 AM-5 PM working hours. Employees are only
-  eligible when their configured recurring availability fully covers the slot,
-  including Saturday shifts when configured.
+- Generated task slots are attached to concrete shift blocks. Employees are
+  only eligible when their configured recurring availability fully covers the
+  slot's shift start/end time, including Saturday shifts when configured.
 - Fairness scoring favors underused employees and reduces repeated difficult
   task assignments.
 - Configurable `SchedulingRule` rows can prefer, avoid, boost, penalize, or
@@ -57,8 +57,23 @@ not contain scheduling decisions.
 - Multi-person staffing uses one `TaskType` and multiple `TaskSlot` records,
   such as `Allergy Shots #1` and `Allergy Shots #2`.
 - Active `StaffingRequirementRule` rows can vary slot counts by task type,
-  weekday, clinic scenario, and effective date range. More specific rules win
-  deterministically over broad rules.
+  shift template, shift category, weekday, clinic scenario, and effective date
+  range. More specific rules win deterministically over broad rules.
+- Safe default staffing slots are created only on shift blocks marked as the
+  schedule default. Managers can create additional AM/PM/Saturday/Endoscopy
+  slots by configuring staffing rules against shift templates or categories.
+- Default seeded shift templates use spreadsheet times:
+  AM early 7:00 AM-11:30 AM, AM regular 8:00 AM-12:00 PM, PM early/long
+  12:30 PM-5:00 PM, PM regular 1:00 PM-5:00 PM, Saturday long/endoscopy
+  6:00 AM-2:00 PM, and Saturday shorter 8:00 AM-2:00 PM.
+- Fairness history is evaluated inside the configured fairness window. The
+  scoring layer can balance clinical shift counts, total shifts, scheduled
+  paid hours, Saturday shifts, and endoscopy shifts separately.
+- Shortage rules store visible manager recommendations for unfilled coverage.
+  They do not hardcode final clinic closure order.
+- Background task definitions are lower-priority non-clinic obligations.
+  Pullability, estimated hours, eligibility, and period type are stored for
+  future optimization, but final background priority logic is not implemented.
 - Manual task-slot additions, scenario changes, and manual assignment overrides
   made within 7 days of the affected shift are marked short notice in audit and
   schedule views.
@@ -68,9 +83,9 @@ not contain scheduling decisions.
 - Calendar exports are publish-gated: ICS feeds include active assignments from
   published schedule days only.
 - Payroll reports do not change scheduling decisions. They read schedule,
-  PTO/NPTO, holiday, and payroll ledger records after scheduling has happened
-  and surface warnings for missing/unpublished schedule data or unresolved
-  staffing issues.
+  shift paid hours, PTO/NPTO, holiday, and payroll ledger records after
+  scheduling has happened and surface warnings for missing/unpublished schedule
+  data or unresolved staffing issues.
 - PTO approvals that deduct balance create payroll ledger debit entries.
   Reversal/cancellation workflows restore balance when appropriate and create
   reversal ledger entries rather than deleting history.

@@ -4,14 +4,18 @@ import {
   Banknote,
   CalendarDays,
   CalendarCheck2,
+  Clock3,
   ClipboardList,
   ClipboardCheck,
   Layers3,
   LogOut,
+  Scale,
   Settings,
   SlidersHorizontal,
+  TriangleAlert,
   UserRound,
   Users,
+  Workflow,
 } from "lucide-react";
 import Link from "next/link";
 import { logoutAction } from "@/app/logout/actions";
@@ -35,7 +39,11 @@ const managerNavItems = [
   { href: "/admin/pto", label: "PTO", icon: CalendarCheck2 },
   { href: "/admin/payroll", label: "Payroll", icon: Banknote },
   { href: "/admin/analytics", label: "Analytics", icon: BarChart3 },
+  { href: "/admin/shifts", label: "Shifts", icon: Clock3 },
   { href: "/admin/staffing", label: "Staffing", icon: Layers3 },
+  { href: "/admin/fairness", label: "Fairness", icon: Scale },
+  { href: "/admin/shortages", label: "Shortages", icon: TriangleAlert },
+  { href: "/admin/background-tasks", label: "Background", icon: Workflow },
   { href: "/admin/rules", label: "Rules", icon: SlidersHorizontal },
   { href: "/admin/audit", label: "Audit", icon: Activity },
 ];

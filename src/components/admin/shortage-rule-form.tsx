@@ -1,73 +1,49 @@
-import { ShiftCategory, type StaffingRequirementRule, type TaskType } from "@prisma/client";
-import { Save, SlidersHorizontal } from "lucide-react";
 import {
-  createStaffingRequirementRuleAction,
-  updateStaffingRequirementRuleAction,
-} from "@/app/(app)/admin/staffing/actions";
-import { supportedTaskSlotRequirementLevels } from "@/lib/validation/staffing-requirement";
+  ClinicScenario,
+  ShiftCategory,
+  type ShiftTemplate,
+  type ShortageRule,
+  type TaskType,
+} from "@prisma/client";
+import { Save, TriangleAlert } from "lucide-react";
+import {
+  createShortageRuleAction,
+  updateShortageRuleAction,
+} from "@/app/(app)/admin/shortages/actions";
 import { toIsoDate } from "@/lib/utils/date";
 
-type StaffingRuleTaskType = Pick<TaskType, "id" | "name" | "code" | "optional">;
-type StaffingRuleShiftTemplate = {
-  id: string;
-  name: string;
-  dayOfWeek: number | null;
-  startMinute: number;
-  endMinute: number;
-  shiftCategory: ShiftCategory;
-  defaultForSchedule: boolean;
+type ShortageRuleFormProps = {
+  rule?: ShortageRule;
+  taskTypes: Pick<TaskType, "id" | "name" | "code">[];
+  shiftTemplates: Pick<
+    ShiftTemplate,
+    "id" | "name" | "shiftCategory" | "dayOfWeek" | "startMinute" | "endMinute"
+  >[];
 };
 
-type StaffingRequirementFormProps = {
-  taskTypes: StaffingRuleTaskType[];
-  shiftTemplates: StaffingRuleShiftTemplate[];
-  rule?: StaffingRequirementRule;
-};
-
-const weekdays = [
-  { value: "", label: "Any weekday" },
-  { value: "1", label: "Monday" },
-  { value: "2", label: "Tuesday" },
-  { value: "3", label: "Wednesday" },
-  { value: "4", label: "Thursday" },
-  { value: "5", label: "Friday" },
-  { value: "6", label: "Saturday" },
-  { value: "0", label: "Sunday" },
-];
-
-const scenarios = [
-  { value: "", label: "Any scenario" },
-  { value: "ROUTINE", label: "Routine" },
-  { value: "DOCTOR_OFF_REDUCED_STAFFING", label: "Doctor Off / Reduced Staffing" },
-  { value: "CUSTOM", label: "Custom Scenario" },
-  { value: "CLINIC_CLOSED", label: "Clinic Closed" },
-];
-
-export function StaffingRequirementForm({
+export function ShortageRuleForm({
+  rule,
   taskTypes,
   shiftTemplates,
-  rule,
-}: StaffingRequirementFormProps) {
+}: ShortageRuleFormProps) {
   const action = rule
-    ? updateStaffingRequirementRuleAction.bind(null, rule.id)
-    : createStaffingRequirementRuleAction;
+    ? updateShortageRuleAction.bind(null, rule.id)
+    : createShortageRuleAction;
 
   return (
     <form action={action} className="grid gap-4">
       <div className="grid gap-4 lg:grid-cols-4">
-        <label className="grid gap-1 text-sm font-medium text-slate-700 lg:col-span-2">
+        <label className="grid gap-1 text-sm font-medium text-slate-700">
           Task type
           <select
             name="taskTypeId"
-            required
             defaultValue={rule?.taskTypeId ?? ""}
             className="h-10 rounded-md border border-slate-300 bg-white px-3 text-slate-950 outline-none focus:border-emerald-700"
           >
-            <option value="">Select task type</option>
+            <option value="">Any task</option>
             {taskTypes.map((taskType) => (
               <option key={taskType.id} value={taskType.id}>
                 {taskType.name}
-                {taskType.optional ? " (optional)" : ""}
               </option>
             ))}
           </select>
@@ -79,11 +55,10 @@ export function StaffingRequirementForm({
             defaultValue={rule?.shiftTemplateId ?? ""}
             className="h-10 rounded-md border border-slate-300 bg-white px-3 text-slate-950 outline-none focus:border-emerald-700"
           >
-            <option value="">Default shift only</option>
+            <option value="">Any template</option>
             {shiftTemplates.map((shiftTemplate) => (
               <option key={shiftTemplate.id} value={shiftTemplate.id}>
                 {shiftTemplate.name}
-                {shiftTemplate.defaultForSchedule ? " (default)" : ""}
               </option>
             ))}
           </select>
@@ -104,82 +79,42 @@ export function StaffingRequirementForm({
           </select>
         </label>
         <label className="grid gap-1 text-sm font-medium text-slate-700">
-          Weekday
-          <select
-            name="weekday"
-            defaultValue={rule?.weekday?.toString() ?? ""}
-            className="h-10 rounded-md border border-slate-300 bg-white px-3 text-slate-950 outline-none focus:border-emerald-700"
-          >
-            {weekdays.map((weekday) => (
-              <option key={weekday.value} value={weekday.value}>
-                {weekday.label}
-              </option>
-            ))}
-          </select>
-        </label>
-        <label className="grid gap-1 text-sm font-medium text-slate-700">
           Scenario
           <select
             name="scenario"
             defaultValue={rule?.scenario ?? ""}
             className="h-10 rounded-md border border-slate-300 bg-white px-3 text-slate-950 outline-none focus:border-emerald-700"
           >
-            {scenarios.map((scenario) => (
-              <option key={scenario.value} value={scenario.value}>
-                {scenario.label}
+            <option value="">Any scenario</option>
+            {Object.values(ClinicScenario).map((scenario) => (
+              <option key={scenario} value={scenario}>
+                {formatEnumLabel(scenario)}
               </option>
             ))}
           </select>
         </label>
       </div>
 
-      <div className="grid gap-4 lg:grid-cols-5">
+      <div className="grid gap-4 lg:grid-cols-[160px_1fr_120px]">
         <label className="grid gap-1 text-sm font-medium text-slate-700">
-          Min required
+          Priority
           <input
-            name="minRequiredSlots"
+            name="closurePriority"
             type="number"
             min="0"
-            max="20"
-            defaultValue={rule?.minRequiredSlots ?? 1}
+            max="10000"
+            defaultValue={rule?.closurePriority ?? 100}
             className="h-10 rounded-md border border-slate-300 bg-white px-3 text-slate-950 outline-none focus:border-emerald-700"
           />
         </label>
         <label className="grid gap-1 text-sm font-medium text-slate-700">
-          Desired
+          Manager instruction
           <input
-            name="desiredSlots"
-            type="number"
-            min="0"
-            max="20"
-            defaultValue={rule?.desiredSlots ?? 1}
+            name="managerInstruction"
+            required
+            defaultValue={rule?.managerInstruction ?? ""}
             className="h-10 rounded-md border border-slate-300 bg-white px-3 text-slate-950 outline-none focus:border-emerald-700"
           />
-        </label>
-        <label className="grid gap-1 text-sm font-medium text-slate-700">
-          Max
-          <input
-            name="maxSlots"
-            type="number"
-            min="0"
-            max="20"
-            defaultValue={rule?.maxSlots ?? 1}
-            className="h-10 rounded-md border border-slate-300 bg-white px-3 text-slate-950 outline-none focus:border-emerald-700"
-          />
-        </label>
-        <label className="grid gap-1 text-sm font-medium text-slate-700">
-          Extra slot level
-          <select
-            name="requirementLevel"
-            defaultValue={rule?.requirementLevel ?? "DESIRED"}
-            className="h-10 rounded-md border border-slate-300 bg-white px-3 text-slate-950 outline-none focus:border-emerald-700"
-          >
-            {supportedTaskSlotRequirementLevels.map((level) => (
-              <option key={level} value={level}>
-                {formatEnumLabel(level)}
-              </option>
-            ))}
-          </select>
         </label>
         <label className="flex items-end gap-2 pb-2 text-sm font-medium text-slate-700">
           <input
@@ -231,9 +166,9 @@ export function StaffingRequirementForm({
         {rule ? (
           <Save size={16} aria-hidden="true" />
         ) : (
-          <SlidersHorizontal size={16} aria-hidden="true" />
+          <TriangleAlert size={16} aria-hidden="true" />
         )}
-        {rule ? "Save staffing rule" : "Create staffing rule"}
+        {rule ? "Save shortage rule" : "Create shortage rule"}
       </button>
     </form>
   );

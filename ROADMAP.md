@@ -46,6 +46,17 @@
 - Payroll reporting foundation with biweekly date-range reports, employee paid
   hour summaries, PTO/NPTO accounting, paid holiday support, comp-time banking
   settings, warning flags, and CSV export.
+- Shift-template and shift-block scheduling foundation with editable spreadsheet
+  shift times, dated shift snapshots, shift-grouped schedule board display, and
+  shift-aware staffing requirement rules.
+- Configurable fairness settings for window selection and clinical/total/hour/
+  Saturday/endoscopy weighting.
+- Configurable shortage guidance storage and admin UI for manager-facing
+  closure/cut recommendations without hardcoded final order.
+- Background task category/definition foundation with estimated hours, period
+  type, priority, ownership, eligibility, pullability, and admin UI.
+- Payroll calculations now use shift-block paid hours before falling back to
+  task-slot duration.
 - Append-only payroll adjustment ledger for PTO debits, NPTO unpaid deductions,
   holiday/comp-time/manual adjustments, and reversal entries.
 - Seeded demo employees, skills, task types, and mixed Monday-Friday /
@@ -70,4 +81,8 @@
 4. Add richer payroll review workflows for manager sign-off and report snapshot
    history after clinic payroll policies are finalized.
 5. Add richer conflict resolution for desired/conditional staffing shortages.
-6. Implement Google Calendar, Google Sheets, and printable exports.
+6. Finalize shortage/closure order after Easton/Julia provide clinic policy.
+7. Finalize background task priority/protection/pullability policy and build the
+   period optimizer/rollover workflow.
+8. Finalize endoscopy overtime/comp-time policy and add report snapshots.
+9. Implement Google Calendar, Google Sheets, and printable exports.

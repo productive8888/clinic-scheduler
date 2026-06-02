@@ -48,6 +48,7 @@ export type PayrollTaskSlotInput = {
   taskTypeName: string;
   startMinute?: number | null;
   endMinute?: number | null;
+  paidHours?: number | null;
   status: string;
   requirementLevel: string;
   assignments: PayrollAssignmentInput[];

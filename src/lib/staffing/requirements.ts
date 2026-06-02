@@ -1,4 +1,8 @@
-import type { ClinicScenario, TaskSlotRequirementLevel } from "@prisma/client";
+import type {
+  ClinicScenario,
+  ShiftCategory,
+  TaskSlotRequirementLevel,
+} from "@prisma/client";
 
 export type StaffingRequirementTaskType = {
   id: string;
@@ -13,6 +17,8 @@ export type StaffingRequirementTaskType = {
 export type StaffingRequirementRuleConfig = {
   id: string;
   taskTypeId: string;
+  shiftTemplateId?: string | null;
+  shiftCategory?: ShiftCategory | null;
   weekday: number | null;
   scenario: ClinicScenario | null;
   minRequiredSlots: number;
@@ -28,7 +34,18 @@ export type StaffingRequirementRuleConfig = {
 
 export type StaffingSlotSource = "DEFAULT" | "STAFFING_RULE";
 
+export type StaffingShiftBlock = {
+  id: string;
+  shiftTemplateId?: string | null;
+  shiftCategory: ShiftCategory;
+  startMinute: number;
+  defaultForSchedule?: boolean;
+};
+
 export type StaffingSlotSpec = {
+  shiftBlockId: string;
+  shiftTemplateId: string | null;
+  shiftCategory: ShiftCategory;
   taskTypeId: string;
   slotIndex: number;
   requirementLevel: TaskSlotRequirementLevel;
@@ -41,12 +58,17 @@ export function selectStaffingSlotSpecs(input: {
   scenario: ClinicScenario;
   taskTypes: StaffingRequirementTaskType[];
   rules: StaffingRequirementRuleConfig[];
+  shiftBlocks: StaffingShiftBlock[];
 }) {
   if (input.scenario === "CLINIC_CLOSED") {
     return [];
   }
 
   const weekday = isoDateToUtcWeekday(input.date);
+  const sortedShiftBlocks = [...input.shiftBlocks].sort(
+    (left, right) =>
+      left.startMinute - right.startMinute || left.id.localeCompare(right.id),
+  );
   const sortedTaskTypes = [...input.taskTypes]
     .filter((taskType) => taskType.active !== false)
     .sort(
@@ -56,28 +78,37 @@ export function selectStaffingSlotSpecs(input: {
     );
   const specs: StaffingSlotSpec[] = [];
 
-  for (const taskType of sortedTaskTypes) {
-    const matchingRule = selectRuleForTaskType({
-      date: input.date,
-      scenario: input.scenario,
-      weekday,
-      taskTypeId: taskType.id,
-      rules: input.rules,
-    });
-
-    if (matchingRule) {
-      specs.push(...buildRuleSpecs(matchingRule));
-      continue;
-    }
-
-    if (isDefaultTaskForScenario(input.scenario, taskType)) {
-      specs.push({
+  for (const shiftBlock of sortedShiftBlocks) {
+    for (const taskType of sortedTaskTypes) {
+      const matchingRule = selectRuleForTaskType({
+        date: input.date,
+        scenario: input.scenario,
+        weekday,
         taskTypeId: taskType.id,
-        slotIndex: 1,
-        requirementLevel: "REQUIRED",
-        source: "DEFAULT",
-        staffingRequirementRuleId: null,
+        shiftBlock,
+        rules: input.rules,
       });
+
+      if (matchingRule) {
+        specs.push(...buildRuleSpecs(matchingRule, shiftBlock));
+        continue;
+      }
+
+      if (
+        shiftBlock.defaultForSchedule &&
+        isDefaultTaskForScenario(input.scenario, taskType)
+      ) {
+        specs.push({
+          shiftBlockId: shiftBlock.id,
+          shiftTemplateId: shiftBlock.shiftTemplateId ?? null,
+          shiftCategory: shiftBlock.shiftCategory,
+          taskTypeId: taskType.id,
+          slotIndex: 1,
+          requirementLevel: "REQUIRED",
+          source: "DEFAULT",
+          staffingRequirementRuleId: null,
+        });
+      }
     }
   }
 
@@ -89,6 +120,7 @@ function selectRuleForTaskType(input: {
   scenario: ClinicScenario;
   weekday: number;
   taskTypeId: string;
+  shiftBlock: StaffingShiftBlock;
   rules: StaffingRequirementRuleConfig[];
 }) {
   return input.rules
@@ -105,12 +137,37 @@ function selectRuleForTaskType(input: {
         return false;
       }
 
+      if (
+        rule.shiftTemplateId &&
+        rule.shiftTemplateId !== input.shiftBlock.shiftTemplateId
+      ) {
+        return false;
+      }
+
+      if (
+        rule.shiftCategory &&
+        rule.shiftCategory !== input.shiftBlock.shiftCategory
+      ) {
+        return false;
+      }
+
+      if (
+        !rule.shiftTemplateId &&
+        !rule.shiftCategory &&
+        !input.shiftBlock.defaultForSchedule
+      ) {
+        return false;
+      }
+
       return isDateWithinRule(input.date, rule);
     })
     .sort((left, right) => compareRuleSpecificity(left, right))[0];
 }
 
-function buildRuleSpecs(rule: StaffingRequirementRuleConfig) {
+function buildRuleSpecs(
+  rule: StaffingRequirementRuleConfig,
+  shiftBlock: StaffingShiftBlock,
+) {
   const minRequiredSlots = Math.max(0, rule.minRequiredSlots);
   const desiredSlots = Math.max(minRequiredSlots, rule.desiredSlots);
   const maxSlots = Math.max(desiredSlots, rule.maxSlots);
@@ -119,6 +176,9 @@ function buildRuleSpecs(rule: StaffingRequirementRuleConfig) {
 
   for (let index = 1; index <= slotCount; index += 1) {
     specs.push({
+      shiftBlockId: shiftBlock.id,
+      shiftTemplateId: shiftBlock.shiftTemplateId ?? null,
+      shiftCategory: shiftBlock.shiftCategory,
       taskTypeId: rule.taskTypeId,
       slotIndex: index,
       requirementLevel:
@@ -154,6 +214,8 @@ function ruleSpecificityScore(rule: StaffingRequirementRuleConfig) {
   return (
     (rule.scenario ? 4 : 0) +
     (rule.weekday !== null ? 4 : 0) +
+    (rule.shiftTemplateId ? 8 : 0) +
+    (rule.shiftCategory ? 2 : 0) +
     (rule.effectiveStartDate ? 1 : 0) +
     (rule.effectiveEndDate ? 1 : 0)
   );

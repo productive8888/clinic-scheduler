@@ -87,10 +87,12 @@ export async function getPayrollReport(input: {
         taskSlots: {
           where: { status: { not: "CANCELLED" } },
           orderBy: [
+            { shiftBlock: { startMinute: "asc" } },
             { taskType: { sortOrder: "asc" } },
             { slotIndex: "asc" },
           ],
           include: {
+            shiftBlock: true,
             taskType: true,
             assignments: {
               where: { status: "ACTIVE" },
@@ -167,6 +169,7 @@ export async function getPayrollReport(input: {
         taskTypeName: slot.taskType.name,
         startMinute: slot.startMinute,
         endMinute: slot.endMinute,
+        paidHours: Number(slot.shiftBlock.paidHours),
         status: slot.status,
         requirementLevel: slot.requirementLevel,
         assignments: slot.assignments.map((assignment) => ({

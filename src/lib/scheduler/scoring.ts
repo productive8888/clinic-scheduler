@@ -6,6 +6,7 @@ import { dateToWeekday } from "./constraints";
 import type {
   ExistingAssignment,
   SchedulerEmployee,
+  SchedulerFairnessSettings,
   SchedulerRule,
   SchedulerTaskSlot,
   SchedulerTaskType,
@@ -18,13 +19,14 @@ export type ScoreCandidateInput = {
   slot: SchedulerTaskSlot;
   assignments: ExistingAssignment[];
   rules: SchedulerRule[];
+  fairness?: SchedulerFairnessSettings;
 };
 
 export function scoreCandidate(input: ScoreCandidateInput) {
   const { employee, taskType, slot, assignments, rules, seed } = input;
   let score = 100;
 
-  score += getFairnessScore(employee, assignments);
+  score += getFairnessScore(employee, assignments, taskType, slot, input.fairness);
   score += getDifficultTaskFatigueScore(
     employee,
     taskType.id,
