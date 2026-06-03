@@ -98,7 +98,9 @@ export function toExistingAssignment(
     shiftBlockId: slot.shiftBlockId,
     shiftCategory: slot.shiftCategory,
     paidHours: slot.paidHours,
+    isPatientFacing: taskType?.isPatientFacing,
     isClinical: taskType?.isClinical,
+    isBackground: taskType?.isBackground,
     isEndoscopy: taskType?.isEndoscopy,
     locked: assignment.source === "LOCKED",
   };

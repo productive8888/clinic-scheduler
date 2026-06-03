@@ -139,6 +139,8 @@ export async function getPayrollReport(input: {
       bankOverExpectedHours: settings.bankOverExpectedHours,
       deductUnderExpectedHours: settings.deductUnderExpectedHours,
       flagUnderExpectedHours: settings.flagUnderExpectedHours,
+      endoscopyExtraHoursPolicy: settings.endoscopyExtraHoursPolicy,
+      endoscopyShortenShiftSuggestions: settings.endoscopyShortenShiftSuggestions,
     },
     employees: employees.map((employee) => ({
       id: employee.id,
@@ -170,6 +172,9 @@ export async function getPayrollReport(input: {
         startMinute: slot.startMinute,
         endMinute: slot.endMinute,
         paidHours: Number(slot.shiftBlock.paidHours),
+        isEndoscopy:
+          slot.taskType.isEndoscopy || slot.shiftBlock.shiftCategory === "ENDO",
+        shiftCategory: slot.shiftBlock.shiftCategory,
         status: slot.status,
         requirementLevel: slot.requirementLevel,
         assignments: slot.assignments.map((assignment) => ({

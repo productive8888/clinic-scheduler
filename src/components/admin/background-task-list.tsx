@@ -105,6 +105,11 @@ export function BackgroundTaskList({
                           pullable
                         </span>
                       ) : null}
+                      {definition.protectedFromPull ? (
+                        <span className="rounded-md bg-sky-50 px-2 py-1 text-xs font-semibold text-sky-800">
+                          protected
+                        </span>
+                      ) : null}
                     </div>
                     <p className="mt-1 text-sm text-slate-500">
                       {Number(definition.estimatedHoursPerPeriod)} hours /{" "}

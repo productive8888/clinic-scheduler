@@ -24,6 +24,7 @@ import {
   selectStaffingSlotSpecs,
   type StaffingSlotSpec,
 } from "@/lib/staffing/requirements";
+import { selectShortageRecommendations } from "@/lib/shortage/recommendations";
 import { parseIsoDate, toIsoDate } from "@/lib/utils/date";
 
 const FALLBACK_SHIFT_START_MINUTE = 8 * 60;
@@ -378,6 +379,8 @@ export async function generateScheduleForDate(input: {
     historicalAssignments,
     rules,
     shortageRules,
+    patternSlots,
+    scheduleTargets,
   ] = await Promise.all([
     getScheduleBoard(input.date),
     getDb().employee.findMany({
@@ -465,6 +468,39 @@ export async function generateScheduleForDate(input: {
       },
       orderBy: [{ closurePriority: "asc" }, { updatedAt: "desc" }, { id: "asc" }],
     }),
+    getDb().schedulePatternSlot.findMany({
+      where: {
+        weekday: parseIsoDate(input.date).getUTCDay(),
+        pattern: {
+          active: true,
+          AND: [
+            {
+              OR: [
+                { effectiveStartDate: null },
+                { effectiveStartDate: { lte: parseIsoDate(input.date) } },
+              ],
+            },
+            {
+              OR: [
+                { effectiveEndDate: null },
+                { effectiveEndDate: { gte: parseIsoDate(input.date) } },
+              ],
+            },
+          ],
+        },
+      },
+      orderBy: [
+        { weekday: "asc" },
+        { slotIndex: "asc" },
+        { id: "asc" },
+      ],
+    }),
+    getDb().employeeScheduleTarget.findMany({
+      where: {
+        OR: [{ pattern: { active: true } }, { patternId: null }],
+      },
+      orderBy: [{ employeeName: "asc" }, { id: "asc" }],
+    }),
   ]);
 
   if (!scheduleDay) {
@@ -484,18 +520,25 @@ export async function generateScheduleForDate(input: {
         interchangeableGroup: slot.taskType.interchangeableGroup,
         difficultyWeight: slot.taskType.difficultyWeight,
         sortOrder: slot.taskType.sortOrder,
+        isPatientFacing: slot.taskType.isPatientFacing,
         isClinical: slot.taskType.isClinical,
         isBackground: slot.taskType.isBackground,
         isSkilled: slot.taskType.isSkilled,
         isEndoscopy: slot.taskType.isEndoscopy,
         isFloat: slot.taskType.isFloat,
+        isClosureCandidate: slot.taskType.isClosureCandidate,
+        exposureGroup: taskExposureGroup(slot.taskType.code),
       } satisfies SchedulerTaskType,
     ]),
+  );
+  const taskTypeIdByCode = new Map(
+    [...taskTypes.values()].map((taskType) => [taskType.code, taskType.id]),
   );
 
   const historicalCountByEmployee = new Map<string, number>();
   const historicalTaskCountByEmployee = new Map<string, Record<string, number>>();
   const historicalClinicalCountByEmployee = new Map<string, number>();
+  const historicalPatientFacingCountByEmployee = new Map<string, number>();
   const historicalHoursByEmployee = new Map<string, number>();
   const historicalSaturdayCountByEmployee = new Map<string, number>();
   const historicalEndoscopyCountByEmployee = new Map<string, number>();
@@ -516,6 +559,13 @@ export async function generateScheduleForDate(input: {
       historicalClinicalCountByEmployee.set(
         assignment.employeeId,
         (historicalClinicalCountByEmployee.get(assignment.employeeId) ?? 0) + 1,
+      );
+    }
+
+    if (assignment.taskSlot.taskType.isPatientFacing) {
+      historicalPatientFacingCountByEmployee.set(
+        assignment.employeeId,
+        (historicalPatientFacingCountByEmployee.get(assignment.employeeId) ?? 0) + 1,
       );
     }
 
@@ -591,11 +641,19 @@ export async function generateScheduleForDate(input: {
       ),
       historicalClinicalAssignments:
         historicalClinicalCountByEmployee.get(employee.id) ?? 0,
+      historicalPatientFacingAssignments:
+        historicalPatientFacingCountByEmployee.get(employee.id) ?? 0,
       historicalScheduledHours: historicalHoursByEmployee.get(employee.id) ?? 0,
       historicalSaturdayAssignments:
         historicalSaturdayCountByEmployee.get(employee.id) ?? 0,
       historicalEndoscopyAssignments:
         historicalEndoscopyCountByEmployee.get(employee.id) ?? 0,
+      ...targetInputsForEmployee({
+        employeeId: employee.id,
+        employeeName: employee.fullName,
+        scheduleTargets,
+        taskTypeIdByCode,
+      }),
     }))
     .sort((left, right) => left.id.localeCompare(right.id));
 
@@ -614,6 +672,10 @@ export async function generateScheduleForDate(input: {
     minStaff: slot.minStaff,
     requiredStaff: slot.requiredStaff,
     requirementLevel: slot.requirementLevel,
+    patternPreferredEmployeeIds: patternPreferredEmployeeIdsForSlot({
+      slot,
+      patternSlots,
+    }),
     lockedEmployeeIds: slot.assignments
       .filter((assignment) => assignment.locked)
       .map((assignment) => assignment.employeeId)
@@ -646,10 +708,15 @@ export async function generateScheduleForDate(input: {
     existingAssignments,
     fairness: {
       clinicalShiftWeight: fairnessSetting.clinicalShiftWeight,
+      patientFacingShiftWeight: fairnessSetting.patientFacingShiftWeight,
       totalShiftWeight: fairnessSetting.totalShiftWeight,
       totalHoursWeight: fairnessSetting.totalHoursWeight,
       saturdayShiftWeight: fairnessSetting.saturdayShiftWeight,
       endoscopyShiftWeight: fairnessSetting.endoscopyShiftWeight,
+      patternConsistencyWeight: fairnessSetting.patternConsistencyWeight,
+      skillRoleBalanceWeight: fairnessSetting.skillRoleBalanceWeight,
+      exposureGoalWeight: fairnessSetting.exposureGoalWeight,
+      backgroundPenaltyWeight: fairnessSetting.backgroundPenaltyWeight,
     },
   };
 
@@ -769,10 +836,10 @@ export async function generateScheduleForDate(input: {
           (conflictsBySlotId.has(slotId)
             ? formatConflictNote(
                 conflictsBySlotId.get(slotId)!,
-                selectShortageInstruction({
+                selectShortageRecommendations({
                   slot: dbSlotsById.get(slotId),
                   scenario: scheduleDay.scenario,
-                  shortageRules,
+                  rules: shortageRules,
                 }),
               )
             : null),
@@ -886,7 +953,7 @@ export async function unpublishScheduleForDate(input: {
 function formatConflictNote(conflict: {
   reason: string;
   rejectedCandidates: { employeeId: string; reasons: string[] }[];
-}, managerInstruction?: string | null) {
+}, recommendations: string[] = []) {
   const rejectionSummary = conflict.rejectedCandidates
     .slice(0, 4)
     .map((candidate) => `${candidate.employeeId}: ${candidate.reasons.join(", ")}`)
@@ -896,59 +963,140 @@ function formatConflictNote(conflict: {
     ? `${conflict.reason}. ${rejectionSummary}`
     : conflict.reason;
 
-  return managerInstruction
-    ? `${baseNote}. Recommendation: ${managerInstruction}`
+  return recommendations.length > 0
+    ? `${baseNote}. Recommendations: ${recommendations.join(" ")}`
     : baseNote;
 }
 
-function selectShortageInstruction(input: {
-  slot:
-    | {
-        taskTypeId: string;
-        shiftBlock: {
-          shiftTemplateId: string | null;
-          shiftCategory: string;
-        };
-      }
-    | undefined;
-  scenario: ClinicScenario;
-  shortageRules: {
-    taskTypeId: string | null;
+function patternPreferredEmployeeIdsForSlot(input: {
+  slot: {
+    taskTypeId: string;
+    slotIndex: number;
+    shiftBlock: {
+      shiftTemplateId: string | null;
+      shiftCategory: string;
+    };
+  };
+  patternSlots: {
+    taskTypeId: string;
+    slotIndex: number;
     shiftTemplateId: string | null;
     shiftCategory: string | null;
-    scenario: ClinicScenario | null;
-    managerInstruction: string;
+    preferredEmployeeId: string | null;
   }[];
 }) {
-  if (!input.slot) {
-    return null;
+  return input.patternSlots
+    .filter((patternSlot) => {
+      if (patternSlot.taskTypeId !== input.slot.taskTypeId) {
+        return false;
+      }
+
+      if (patternSlot.slotIndex !== input.slot.slotIndex) {
+        return false;
+      }
+
+      if (
+        patternSlot.shiftTemplateId &&
+        patternSlot.shiftTemplateId !== input.slot.shiftBlock.shiftTemplateId
+      ) {
+        return false;
+      }
+
+      if (
+        patternSlot.shiftCategory &&
+        patternSlot.shiftCategory !== input.slot.shiftBlock.shiftCategory
+      ) {
+        return false;
+      }
+
+      return Boolean(patternSlot.preferredEmployeeId);
+    })
+    .map((patternSlot) => patternSlot.preferredEmployeeId!)
+    .sort();
+}
+
+function targetInputsForEmployee(input: {
+  employeeId: string;
+  employeeName: string;
+  scheduleTargets: {
+    employeeId: string | null;
+    employeeName: string;
+    targetPatientShifts: Prisma.Decimal | null;
+    targetTaskCounts: Prisma.JsonValue;
+    exposureGoals: Prisma.JsonValue;
+  }[];
+  taskTypeIdByCode: Map<string, string>;
+}) {
+  const target = input.scheduleTargets.find((candidate) => {
+    if (candidate.employeeId) {
+      return candidate.employeeId === input.employeeId;
+    }
+
+    return normalizeName(candidate.employeeName) === normalizeName(input.employeeName);
+  });
+
+  if (!target) {
+    return {};
   }
 
-  return input.shortageRules.find((rule) => {
-    if (rule.taskTypeId && rule.taskTypeId !== input.slot?.taskTypeId) {
-      return false;
-    }
+  const targetTaskAssignments: Record<string, number> = {};
+  const targetTaskCounts = jsonNumberRecord(target.targetTaskCounts);
 
-    if (
-      rule.shiftTemplateId &&
-      rule.shiftTemplateId !== input.slot?.shiftBlock.shiftTemplateId
-    ) {
-      return false;
-    }
+  for (const [roleCode, count] of Object.entries(targetTaskCounts)) {
+    const taskTypeId = input.taskTypeIdByCode.get(roleCode);
 
-    if (
-      rule.shiftCategory &&
-      rule.shiftCategory !== input.slot?.shiftBlock.shiftCategory
-    ) {
-      return false;
+    if (taskTypeId) {
+      targetTaskAssignments[taskTypeId] = count;
     }
+  }
 
-    if (rule.scenario && rule.scenario !== input.scenario) {
-      return false;
-    }
+  return {
+    targetPatientFacingAssignments: target.targetPatientShifts
+      ? Number(target.targetPatientShifts)
+      : null,
+    targetTaskAssignments,
+    exposureGoals: jsonStringArray(target.exposureGoals),
+  };
+}
 
-    return true;
-  })?.managerInstruction ?? null;
+function taskExposureGroup(code: string) {
+  if (code.includes("GI")) {
+    return "GI";
+  }
+
+  if (code.includes("ALLERGY")) {
+    return "ALLERGY";
+  }
+
+  if (code === "FOLLOWUP") {
+    return "PCP";
+  }
+
+  return null;
+}
+
+function normalizeName(value: string) {
+  return value.trim().toLowerCase().replace(/\s+/g, " ");
+}
+
+function jsonNumberRecord(value: Prisma.JsonValue) {
+  if (!value || Array.isArray(value) || typeof value !== "object") {
+    return {};
+  }
+
+  return Object.fromEntries(
+    Object.entries(value)
+      .map(([key, item]) => [key, Number(item)])
+      .filter(([, item]) => Number.isFinite(item)),
+  ) as Record<string, number>;
+}
+
+function jsonStringArray(value: Prisma.JsonValue) {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+
+  return value.filter((item): item is string => typeof item === "string");
 }
 
 function jsonRecord(value: Prisma.JsonValue) {

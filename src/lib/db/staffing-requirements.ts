@@ -27,6 +27,13 @@ export function getStaffingRequirementsPageData() {
         name: true,
         code: true,
         optional: true,
+        isPatientFacing: true,
+        isClinical: true,
+        isBackground: true,
+        isSkilled: true,
+        isEndoscopy: true,
+        isFloat: true,
+        isClosureCandidate: true,
       },
     }),
     getDb().shiftTemplate.findMany({
@@ -47,6 +54,40 @@ export function getStaffingRequirementsPageData() {
       },
     }),
   ]);
+}
+
+export async function updateTaskTypeClassification(input: {
+  taskTypeId: string;
+  values: {
+    isPatientFacing: boolean;
+    isClinical: boolean;
+    isBackground: boolean;
+    isSkilled: boolean;
+    isEndoscopy: boolean;
+    isFloat: boolean;
+    isClosureCandidate: boolean;
+  };
+  actorEmployeeId?: string | null;
+}) {
+  const db = getDb();
+  const before = await db.taskType.findUniqueOrThrow({
+    where: { id: input.taskTypeId },
+  });
+  const taskType = await db.taskType.update({
+    where: { id: input.taskTypeId },
+    data: input.values,
+  });
+
+  await writeAuditLog({
+    actorEmployeeId: input.actorEmployeeId,
+    action: "task_type.classification_update",
+    entityType: "TaskType",
+    entityId: taskType.id,
+    before,
+    after: taskType,
+  });
+
+  return taskType;
 }
 
 export async function createStaffingRequirementRule(input: {

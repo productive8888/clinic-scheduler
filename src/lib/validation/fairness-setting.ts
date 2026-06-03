@@ -19,6 +19,11 @@ export const fairnessSettingFormSchema = z
     totalHoursWeight: z.coerce.number().int().min(0).max(200),
     saturdayShiftWeight: z.coerce.number().int().min(0).max(200),
     endoscopyShiftWeight: z.coerce.number().int().min(0).max(200),
+    patternConsistencyWeight: z.coerce.number().int().min(0).max(200),
+    patientFacingShiftWeight: z.coerce.number().int().min(0).max(200),
+    skillRoleBalanceWeight: z.coerce.number().int().min(0).max(200),
+    exposureGoalWeight: z.coerce.number().int().min(0).max(200),
+    backgroundPenaltyWeight: z.coerce.number().int().min(0).max(200),
     active: z.boolean().default(false),
     notes: optionalTrimmedString,
   })
@@ -66,6 +71,11 @@ export function fairnessSettingValuesFromFormData(formData: FormData) {
     totalHoursWeight: formData.get("totalHoursWeight"),
     saturdayShiftWeight: formData.get("saturdayShiftWeight"),
     endoscopyShiftWeight: formData.get("endoscopyShiftWeight"),
+    patternConsistencyWeight: formData.get("patternConsistencyWeight"),
+    patientFacingShiftWeight: formData.get("patientFacingShiftWeight"),
+    skillRoleBalanceWeight: formData.get("skillRoleBalanceWeight"),
+    exposureGoalWeight: formData.get("exposureGoalWeight"),
+    backgroundPenaltyWeight: formData.get("backgroundPenaltyWeight"),
     active: formData.get("active") === "on",
     notes: formData.get("notes"),
   });

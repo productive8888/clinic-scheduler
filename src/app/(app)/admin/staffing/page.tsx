@@ -1,6 +1,7 @@
 import { Layers3 } from "lucide-react";
 import { StaffingRequirementForm } from "@/components/admin/staffing-requirement-form";
 import { StaffingRequirementList } from "@/components/admin/staffing-requirement-list";
+import { TaskTypeClassificationList } from "@/components/admin/task-type-classification-list";
 import { SetupRequired } from "@/components/layout/setup-required";
 import { getStaffingRequirementsPageData } from "@/lib/db/staffing-requirements";
 
@@ -63,6 +64,17 @@ export default async function StaffingRequirementsPage() {
           taskTypes={taskTypes}
           shiftTemplates={shiftTemplates}
         />
+      </section>
+
+      <section className="grid gap-3">
+        <h2 className="text-lg font-semibold text-slate-950">
+          Task classification flags
+        </h2>
+        <p className="text-sm text-slate-500">
+          These flags drive patient-facing fairness, background pull behavior,
+          endoscopy payroll handling, and shortage recommendations.
+        </p>
+        <TaskTypeClassificationList taskTypes={taskTypes} />
       </section>
     </div>
   );

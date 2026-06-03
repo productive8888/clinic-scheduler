@@ -33,6 +33,10 @@ export function scoreCandidate(input: ScoreCandidateInput) {
     taskType.difficultyWeight ?? 0,
   );
 
+  if (slot.patternPreferredEmployeeIds?.includes(employee.id)) {
+    score += input.fairness?.patternConsistencyWeight ?? 35;
+  }
+
   if (employee.preferredTaskTypeIds?.includes(taskType.id)) {
     score += 18;
   }

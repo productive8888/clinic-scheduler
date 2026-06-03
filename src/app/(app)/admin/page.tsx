@@ -6,6 +6,7 @@ import {
   CalendarDays,
   ClipboardCheck,
   Database,
+  FileSpreadsheet,
   Layers3,
   ShieldCheck,
   SlidersHorizontal,
@@ -49,6 +50,12 @@ const adminLinks = [
     title: "Staffing requirements",
     description: "Configure tiered multi-person task slot rules by date context.",
     icon: Layers3,
+  },
+  {
+    href: "/admin/easton-import",
+    title: "Easton spreadsheet",
+    description: "Review and apply spreadsheet-derived shifts, targets, and defaults.",
+    icon: FileSpreadsheet,
   },
   {
     href: "/admin/rules",

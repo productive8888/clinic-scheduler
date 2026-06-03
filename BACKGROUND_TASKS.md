@@ -16,8 +16,14 @@ The current foundation stores:
 - eligible employees
 - required skills
 - whether the task can be pulled for clinic coverage
+- whether the task is protected from clinic pull
 - whether rollover is allowed
 - active status and notes
+
+Easton's default pull-priority configuration is stored separately as
+`BackgroundPullRule` rows. These rows rank employees for pullable background
+work and can enforce max-pull caps per scheduling period. If a background task is
+not pullable, or is marked protected, the pull-priority helper excludes it.
 
 `BackgroundTaskInstance` supports future generated period obligations. The full
 weekly/biweekly rollover optimizer is intentionally deferred until clinic policy

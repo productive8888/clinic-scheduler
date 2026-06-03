@@ -184,6 +184,15 @@ export function BackgroundTaskDefinitionForm({
         </label>
         <label className="flex items-center gap-2">
           <input
+            name="protectedFromPull"
+            type="checkbox"
+            defaultChecked={definition?.protectedFromPull ?? false}
+            className="size-4 accent-emerald-700"
+          />
+          Protected from pull
+        </label>
+        <label className="flex items-center gap-2">
+          <input
             name="rolloverAllowed"
             type="checkbox"
             defaultChecked={definition?.rolloverAllowed ?? true}

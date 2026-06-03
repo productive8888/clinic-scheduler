@@ -11,6 +11,8 @@
     "test": "tsx tests/scheduler/engine.test.ts && tsx tests/payroll/payroll.test.ts && tsx tests/auth/auth.test.ts",
     "typecheck": "tsc --noEmit",
     "check:deployment": "tsx scripts/check-deployment.ts",
+    "review:easton": "tsx scripts/review-easton-workbook.ts",
+    "apply:easton": "tsx scripts/apply-easton-defaults.ts",
     "prisma:generate": "prisma generate",
     "prisma:migrate": "prisma migrate dev",
     "prisma:seed": "prisma db seed"
@@ -20,6 +22,7 @@
     "@prisma/client": "^6.19.3",
     "@tanstack/react-query": "^5.100.14",
     "date-fns": "^4.3.0",
+    "exceljs": "^4.4.0",
     "lucide-react": "^1.16.0",
     "next": "16.2.6",
     "next-auth": "^5.0.0-beta.31",

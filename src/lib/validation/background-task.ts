@@ -33,6 +33,7 @@ export const backgroundTaskDefinitionFormSchema = z
       .union([z.string().min(1), z.literal("").transform(() => null)])
       .nullable(),
     canBePulledForClinic: z.boolean().default(false),
+    protectedFromPull: z.boolean().default(false),
     rolloverAllowed: z.boolean().default(false),
     active: z.boolean().default(false),
     notes: optionalTrimmedString,
@@ -80,6 +81,7 @@ export function backgroundTaskDefinitionValuesFromFormData(formData: FormData) {
     mentor: formData.get("mentor"),
     primaryOwnerEmployeeId: formData.get("primaryOwnerEmployeeId"),
     canBePulledForClinic: formData.get("canBePulledForClinic") === "on",
+    protectedFromPull: formData.get("protectedFromPull") === "on",
     rolloverAllowed: formData.get("rolloverAllowed") === "on",
     active: formData.get("active") === "on",
     notes: formData.get("notes"),

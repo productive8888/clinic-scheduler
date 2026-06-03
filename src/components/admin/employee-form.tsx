@@ -3,6 +3,7 @@ import type {
   EmployeeSkill,
   Skill,
   WeeklyAvailability,
+  WorkPattern,
 } from "@prisma/client";
 import { Save, UserPlus } from "lucide-react";
 import { createEmployeeAction, updateEmployeeAction } from "@/app/(app)/admin/employees/actions";
@@ -22,10 +23,11 @@ type EmployeeWithSkills = Employee & {
 
 type EmployeeFormProps = {
   skills: Skill[];
+  workPatterns?: WorkPattern[];
   employee?: EmployeeWithSkills;
 };
 
-export function EmployeeForm({ skills, employee }: EmployeeFormProps) {
+export function EmployeeForm({ skills, workPatterns = [], employee }: EmployeeFormProps) {
   const action = employee
     ? updateEmployeeAction.bind(null, employee.id)
     : createEmployeeAction;
@@ -123,6 +125,21 @@ export function EmployeeForm({ skills, employee }: EmployeeFormProps) {
             defaultValue={employee?.weeklyAssignmentLimit ?? ""}
             className="h-10 rounded-md border border-slate-300 bg-white px-3 text-slate-950 outline-none focus:border-emerald-700"
           />
+        </label>
+        <label className="grid gap-1 text-sm font-medium text-slate-700">
+          Work pattern
+          <select
+            name="workPatternId"
+            defaultValue={employee?.workPatternId ?? ""}
+            className="h-10 rounded-md border border-slate-300 bg-white px-3 text-slate-950 outline-none focus:border-emerald-700"
+          >
+            <option value="">None</option>
+            {workPatterns.map((pattern) => (
+              <option key={pattern.id} value={pattern.id}>
+                {pattern.name}
+              </option>
+            ))}
+          </select>
         </label>
         <label className="grid gap-1 text-sm font-medium text-slate-700">
           Start date

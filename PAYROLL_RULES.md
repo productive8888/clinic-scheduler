@@ -81,6 +81,11 @@ start/end times remain important for calendar exports and eligibility checks,
 but payroll falls back to duration only when a shift block paid-hour value is
 missing.
 
-Endoscopy overtime, comp-time banking for Saturday/endoscopy shifts, shortened
-future float shifts, and clinic-closure time-back policies are intentionally
-configuration/future-policy items. They are not hardcoded in V1.
+Easton's current default for endoscopy extra hours is:
+
+- never shorten shifts as the automatic suggestion
+- bank extra endoscopy hours as PTO-style credit for manager review
+
+This remains configurable in `PayrollSettings`. Direct payroll payout,
+endoscopy overtime pay policy, and final clinic-closure time-back policies are
+not hardcoded in V1.

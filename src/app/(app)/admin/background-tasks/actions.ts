@@ -6,7 +6,9 @@ import {
   createBackgroundTaskCategory,
   createBackgroundTaskDefinition,
   deactivateBackgroundTaskDefinition,
+  deactivateBackgroundPullRule,
   updateBackgroundTaskDefinition,
+  upsertBackgroundPullRule,
 } from "@/lib/db/background-tasks";
 import {
   backgroundTaskCategoryValuesFromFormData,
@@ -62,4 +64,59 @@ export async function deactivateBackgroundTaskDefinitionAction(definitionId: str
   });
 
   revalidatePath("/admin/background-tasks");
+}
+
+export async function upsertBackgroundPullRuleAction(formData: FormData) {
+  const actor = await requireManager();
+  const employeeId = stringField(formData.get("employeeId"));
+
+  if (!employeeId) {
+    throw new Error("Employee is required for a pull-priority rule.");
+  }
+
+  await upsertBackgroundPullRule({
+    actorEmployeeId: auditActorId(actor),
+    values: {
+      employeeId,
+      priorityRank: numberField(formData.get("priorityRank"), 100),
+      maxPullsPerPeriod: nullableNumberField(formData.get("maxPullsPerPeriod")),
+      active: formData.get("active") === "on",
+      notes: stringField(formData.get("notes")),
+    },
+  });
+
+  revalidatePath("/admin/background-tasks");
+  revalidatePath("/admin/audit");
+}
+
+export async function deactivateBackgroundPullRuleAction(ruleId: string) {
+  const actor = await requireManager();
+
+  await deactivateBackgroundPullRule({
+    ruleId,
+    actorEmployeeId: auditActorId(actor),
+  });
+
+  revalidatePath("/admin/background-tasks");
+  revalidatePath("/admin/audit");
+}
+
+function stringField(value: FormDataEntryValue | null) {
+  return typeof value === "string" && value.trim() ? value.trim() : null;
+}
+
+function numberField(value: FormDataEntryValue | null, fallback: number) {
+  const parsed = Number(value);
+
+  return Number.isFinite(parsed) ? parsed : fallback;
+}
+
+function nullableNumberField(value: FormDataEntryValue | null) {
+  if (value === null || value === "") {
+    return null;
+  }
+
+  const parsed = Number(value);
+
+  return Number.isFinite(parsed) ? parsed : null;
 }

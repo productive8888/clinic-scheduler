@@ -86,10 +86,15 @@ export default async function FairnessSettingsPage() {
           <div className="grid gap-4 md:grid-cols-5">
             {[
               ["clinicalShiftWeight", "Clinical"],
+              ["patientFacingShiftWeight", "Patient-facing"],
               ["totalShiftWeight", "Total shifts"],
               ["totalHoursWeight", "Hours"],
               ["saturdayShiftWeight", "Saturday"],
               ["endoscopyShiftWeight", "Endoscopy"],
+              ["patternConsistencyWeight", "Pattern"],
+              ["skillRoleBalanceWeight", "Skill/role"],
+              ["exposureGoalWeight", "GI/Allergy/PCP"],
+              ["backgroundPenaltyWeight", "Background defer"],
             ].map(([name, label]) => (
               <label
                 key={name}

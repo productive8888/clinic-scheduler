@@ -42,6 +42,8 @@ export function buildPayrollReport(
       paidHolidayHours: 0,
       holidayCompTimeHours: 0,
       holidayPtoCreditHours: 0,
+      endoscopyWorkHours: 0,
+      endoscopyPtoCreditHours: 0,
       manualAdjustmentHours: 0,
       compTimeCreditHours: 0,
       compTimeDebitHours: 0,
@@ -175,6 +177,8 @@ export function buildPayrollReport(
     row.paidHolidayHours = roundToTwo(row.paidHolidayHours);
     row.holidayCompTimeHours = roundToTwo(row.holidayCompTimeHours);
     row.holidayPtoCreditHours = roundToTwo(row.holidayPtoCreditHours);
+    row.endoscopyWorkHours = roundToTwo(row.endoscopyWorkHours);
+    row.endoscopyPtoCreditHours = roundToTwo(row.endoscopyPtoCreditHours);
     row.manualAdjustmentHours = roundToTwo(row.manualAdjustmentHours);
 
     const basePaidHours = roundToTwo(
@@ -210,6 +214,26 @@ export function buildPayrollReport(
       overage > 0
     ) {
       row.compTimeCreditHours = roundToTwo(row.compTimeCreditHours + overage);
+    }
+
+    if (
+      input.settings.endoscopyExtraHoursPolicy === "BANK_PTO" &&
+      row.endoscopyWorkHours > 0 &&
+      overage > 0
+    ) {
+      row.endoscopyPtoCreditHours = roundToTwo(
+        row.endoscopyPtoCreditHours + Math.min(overage, row.endoscopyWorkHours),
+      );
+    }
+
+    if (
+      input.settings.endoscopyExtraHoursPolicy === "BANK_COMP_TIME" &&
+      row.endoscopyWorkHours > 0 &&
+      overage > 0
+    ) {
+      row.compTimeCreditHours = roundToTwo(
+        row.compTimeCreditHours + Math.min(overage, row.endoscopyWorkHours),
+      );
     }
 
     if (
@@ -260,6 +284,7 @@ export function buildPayrollReport(
       ptoHours: sumRows(rows, "ptoHours"),
       nptoUnpaidHours: sumRows(rows, "nptoUnpaidHours"),
       paidHolidayHours: sumRows(rows, "paidHolidayHours"),
+      endoscopyPtoCreditHours: sumRows(rows, "endoscopyPtoCreditHours"),
       compTimeCreditHours: sumRows(rows, "compTimeCreditHours"),
       compTimeDebitHours: sumRows(rows, "compTimeDebitHours"),
       finalPaidHoursEstimate: sumRows(rows, "finalPaidHoursEstimate"),
@@ -322,6 +347,10 @@ function applyScheduleHours(input: {
 
         row.scheduledWorkHours += slotHours;
         row.assignmentCount += 1;
+
+        if (slot.isEndoscopy || slot.shiftCategory === "ENDO") {
+          row.endoscopyWorkHours += slotHours;
+        }
 
         if (assignment.locked || assignment.source === "MANUAL_OVERRIDE") {
           row.manualOverrideCount += 1;

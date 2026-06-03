@@ -1,4 +1,5 @@
 import { Workflow } from "lucide-react";
+import { BackgroundPullRuleList } from "@/components/admin/background-pull-rule-list";
 import { BackgroundTaskCategoryForm } from "@/components/admin/background-task-category-form";
 import { BackgroundTaskDefinitionForm } from "@/components/admin/background-task-definition-form";
 import { BackgroundTaskList } from "@/components/admin/background-task-list";
@@ -22,7 +23,7 @@ export default async function BackgroundTasksPage() {
     );
   }
 
-  const [categories, employees, skills] = data;
+  const [categories, employees, skills, pullRules] = data;
   const activeDefinitionCount = categories.reduce(
     (count, category) =>
       count + category.definitions.filter((definition) => definition.active).length,
@@ -72,6 +73,8 @@ export default async function BackgroundTasksPage() {
           </div>
         </section>
       ) : null}
+
+      <BackgroundPullRuleList rules={pullRules} employees={employees} />
 
       <section className="grid gap-3">
         <h2 className="text-lg font-semibold text-slate-950">Definitions</h2>

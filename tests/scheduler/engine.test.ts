@@ -1,5 +1,10 @@
 import assert from "node:assert/strict";
+import fs from "node:fs/promises";
+import os from "node:os";
+import path from "node:path";
 import { describe, it } from "node:test";
+import ExcelJS from "exceljs";
+import { selectBackgroundPullCandidates } from "../../src/lib/background/pull-priority";
 import {
   generateSchedule,
   isUnavailableForSlot,
@@ -8,6 +13,7 @@ import {
   type SchedulerTaskSlot,
   type SchedulerTaskType,
 } from "../../src/lib/scheduler";
+import { parseEastonWorkbook } from "../../src/lib/easton-import/parser";
 import {
   calculatePtoHours,
   deductsPtoBalance,
@@ -31,6 +37,7 @@ import {
   isShortNoticeScheduleChange,
 } from "../../src/lib/schedule/short-notice";
 import { selectStaffingSlotSpecs } from "../../src/lib/staffing/requirements";
+import { selectShortageRecommendations } from "../../src/lib/shortage/recommendations";
 import { buildShiftBlockSnapshot } from "../../src/lib/shifts/templates";
 import { enumerateIsoDates } from "../../src/lib/utils/date";
 
@@ -434,6 +441,198 @@ describe("generateSchedule", () => {
 
     assert.equal(result.conflicts.length, 0);
     assert.equal(result.assignments[0].employeeId, "alice");
+  });
+
+  it("uses week-to-week pattern preferences as a soft scoring signal", () => {
+    const result = generateSchedule({
+      seed: "pattern-consistency",
+      employees: baseEmployees,
+      taskTypes,
+      slots: [
+        {
+          ...slots[1],
+          patternPreferredEmployeeIds: ["blake"],
+        },
+      ],
+      fairness: {
+        clinicalShiftWeight: 0,
+        patientFacingShiftWeight: 0,
+        totalShiftWeight: 0,
+        totalHoursWeight: 0,
+        saturdayShiftWeight: 0,
+        endoscopyShiftWeight: 0,
+        patternConsistencyWeight: 100,
+        skillRoleBalanceWeight: 0,
+        exposureGoalWeight: 0,
+        backgroundPenaltyWeight: 0,
+      },
+    });
+
+    assert.equal(result.assignments[0].employeeId, "blake");
+  });
+
+  it("balances patient-facing shifts before general total-hour fairness", () => {
+    const patientTaskTypes = [
+      {
+        id: "new-gi",
+        code: "NEW_GI",
+        name: "New GI",
+        requiredSkillIds: [],
+        isPatientFacing: true,
+        isClinical: true,
+      },
+    ];
+    const result = generateSchedule({
+      seed: "patient-facing-fairness",
+      employees: [
+        {
+          id: "overused",
+          fullName: "Overused",
+          skillIds: [],
+          availability: allDayMonday,
+          historicalPatientFacingAssignments: 10,
+        },
+        {
+          id: "underused",
+          fullName: "Underused",
+          skillIds: [],
+          availability: allDayMonday,
+          historicalPatientFacingAssignments: 0,
+        },
+      ],
+      taskTypes: patientTaskTypes,
+      slots: [{ ...slots[1], taskTypeId: "new-gi" }],
+      fairness: {
+        clinicalShiftWeight: 0,
+        patientFacingShiftWeight: 20,
+        totalShiftWeight: 0,
+        totalHoursWeight: 0,
+        saturdayShiftWeight: 0,
+        endoscopyShiftWeight: 0,
+        patternConsistencyWeight: 0,
+        skillRoleBalanceWeight: 0,
+        exposureGoalWeight: 0,
+        backgroundPenaltyWeight: 0,
+      },
+    });
+
+    assert.equal(result.assignments[0].employeeId, "underused");
+  });
+
+  it("uses per-role targets among eligible employees as a soft objective", () => {
+    const result = generateSchedule({
+      seed: "role-targets",
+      employees: [
+        {
+          id: "needs-front",
+          fullName: "Needs Front",
+          skillIds: [],
+          availability: allDayMonday,
+          targetTaskAssignments: { "front-desk": 2 },
+        },
+        {
+          id: "neutral",
+          fullName: "Neutral",
+          skillIds: [],
+          availability: allDayMonday,
+        },
+      ],
+      taskTypes,
+      slots: [slots[1]],
+      fairness: {
+        clinicalShiftWeight: 0,
+        patientFacingShiftWeight: 0,
+        totalShiftWeight: 0,
+        totalHoursWeight: 0,
+        saturdayShiftWeight: 0,
+        endoscopyShiftWeight: 0,
+        patternConsistencyWeight: 0,
+        skillRoleBalanceWeight: 50,
+        exposureGoalWeight: 0,
+        backgroundPenaltyWeight: 0,
+      },
+    });
+
+    assert.equal(result.assignments[0].employeeId, "needs-front");
+  });
+
+  it("uses GI Allergy PCP exposure goals as soft assignment goals", () => {
+    const giTaskTypes = [
+      {
+        id: "new-gi",
+        code: "NEW_GI",
+        name: "New GI",
+        requiredSkillIds: [],
+        exposureGroup: "GI",
+      },
+    ];
+    const result = generateSchedule({
+      seed: "exposure-goals",
+      employees: [
+        {
+          id: "needs-gi",
+          fullName: "Needs GI",
+          skillIds: [],
+          availability: allDayMonday,
+          exposureGoals: ["GI"],
+        },
+        {
+          id: "neutral",
+          fullName: "Neutral",
+          skillIds: [],
+          availability: allDayMonday,
+        },
+      ],
+      taskTypes: giTaskTypes,
+      slots: [{ ...slots[1], taskTypeId: "new-gi" }],
+      fairness: {
+        clinicalShiftWeight: 0,
+        patientFacingShiftWeight: 0,
+        totalShiftWeight: 0,
+        totalHoursWeight: 0,
+        saturdayShiftWeight: 0,
+        endoscopyShiftWeight: 0,
+        patternConsistencyWeight: 0,
+        skillRoleBalanceWeight: 0,
+        exposureGoalWeight: 25,
+        backgroundPenaltyWeight: 0,
+      },
+    });
+
+    assert.equal(result.assignments[0].employeeId, "needs-gi");
+  });
+
+  it("does not let fairness close a fillable required clinic slot", () => {
+    const result = generateSchedule({
+      seed: "fillable-required",
+      employees: [
+        {
+          id: "skilled-overused",
+          fullName: "Skilled Overused",
+          skillIds: ["civil-surgeon"],
+          availability: allDayMonday,
+          historicalPatientFacingAssignments: 999,
+          historicalClinicalAssignments: 999,
+        },
+      ],
+      taskTypes,
+      slots: [slots[0]],
+      fairness: {
+        clinicalShiftWeight: 200,
+        patientFacingShiftWeight: 200,
+        totalShiftWeight: 200,
+        totalHoursWeight: 200,
+        saturdayShiftWeight: 0,
+        endoscopyShiftWeight: 0,
+        patternConsistencyWeight: 0,
+        skillRoleBalanceWeight: 0,
+        exposureGoalWeight: 0,
+        backgroundPenaltyWeight: 0,
+      },
+    });
+
+    assert.equal(result.conflicts.length, 0);
+    assert.equal(result.assignments[0].employeeId, "skilled-overused");
   });
 
   it("does not let priority rules bypass skills, PTO, availability, or double-booking", () => {
@@ -962,8 +1161,8 @@ describe("staffing requirement rules", () => {
       id: "am-early-template",
       name: "AM early",
       startMinute: 7 * 60,
-      endMinute: 11 * 60 + 30,
-      paidHours: 4.5,
+      endMinute: 12 * 60,
+      paidHours: 5,
       shiftCategory: "AM",
       defaultForSchedule: false,
       notes: "Spreadsheet default",
@@ -973,8 +1172,8 @@ describe("staffing requirement rules", () => {
       shiftTemplateId: "am-early-template",
       name: "AM early",
       startMinute: 420,
-      endMinute: 690,
-      paidHours: 4.5,
+      endMinute: 720,
+      paidHours: 5,
       shiftCategory: "AM",
       defaultForSchedule: false,
       source: "TEMPLATE",
@@ -1233,6 +1432,143 @@ describe("staffing requirement rules", () => {
       }),
       [],
     );
+  });
+});
+
+describe("Easton policy helpers", () => {
+  it("orders shortage recommendations by configured Easton closure priority", () => {
+    const recommendations = selectShortageRecommendations({
+      scenario: "ROUTINE",
+      slot: {
+        taskTypeId: "civil",
+        shiftBlock: {
+          shiftTemplateId: null,
+          shiftCategory: "AM",
+        },
+      },
+      rules: [
+        {
+          taskTypeId: "civil",
+          shiftTemplateId: null,
+          shiftCategory: null,
+          scenario: null,
+          closurePriority: 7,
+          managerInstruction: "Civil last",
+        },
+        {
+          taskTypeId: "float",
+          shiftTemplateId: null,
+          shiftCategory: null,
+          scenario: null,
+          closurePriority: 1,
+          managerInstruction: "Pull Float first",
+        },
+        {
+          taskTypeId: "booking",
+          shiftTemplateId: null,
+          shiftCategory: null,
+          scenario: null,
+          closurePriority: 3,
+          managerInstruction: "Pull Booking third",
+        },
+      ],
+    });
+
+    assert.deepEqual(recommendations, [
+      "1. Pull Float first",
+      "2. Pull Booking third",
+      "3. Civil last",
+    ]);
+  });
+
+  it("selects background pull candidates by rank and respects pull caps", () => {
+    const candidates = selectBackgroundPullCandidates({
+      assignments: [
+        {
+          assignmentId: "yvonne-bg",
+          employeeId: "yvonne",
+          taskTypeCode: "BACKGROUND",
+          canBePulledForClinic: true,
+        },
+        {
+          assignmentId: "katie-bg",
+          employeeId: "katie",
+          taskTypeCode: "BACKGROUND",
+          canBePulledForClinic: true,
+        },
+        {
+          assignmentId: "protected",
+          employeeId: "hanna",
+          taskTypeCode: "BACKGROUND",
+          canBePulledForClinic: true,
+          protectedFromPull: true,
+        },
+      ],
+      rules: [
+        { employeeId: "katie", priorityRank: 2, maxPullsPerPeriod: 1 },
+        { employeeId: "yvonne", priorityRank: 1, maxPullsPerPeriod: null },
+        { employeeId: "hanna", priorityRank: 3, maxPullsPerPeriod: 1 },
+      ],
+      pullCountsByEmployee: { katie: 1 },
+    });
+
+    assert.deepEqual(
+      candidates.map((candidate) => candidate.assignmentId),
+      ["yvonne-bg"],
+    );
+  });
+
+  it("parses the Easton workbook shape and final 0700-1200 shift times", async () => {
+    const directory = await fs.mkdtemp(path.join(os.tmpdir(), "easton-"));
+    const workbookPath = path.join(directory, "easton.xlsx");
+    const workbook = new ExcelJS.Workbook();
+    const shifts = workbook.addWorksheet("Shifts + Hours");
+
+    shifts.getRow(1).values = ["", "Monday (1)", ""];
+    shifts.getRow(2).values = ["", "0700~1200 (5)", "0800~1200 (4)"];
+    shifts.getRow(3).values = ["Shift Hours", 5, 4];
+    shifts.getRow(4).values = ["GI", 1, 2];
+    shifts.getRow(5).values = ["Patients", 1, 2];
+
+    const targets = workbook.addWorksheet("Shifts by GY");
+    targets.getRow(1).values = [
+      "",
+      "",
+      "Gap year",
+      "Role",
+      "Group",
+      "GI (1)",
+      "ALLERGY (1)",
+      "PCP (1)",
+      "Patients (3)",
+    ];
+    targets.getRow(2).values = [
+      1,
+      "GI + Allergy",
+      "Yvonne",
+      "PCP",
+      "T + Th",
+      1,
+      1,
+      1,
+      3,
+    ];
+
+    const june = workbook.addWorksheet("June Schedule");
+    june.getRow(1).values = ["", "", "Monday"];
+    june.getRow(2).values = ["", "", "0700~1200 (5)"];
+    june.getRow(3).values = [1, "Yvonne", "NEW GI"];
+
+    await workbook.xlsx.writeFile(workbookPath);
+
+    const preview = await parseEastonWorkbook(workbookPath);
+
+    assert.equal(preview.shifts[0].startMinute, 7 * 60);
+    assert.equal(preview.shifts[0].endMinute, 12 * 60);
+    assert.equal(preview.shifts[0].paidHours, 5);
+    assert.equal(preview.roleDemand[0].roleCode, "NEW_GI");
+    assert.equal(preview.employeeTargets[0].employeeName, "Yvonne");
+    assert.equal(preview.sampleAssignments[0].roleCode, "NEW_GI");
   });
 });
 

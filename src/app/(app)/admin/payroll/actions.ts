@@ -1,6 +1,6 @@
 "use server";
 
-import { HolidayPayRule } from "@prisma/client";
+import { EndoscopyCompPolicy, HolidayPayRule } from "@prisma/client";
 import { revalidatePath } from "next/cache";
 import { auditActorId, requireManager } from "@/lib/auth";
 import {
@@ -29,6 +29,11 @@ export async function updatePayrollSettingsAction(formData: FormData) {
       deductUnderExpectedHours:
         formData.get("deductUnderExpectedHours") === "on",
       flagUnderExpectedHours: formData.get("flagUnderExpectedHours") === "on",
+      endoscopyExtraHoursPolicy: endoscopyCompPolicyField(
+        formData.get("endoscopyExtraHoursPolicy"),
+      ),
+      endoscopyShortenShiftSuggestions:
+        formData.get("endoscopyShortenShiftSuggestions") === "on",
     },
   });
 
@@ -76,4 +81,11 @@ function numberField(value: FormDataEntryValue | null, fallback: number) {
   const parsed = Number(value);
 
   return Number.isFinite(parsed) ? parsed : fallback;
+}
+
+function endoscopyCompPolicyField(value: FormDataEntryValue | null) {
+  return typeof value === "string" &&
+    Object.values(EndoscopyCompPolicy).includes(value as EndoscopyCompPolicy)
+    ? (value as EndoscopyCompPolicy)
+    : EndoscopyCompPolicy.BANK_PTO;
 }

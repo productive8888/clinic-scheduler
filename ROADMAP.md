@@ -55,6 +55,23 @@
   closure/cut recommendations without hardcoded final order.
 - Background task category/definition foundation with estimated hours, period
   type, priority, ownership, eligibility, pullability, and admin UI.
+- Easton spreadsheet import/review foundation for private workbook parsing,
+  parsed shift/demand/target/sample-pattern review, and applying editable
+  database defaults.
+- Easton spreadsheet shift times seeded as editable shift templates, including
+  7:00 AM-12:00 PM early AM, 1:00 PM-6:00 PM Monday long PM, regular weekday
+  AM/PM, and Saturday endoscopy/short shifts.
+- Schedule pattern and employee target foundations for week-to-week consistency,
+  patient-facing fairness, per-role/skill targets, and GI/Allergy/PCP exposure
+  goals.
+- Easton shortage recommendation order seeded as editable rules, plus
+  employee-specific background pull-priority rules with max-pull caps.
+- Work-pattern templates for Easton endoscopy Saturday and non-endoscopy
+  Saturday 40-hour patterns, assignable from employee profiles.
+- Task type classification flags are manager-editable from the staffing admin
+  page.
+- Endoscopy extra-hour payroll policy defaults to PTO banking and avoids
+  shortened-shift suggestions unless managers change the setting.
 - Payroll calculations now use shift-block paid hours before falling back to
   task-slot duration.
 - Append-only payroll adjustment ledger for PTO debits, NPTO unpaid deductions,
@@ -81,8 +98,8 @@
 4. Add richer payroll review workflows for manager sign-off and report snapshot
    history after clinic payroll policies are finalized.
 5. Add richer conflict resolution for desired/conditional staffing shortages.
-6. Finalize shortage/closure order after Easton/Julia provide clinic policy.
-7. Finalize background task priority/protection/pullability policy and build the
+6. Continue validating Easton shortage/closure defaults with clinic leadership.
+7. Finalize full background task priority/protection/pullability policy and build the
    period optimizer/rollover workflow.
-8. Finalize endoscopy overtime/comp-time policy and add report snapshots.
+8. Finalize endoscopy overtime/payout policy and add report snapshots.
 9. Implement Google Calendar, Google Sheets, and printable exports.

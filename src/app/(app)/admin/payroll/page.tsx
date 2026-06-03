@@ -126,6 +126,7 @@ export default async function PayrollPage({
                 <th className="px-4 py-3">PTO</th>
                 <th className="px-4 py-3">NPTO</th>
                 <th className="px-4 py-3">Holiday</th>
+                <th className="px-4 py-3">Endo PTO bank</th>
                 <th className="px-4 py-3">Comp +</th>
                 <th className="px-4 py-3">Comp -</th>
                 <th className="px-4 py-3">Final paid</th>
@@ -145,6 +146,7 @@ export default async function PayrollPage({
                 <td className="px-4 py-3">{formatNumber(data.report.totals.ptoHours)}</td>
                 <td className="px-4 py-3">{formatNumber(data.report.totals.nptoUnpaidHours)}</td>
                 <td className="px-4 py-3">{formatNumber(data.report.totals.paidHolidayHours)}</td>
+                <td className="px-4 py-3">{formatNumber(data.report.totals.endoscopyPtoCreditHours)}</td>
                 <td className="px-4 py-3">{formatNumber(data.report.totals.compTimeCreditHours)}</td>
                 <td className="px-4 py-3">{formatNumber(data.report.totals.compTimeDebitHours)}</td>
                 <td className="px-4 py-3">{formatNumber(data.report.totals.finalPaidHoursEstimate)}</td>
@@ -191,6 +193,8 @@ function PayrollSettingsForm({
     bankOverExpectedHours: boolean;
     deductUnderExpectedHours: boolean;
     flagUnderExpectedHours: boolean;
+    endoscopyExtraHoursPolicy: string;
+    endoscopyShortenShiftSuggestions: boolean;
   };
 }) {
   return (
@@ -236,6 +240,23 @@ function PayrollSettingsForm({
           name="deductUnderExpectedHours"
           label="Record comp-time debit for hours below expected"
           defaultChecked={settings.deductUnderExpectedHours}
+        />
+        <label className="grid gap-1 text-sm font-medium text-slate-700">
+          Endoscopy extra-hour policy
+          <select
+            name="endoscopyExtraHoursPolicy"
+            defaultValue={settings.endoscopyExtraHoursPolicy}
+            className="h-10 rounded-md border border-slate-300 bg-white px-3 text-slate-950 outline-none focus:border-emerald-700"
+          >
+            <option value="BANK_PTO">Bank PTO</option>
+            <option value="BANK_COMP_TIME">Bank comp time</option>
+            <option value="FLAG_ONLY">Flag only</option>
+          </select>
+        </label>
+        <CheckboxField
+          name="endoscopyShortenShiftSuggestions"
+          label="Allow shortened-shift suggestions for endoscopy comp time"
+          defaultChecked={settings.endoscopyShortenShiftSuggestions}
         />
         <button className="h-10 w-fit rounded-md bg-emerald-700 px-4 text-sm font-semibold text-white hover:bg-emerald-800">
           Save settings
@@ -351,6 +372,7 @@ function PayrollRow({ row }: { row: PayrollReportRow }) {
       <td className="px-4 py-3">{formatNumber(row.ptoHours)}</td>
       <td className="px-4 py-3">{formatNumber(row.nptoUnpaidHours)}</td>
       <td className="px-4 py-3">{formatNumber(row.paidHolidayHours)}</td>
+      <td className="px-4 py-3">{formatNumber(row.endoscopyPtoCreditHours)}</td>
       <td className="px-4 py-3">{formatNumber(row.compTimeCreditHours)}</td>
       <td className="px-4 py-3">{formatNumber(row.compTimeDebitHours)}</td>
       <td className="px-4 py-3 font-semibold text-slate-950">

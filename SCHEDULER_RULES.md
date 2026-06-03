@@ -62,18 +62,34 @@ not contain scheduling decisions.
 - Safe default staffing slots are created only on shift blocks marked as the
   schedule default. Managers can create additional AM/PM/Saturday/Endoscopy
   slots by configuring staffing rules against shift templates or categories.
-- Default seeded shift templates use spreadsheet times:
-  AM early 7:00 AM-11:30 AM, AM regular 8:00 AM-12:00 PM, PM early/long
-  12:30 PM-5:00 PM, PM regular 1:00 PM-5:00 PM, Saturday long/endoscopy
+- Default seeded shift templates use Easton's spreadsheet times:
+  weekday early AM 7:00 AM-12:00 PM where configured, weekday regular AM
+  8:00 AM-12:00 PM, Monday long PM 1:00 PM-6:00 PM where configured,
+  weekday regular PM 1:00 PM-5:00 PM, Saturday long/endoscopy
   6:00 AM-2:00 PM, and Saturday shorter 8:00 AM-2:00 PM.
+- The private Easton workbook can be parsed from `private/easton-scheduling.xlsx`
+  or `private/Copy of Easton Scheduling.xlsx` through the admin Easton import
+  page. Parsed shifts, role demand, employee targets, and June sample assignment
+  patterns are reviewed before applying editable database rules.
+- For deployed databases, run `npm run review:easton` and then
+  `npm run apply:easton` locally against the target `DATABASE_URL`; the workbook
+  remains private and is not required on Vercel.
 - Fairness history is evaluated inside the configured fairness window. The
   scoring layer can balance clinical shift counts, total shifts, scheduled
   paid hours, Saturday shifts, and endoscopy shifts separately.
+- Easton fairness defaults add soft scoring for week-to-week consistency,
+  patient-facing shift counts, per-role/skill targets, and GI/Allergy/PCP
+  exposure goals. These goals never bypass skills, PTO/NPTO, availability, or
+  no-double-booking constraints.
 - Shortage rules store visible manager recommendations for unfilled coverage.
-  They do not hardcode final clinic closure order.
+  Easton's seeded order is Float, non-essential Background, Booking, Front
+  Background, IT/close shots, 4th allergy/round-robin adjustment, then Civil.
+  The order is editable and is surfaced as notes; the scheduler does not
+  silently delete patient-facing roles.
 - Background task definitions are lower-priority non-clinic obligations.
-  Pullability, estimated hours, eligibility, and period type are stored for
-  future optimization, but final background priority logic is not implemented.
+  Pullability, protected-from-pull state, estimated hours, eligibility, and
+  period type are stored. Employee-specific pull-priority rules are configurable
+  and respect max-pull caps.
 - Manual task-slot additions, scenario changes, and manual assignment overrides
   made within 7 days of the affected shift are marked short notice in audit and
   schedule views.
@@ -95,7 +111,9 @@ not contain scheduling decisions.
 - Expected hours are configurable per employee. The default is 40 hours per
   week, which yields an 80-hour biweekly target.
 - Comp-time banking and under-expected-hour debit behavior are configurable
-  payroll reporting policies, not scheduler constraints.
+  payroll reporting policies, not scheduler constraints. Easton's default
+  endoscopy extra-hour policy banks PTO credit and does not suggest shortened
+  future shifts unless a manager changes the setting.
 
 ## Initial Task Types
 

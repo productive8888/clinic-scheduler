@@ -4,6 +4,22 @@ const prisma = new PrismaClient();
 
 const skills = [
   {
+    code: "FRONT_BACKGROUND",
+    name: "Front Background",
+    interchangeableGroup: null,
+    difficultyWeight: 0,
+    sortOrder: 65,
+    optional: true,
+    defaultForRoutine: false,
+    defaultForReduced: false,
+    isClinical: false,
+    isBackground: true,
+    isSkilled: false,
+    isEndoscopy: false,
+    isFloat: false,
+    requiredSkillCodes: [],
+  },
+  {
     code: "CIVIL_SURGEON",
     name: "Civil Surgeon",
     description: "Required for Civil Surgeon staffing assignments.",
@@ -329,66 +345,130 @@ const taskTypes = [
 
 const shiftTemplates = [
   {
-    name: "AM early",
-    dayOfWeek: null,
+    name: "Monday 0700-1200 (5)",
+    dayOfWeek: 1,
     startMinute: 7 * 60,
-    endMinute: 11 * 60 + 30,
-    paidHours: 4.5,
+    endMinute: 12 * 60,
+    paidHours: 5,
     shiftCategory: "AM" as const,
     defaultForSchedule: false,
-    notes: "Seed: spreadsheet AM early shift, 7:00 AM-11:30 AM.",
+    notes: "Seed: Easton spreadsheet Monday 0700-1200 shift.",
   },
   {
-    name: "AM regular",
-    dayOfWeek: null,
+    name: "Monday 0800-1200 (4)",
+    dayOfWeek: 1,
     startMinute: 8 * 60,
     endMinute: 12 * 60,
     paidHours: 4,
     shiftCategory: "AM" as const,
-    defaultForSchedule: true,
-    notes: "Seed: spreadsheet AM regular shift, 8:00 AM-12:00 PM.",
+    defaultForSchedule: false,
+    notes: "Seed: Easton spreadsheet Monday 0800-1200 shift.",
   },
   {
-    name: "PM early/long",
-    dayOfWeek: null,
-    startMinute: 12 * 60 + 30,
-    endMinute: 17 * 60,
-    paidHours: 4.5,
+    name: "Monday 1300-1800 (5)",
+    dayOfWeek: 1,
+    startMinute: 13 * 60,
+    endMinute: 18 * 60,
+    paidHours: 5,
     shiftCategory: "PM" as const,
     defaultForSchedule: false,
-    notes: "Seed: spreadsheet PM early/long shift, 12:30 PM-5:00 PM.",
+    notes: "Seed: Easton spreadsheet Monday 1300-1800 shift.",
   },
   {
-    name: "PM regular",
-    dayOfWeek: null,
+    name: "Monday 1300-1700 (4)",
+    dayOfWeek: 1,
     startMinute: 13 * 60,
     endMinute: 17 * 60,
     paidHours: 4,
     shiftCategory: "PM" as const,
     defaultForSchedule: false,
-    notes: "Seed: spreadsheet PM regular shift, 1:00 PM-5:00 PM.",
+    notes: "Seed: Easton spreadsheet Monday 1300-1700 shift.",
+  },
+  ...[2, 3, 4].flatMap((weekday) => [
+    {
+      name: `${weekdayName(weekday)} 0700-1200 (5)`,
+      dayOfWeek: weekday,
+      startMinute: 7 * 60,
+      endMinute: 12 * 60,
+      paidHours: 5,
+      shiftCategory: "AM" as const,
+      defaultForSchedule: false,
+      notes: `Seed: Easton spreadsheet ${weekdayName(weekday)} 0700-1200 shift.`,
+    },
+    {
+      name: `${weekdayName(weekday)} 0800-1200 (4)`,
+      dayOfWeek: weekday,
+      startMinute: 8 * 60,
+      endMinute: 12 * 60,
+      paidHours: 4,
+      shiftCategory: "AM" as const,
+      defaultForSchedule: false,
+      notes: `Seed: Easton spreadsheet ${weekdayName(weekday)} 0800-1200 shift.`,
+    },
+    {
+      name: `${weekdayName(weekday)} 1300-1700 (4)`,
+      dayOfWeek: weekday,
+      startMinute: 13 * 60,
+      endMinute: 17 * 60,
+      paidHours: 4,
+      shiftCategory: "PM" as const,
+      defaultForSchedule: false,
+      notes: `Seed: Easton spreadsheet ${weekdayName(weekday)} 1300-1700 shift.`,
+    },
+  ]),
+  {
+    name: "Friday 0800-1200 (4)",
+    dayOfWeek: 5,
+    startMinute: 8 * 60,
+    endMinute: 12 * 60,
+    paidHours: 4,
+    shiftCategory: "AM" as const,
+    defaultForSchedule: false,
+    notes: "Seed: Easton spreadsheet Friday 0800-1200 shift.",
   },
   {
-    name: "Saturday long/endoscopy",
+    name: "Friday 1300-1700 (4)",
+    dayOfWeek: 5,
+    startMinute: 13 * 60,
+    endMinute: 17 * 60,
+    paidHours: 4,
+    shiftCategory: "PM" as const,
+    defaultForSchedule: false,
+    notes: "Seed: Easton spreadsheet Friday 1300-1700 shift.",
+  },
+  {
+    name: "Saturday 0600-1400 (8)",
     dayOfWeek: 6,
     startMinute: 6 * 60,
     endMinute: 14 * 60,
     paidHours: 8,
     shiftCategory: "ENDO" as const,
     defaultForSchedule: false,
-    notes: "Seed: spreadsheet Saturday long/endoscopy shift, 6:00 AM-2:00 PM.",
+    notes: "Seed: Easton spreadsheet Saturday 0600-1400 endoscopy shift.",
   },
   {
-    name: "Saturday shorter",
+    name: "Saturday 0800-1400 (6)",
     dayOfWeek: 6,
     startMinute: 8 * 60,
     endMinute: 14 * 60,
     paidHours: 6,
     shiftCategory: "SATURDAY" as const,
-    defaultForSchedule: true,
-    notes: "Seed: spreadsheet Saturday shorter shift, 8:00 AM-2:00 PM.",
+    defaultForSchedule: false,
+    notes: "Seed: Easton spreadsheet Saturday 0800-1400 shift.",
   },
 ];
+
+function weekdayName(weekday: number) {
+  return [
+    "Sunday",
+    "Monday",
+    "Tuesday",
+    "Wednesday",
+    "Thursday",
+    "Friday",
+    "Saturday",
+  ][weekday];
+}
 
 function weekdayWindows(
   weekdays: number[],
@@ -495,6 +575,25 @@ const demoEmployees = [
   },
 ];
 
+const nonPatientFacingTaskCodes = new Set([
+  "IT",
+  "RESEARCH",
+  "BACKGROUND",
+  "BOOKING",
+  "FLOAT",
+  "EXTRA",
+  "FRONT_BACKGROUND",
+]);
+
+const closureCandidateTaskCodes = new Set([
+  "FLOAT",
+  "BACKGROUND",
+  "BOOKING",
+  "FRONT_BACKGROUND",
+  "IT",
+  "CIVIL_SURGEON",
+]);
+
 async function main() {
   await prisma.timeOffSettings.upsert({
     where: { id: "default" },
@@ -508,12 +607,16 @@ async function main() {
       defaultPayrollPeriodDays: 14,
       fullTimeWeeklyHours: 40,
       paidHolidayDefaultHours: 8,
+      endoscopyExtraHoursPolicy: "BANK_PTO",
+      endoscopyShortenShiftSuggestions: false,
     },
     create: {
       id: "default",
       defaultPayrollPeriodDays: 14,
       fullTimeWeeklyHours: 40,
       paidHolidayDefaultHours: 8,
+      endoscopyExtraHoursPolicy: "BANK_PTO",
+      endoscopyShortenShiftSuggestions: false,
     },
   });
 
@@ -521,16 +624,26 @@ async function main() {
     where: { id: "default" },
     update: {
       windowType: "TWO_WEEKS",
+      patternConsistencyWeight: 35,
+      patientFacingShiftWeight: 22,
+      skillRoleBalanceWeight: 18,
+      exposureGoalWeight: 14,
+      backgroundPenaltyWeight: 20,
       active: true,
       notes:
-        "Seed: configurable fairness defaults. Update when clinic policy is finalized.",
+        "Seed: Easton-style configurable fairness defaults.",
     },
     create: {
       id: "default",
       windowType: "TWO_WEEKS",
+      patternConsistencyWeight: 35,
+      patientFacingShiftWeight: 22,
+      skillRoleBalanceWeight: 18,
+      exposureGoalWeight: 14,
+      backgroundPenaltyWeight: 20,
       active: true,
       notes:
-        "Seed: configurable fairness defaults. Update when clinic policy is finalized.",
+        "Seed: Easton-style configurable fairness defaults.",
     },
   });
 
@@ -567,11 +680,13 @@ async function main() {
         optional: taskType.optional,
         defaultForRoutine: taskType.defaultForRoutine,
         defaultForReduced: taskType.defaultForReduced,
+        isPatientFacing: !nonPatientFacingTaskCodes.has(taskType.code),
         isClinical: taskType.isClinical,
         isBackground: taskType.isBackground,
         isSkilled: taskType.isSkilled,
         isEndoscopy: taskType.isEndoscopy,
         isFloat: taskType.isFloat,
+        isClosureCandidate: closureCandidateTaskCodes.has(taskType.code),
         active: true,
       },
       create: {
@@ -583,11 +698,13 @@ async function main() {
         optional: taskType.optional,
         defaultForRoutine: taskType.defaultForRoutine,
         defaultForReduced: taskType.defaultForReduced,
+        isPatientFacing: !nonPatientFacingTaskCodes.has(taskType.code),
         isClinical: taskType.isClinical,
         isBackground: taskType.isBackground,
         isSkilled: taskType.isSkilled,
         isEndoscopy: taskType.isEndoscopy,
         isFloat: taskType.isFloat,
+        isClosureCandidate: closureCandidateTaskCodes.has(taskType.code),
       },
     });
 
@@ -742,6 +859,164 @@ async function main() {
     if (employee.role === "ADMIN" && demoAdminId === null) {
       demoAdminId = record.id;
     }
+  }
+
+  await prisma.workPattern.upsert({
+    where: { code: "EASTON_ENDOSCOPY_SATURDAY" },
+    update: {
+      name: "Easton endoscopy Saturday pattern",
+      kind: "ENDOSCOPY_SATURDAY",
+      targetWeeklyHours: 40,
+      worksTuesdayThroughSaturday: true,
+      saturdayPaidHours: 8,
+      mondayOffAllowed: true,
+      fridayOffAllowed: false,
+      earlyStartDaysPerWeek: 0,
+      active: true,
+      notes:
+        "Seed: endoscopy team works Tuesday-Saturday, 8-hour Saturday, target 40 hours, bank PTO for extra time.",
+    },
+    create: {
+      code: "EASTON_ENDOSCOPY_SATURDAY",
+      name: "Easton endoscopy Saturday pattern",
+      kind: "ENDOSCOPY_SATURDAY",
+      targetWeeklyHours: 40,
+      worksTuesdayThroughSaturday: true,
+      saturdayPaidHours: 8,
+      mondayOffAllowed: true,
+      fridayOffAllowed: false,
+      earlyStartDaysPerWeek: 0,
+      active: true,
+      notes:
+        "Seed: endoscopy team works Tuesday-Saturday, 8-hour Saturday, target 40 hours, bank PTO for extra time.",
+      createdByEmployeeId: demoAdminId,
+    },
+  });
+
+  await prisma.workPattern.upsert({
+    where: { code: "EASTON_NON_ENDOSCOPY_SATURDAY" },
+    update: {
+      name: "Easton non-endoscopy Saturday pattern",
+      kind: "NON_ENDOSCOPY_SATURDAY",
+      targetWeeklyHours: 40,
+      worksTuesdayThroughSaturday: false,
+      saturdayPaidHours: 6,
+      mondayOffAllowed: true,
+      fridayOffAllowed: true,
+      earlyStartDaysPerWeek: 2,
+      active: true,
+      notes:
+        "Seed: Saturday workers have a 6-hour Saturday, Monday or Friday off, and two early-start days.",
+    },
+    create: {
+      code: "EASTON_NON_ENDOSCOPY_SATURDAY",
+      name: "Easton non-endoscopy Saturday pattern",
+      kind: "NON_ENDOSCOPY_SATURDAY",
+      targetWeeklyHours: 40,
+      worksTuesdayThroughSaturday: false,
+      saturdayPaidHours: 6,
+      mondayOffAllowed: true,
+      fridayOffAllowed: true,
+      earlyStartDaysPerWeek: 2,
+      active: true,
+      notes:
+        "Seed: Saturday workers have a 6-hour Saturday, Monday or Friday off, and two early-start days.",
+      createdByEmployeeId: demoAdminId,
+    },
+  });
+
+  await prisma.shortageRule.deleteMany({
+    where: {
+      notes: {
+        startsWith: "Seed: Easton closure order",
+      },
+    },
+  });
+
+  for (const shortage of [
+    ["FLOAT", 1, "First pull from Float assignments before reducing clinic coverage."],
+    [
+      "BACKGROUND",
+      2,
+      "Then pull from non-essential Background work that is marked pullable.",
+    ],
+    ["BOOKING", 3, "Then pull from Booking if the task is not protected."],
+    ["FRONT_BACKGROUND", 4, "Then pull from Front Background support."],
+    ["IT", 5, "Then consider pulling IT and closing shots only with manager review."],
+    [
+      "NEW_ALLERGY",
+      6,
+      "Then consider cutting the 4th allergy person and using a 3-gap-year allergy round robin.",
+    ],
+    [
+      "CIVIL_SURGEON",
+      7,
+      "Civil is the last closure candidate and requires explicit manager review.",
+    ],
+  ] as const) {
+    const [taskCode, closurePriority, managerInstruction] = shortage;
+    const taskTypeId = taskTypeByCode.get(taskCode);
+
+    await prisma.shortageRule.create({
+      data: {
+        taskTypeId,
+        closurePriority,
+        managerInstruction,
+        active: true,
+        createdByEmployeeId: demoAdminId,
+        notes: "Seed: Easton closure order from scheduling prompt.",
+      },
+    });
+  }
+
+  const skippedPullPriorityNames: string[] = [];
+
+  for (const pullDefault of [
+    { name: "Yvonne", priorityRank: 1, maxPullsPerPeriod: null },
+    { name: "Katie", priorityRank: 2, maxPullsPerPeriod: 1 },
+    { name: "Hanna", priorityRank: 3, maxPullsPerPeriod: 1 },
+    { name: "Easton", priorityRank: 4, maxPullsPerPeriod: 2 },
+    { name: "Angela", priorityRank: 5, maxPullsPerPeriod: 1 },
+    { name: "Nicole", priorityRank: 6, maxPullsPerPeriod: 1 },
+    { name: "Vicky", priorityRank: 7, maxPullsPerPeriod: 1 },
+    { name: "Iris", priorityRank: 8, maxPullsPerPeriod: 1 },
+    { name: "Kodhai", priorityRank: 9, maxPullsPerPeriod: 1 },
+  ]) {
+    const employee = await prisma.employee.findFirst({
+      where: {
+        fullName: { equals: pullDefault.name, mode: "insensitive" },
+        status: "ACTIVE",
+      },
+    });
+
+    if (!employee) {
+      skippedPullPriorityNames.push(pullDefault.name);
+      continue;
+    }
+
+    await prisma.backgroundPullRule.upsert({
+      where: { employeeId: employee.id },
+      update: {
+        priorityRank: pullDefault.priorityRank,
+        maxPullsPerPeriod: pullDefault.maxPullsPerPeriod,
+        active: true,
+        notes: "Seed: Easton background pull priority.",
+      },
+      create: {
+        employeeId: employee.id,
+        priorityRank: pullDefault.priorityRank,
+        maxPullsPerPeriod: pullDefault.maxPullsPerPeriod,
+        active: true,
+        notes: "Seed: Easton background pull priority.",
+        createdByEmployeeId: demoAdminId,
+      },
+    });
+  }
+
+  if (skippedPullPriorityNames.length > 0) {
+    console.info(
+      `Skipped Easton pull-priority names not found in seed database: ${skippedPullPriorityNames.join(", ")}`,
+    );
   }
 
   await prisma.staffingRequirementRule.deleteMany({

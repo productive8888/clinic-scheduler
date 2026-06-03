@@ -159,6 +159,9 @@ Managers should be able to navigate between dates.
 The schedule UI should resemble a clean operational staffing board.
 Task slots belong to dated shift blocks so the same role can exist in AM, PM,
 Saturday, or endoscopy blocks without duplicating task types.
+Schedule generation can also read editable weekly schedule patterns derived from
+Easton's private spreadsheet so weekdays can remain consistent week to week when
+hard constraints allow it.
 Example layout:
 Date: June 5, 2026
 Task
@@ -270,6 +273,9 @@ Balance workload evenly
 Avoid repeatedly assigning the same undesirable tasks
 Prefer underutilized employees when possible
 Fairness logic should remain configurable and modular.
+Fairness can include patient-facing shift balance, per-skill/role targets,
+GI/Allergy/PCP exposure goals, Saturday/endoscopy counts, total scheduled hours,
+and week-to-week pattern consistency. These are soft objectives only.
 
 PTO SYSTEM
 Employees should be able to:

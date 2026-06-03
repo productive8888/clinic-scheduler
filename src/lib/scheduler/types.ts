@@ -12,9 +12,13 @@ export type SchedulerEmployee = {
   historicalAssignments?: number;
   historicalTaskAssignments?: Record<string, number>;
   historicalClinicalAssignments?: number;
+  historicalPatientFacingAssignments?: number;
   historicalScheduledHours?: number;
   historicalSaturdayAssignments?: number;
   historicalEndoscopyAssignments?: number;
+  targetTaskAssignments?: Record<string, number>;
+  targetPatientFacingAssignments?: number | null;
+  exposureGoals?: string[];
 };
 
 export type SchedulerTaskType = {
@@ -25,11 +29,14 @@ export type SchedulerTaskType = {
   interchangeableGroup?: string | null;
   difficultyWeight?: number;
   sortOrder?: number;
+  isPatientFacing?: boolean;
   isClinical?: boolean;
   isBackground?: boolean;
   isSkilled?: boolean;
   isEndoscopy?: boolean;
   isFloat?: boolean;
+  isClosureCandidate?: boolean;
+  exposureGroup?: string | null;
 };
 
 export type SchedulerTaskSlot = {
@@ -49,6 +56,7 @@ export type SchedulerTaskSlot = {
   requiredStaff?: number;
   lockedEmployeeId?: string | null;
   lockedEmployeeIds?: string[];
+  patternPreferredEmployeeIds?: string[];
 };
 
 export type AvailabilityWindow = {
@@ -78,7 +86,9 @@ export type ExistingAssignment = {
   shiftBlockId?: string | null;
   shiftCategory?: SchedulerTaskSlot["shiftCategory"];
   paidHours?: number | null;
+  isPatientFacing?: boolean;
   isClinical?: boolean;
+  isBackground?: boolean;
   isEndoscopy?: boolean;
   locked?: boolean;
 };
@@ -122,10 +132,15 @@ export type GenerateScheduleInput = {
 
 export type SchedulerFairnessSettings = {
   clinicalShiftWeight: number;
+  patientFacingShiftWeight: number;
   totalShiftWeight: number;
   totalHoursWeight: number;
   saturdayShiftWeight: number;
   endoscopyShiftWeight: number;
+  patternConsistencyWeight: number;
+  skillRoleBalanceWeight: number;
+  exposureGoalWeight: number;
+  backgroundPenaltyWeight: number;
 };
 
 export type ScheduleAssignment = {

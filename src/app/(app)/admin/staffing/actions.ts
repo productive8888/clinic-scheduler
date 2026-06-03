@@ -5,6 +5,7 @@ import { auditActorId, requireManager } from "@/lib/auth";
 import {
   createStaffingRequirementRule,
   deactivateStaffingRequirementRule,
+  updateTaskTypeClassification,
   updateStaffingRequirementRule,
 } from "@/lib/db/staffing-requirements";
 import { staffingRequirementValuesFromFormData } from "@/lib/validation/staffing-requirement";
@@ -45,6 +46,30 @@ export async function deactivateStaffingRequirementRuleAction(ruleId: string) {
   await deactivateStaffingRequirementRule({
     ruleId,
     actorEmployeeId: auditActorId(actor),
+  });
+
+  revalidatePath("/admin/staffing");
+  revalidatePath("/schedule");
+}
+
+export async function updateTaskTypeClassificationAction(
+  taskTypeId: string,
+  formData: FormData,
+) {
+  const actor = await requireManager();
+
+  await updateTaskTypeClassification({
+    taskTypeId,
+    actorEmployeeId: auditActorId(actor),
+    values: {
+      isPatientFacing: formData.get("isPatientFacing") === "on",
+      isClinical: formData.get("isClinical") === "on",
+      isBackground: formData.get("isBackground") === "on",
+      isSkilled: formData.get("isSkilled") === "on",
+      isEndoscopy: formData.get("isEndoscopy") === "on",
+      isFloat: formData.get("isFloat") === "on",
+      isClosureCandidate: formData.get("isClosureCandidate") === "on",
+    },
   });
 
   revalidatePath("/admin/staffing");

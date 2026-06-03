@@ -3,6 +3,7 @@ import type {
   EmployeeSkill,
   Skill,
   WeeklyAvailability,
+  WorkPattern,
 } from "@prisma/client";
 import { CalendarClock, CircleOff, Pencil, Trash2 } from "lucide-react";
 import {
@@ -19,14 +20,17 @@ import { EmployeeForm } from "./employee-form";
 type EmployeeRecord = Employee & {
   skills: Array<EmployeeSkill & { skill: Skill }>;
   availability: WeeklyAvailability[];
+  workPattern: WorkPattern | null;
 };
 
 export function EmployeeDirectory({
   employees,
   skills,
+  workPatterns,
 }: {
   employees: EmployeeRecord[];
   skills: Skill[];
+  workPatterns: WorkPattern[];
 }) {
   if (employees.length === 0) {
     return (
@@ -57,6 +61,11 @@ export function EmployeeDirectory({
                 </span>
               </div>
               <div className="mt-1 text-sm text-slate-500">{employee.email}</div>
+              {employee.workPattern ? (
+                <div className="mt-1 text-xs font-medium text-emerald-800">
+                  {employee.workPattern.name}
+                </div>
+              ) : null}
             </div>
             <div className="flex flex-wrap gap-2 text-xs text-slate-600">
               {employee.skills.length ? (
@@ -122,7 +131,11 @@ export function EmployeeDirectory({
                 })}
               </div>
             </div>
-            <EmployeeForm employee={employee} skills={skills} />
+            <EmployeeForm
+              employee={employee}
+              skills={skills}
+              workPatterns={workPatterns}
+            />
             {employee.status === "ACTIVE" ? (
               <form action={deactivateEmployeeAction.bind(null, employee.id)}>
                 <button className="mt-4 inline-flex h-10 items-center gap-2 rounded-md border border-rose-200 px-4 text-sm font-semibold text-rose-700 transition hover:bg-rose-50">

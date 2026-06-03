@@ -20,7 +20,7 @@ export default async function EmployeesPage() {
     );
   }
 
-  const [employees, skills] = data;
+  const [employees, skills, workPatterns] = data;
 
   return (
     <div className="grid gap-6">
@@ -40,13 +40,17 @@ export default async function EmployeesPage() {
       <section className="rounded-md border border-slate-200 bg-white p-5 shadow-sm">
         <h2 className="text-lg font-semibold text-slate-950">Create employee</h2>
         <div className="mt-4">
-          <EmployeeForm skills={skills} />
+          <EmployeeForm skills={skills} workPatterns={workPatterns} />
         </div>
       </section>
 
       <section className="grid gap-3">
         <h2 className="text-lg font-semibold text-slate-950">Directory</h2>
-        <EmployeeDirectory employees={employees} skills={skills} />
+        <EmployeeDirectory
+          employees={employees}
+          skills={skills}
+          workPatterns={workPatterns}
+        />
       </section>
     </div>
   );

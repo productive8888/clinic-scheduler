@@ -7,6 +7,7 @@ import {
   Clock3,
   ClipboardList,
   ClipboardCheck,
+  FileSpreadsheet,
   Layers3,
   LogOut,
   Scale,
@@ -44,6 +45,7 @@ const managerNavItems = [
   { href: "/admin/fairness", label: "Fairness", icon: Scale },
   { href: "/admin/shortages", label: "Shortages", icon: TriangleAlert },
   { href: "/admin/background-tasks", label: "Background", icon: Workflow },
+  { href: "/admin/easton-import", label: "Easton", icon: FileSpreadsheet },
   { href: "/admin/rules", label: "Rules", icon: SlidersHorizontal },
   { href: "/admin/audit", label: "Audit", icon: Activity },
 ];

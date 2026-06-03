@@ -42,6 +42,8 @@ const baseInput: BuildPayrollReportInput = {
     bankOverExpectedHours: false,
     deductUnderExpectedHours: false,
     flagUnderExpectedHours: true,
+    endoscopyExtraHoursPolicy: "BANK_PTO",
+    endoscopyShortenShiftSuggestions: false,
   },
 };
 
@@ -238,6 +240,52 @@ describe("payroll calculations", () => {
     assert.equal(report.rows[0].finalPaidHoursEstimate, 80);
   });
 
+  it("banks endoscopy extra hours as PTO credit by default", () => {
+    const report = buildPayrollReport({
+      ...baseInput,
+      endDate: "2026-06-07",
+      employees: [{ ...employee, expectedWeeklyHours: 40 }],
+      scheduleDays: [
+        scheduleDay({
+          date: "2026-06-01",
+          status: "PUBLISHED",
+          paidHours: 8,
+        }),
+        scheduleDay({
+          date: "2026-06-02",
+          status: "PUBLISHED",
+          paidHours: 8,
+        }),
+        scheduleDay({
+          date: "2026-06-03",
+          status: "PUBLISHED",
+          paidHours: 8,
+        }),
+        scheduleDay({
+          date: "2026-06-04",
+          status: "PUBLISHED",
+          paidHours: 8,
+        }),
+        scheduleDay({
+          date: "2026-06-05",
+          status: "PUBLISHED",
+          paidHours: 8,
+        }),
+        scheduleDay({
+          date: "2026-06-06",
+          status: "PUBLISHED",
+          paidHours: 8,
+          isEndoscopy: true,
+          shiftCategory: "ENDO",
+        }),
+      ],
+    });
+
+    assert.equal(report.rows[0].scheduledWorkHours, 48);
+    assert.equal(report.rows[0].endoscopyWorkHours, 8);
+    assert.equal(report.rows[0].endoscopyPtoCreditHours, 8);
+  });
+
   it("exports a stable CSV header and row", () => {
     const report = buildPayrollReport({
       ...baseInput,
@@ -286,6 +334,8 @@ function scheduleDay(input: {
   paidHours?: number;
   slotStatus?: string;
   locked?: boolean;
+  isEndoscopy?: boolean;
+  shiftCategory?: string;
 }) {
   return {
     id: `schedule-${input.date}`,
@@ -299,6 +349,8 @@ function scheduleDay(input: {
         startMinute: input.startMinute ?? 8 * 60,
         endMinute: input.endMinute ?? 17 * 60,
         paidHours: input.paidHours,
+        isEndoscopy: input.isEndoscopy,
+        shiftCategory: input.shiftCategory,
         status: input.slotStatus ?? "FILLED",
         requirementLevel: "REQUIRED",
         assignments: [

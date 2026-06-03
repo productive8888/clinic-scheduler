@@ -31,6 +31,17 @@ export function getBackgroundTasksPageData() {
       orderBy: { name: "asc" },
       select: { id: true, name: true, code: true },
     }),
+    getDb().backgroundPullRule.findMany({
+      orderBy: [
+        { active: "desc" },
+        { priorityRank: "asc" },
+        { employee: { fullName: "asc" } },
+      ],
+      include: {
+        employee: true,
+        createdBy: true,
+      },
+    }),
   ]);
 }
 
@@ -134,6 +145,75 @@ export async function deactivateBackgroundTaskDefinition(input: {
   return definition;
 }
 
+export async function upsertBackgroundPullRule(input: {
+  values: {
+    employeeId: string;
+    priorityRank: number;
+    maxPullsPerPeriod: number | null;
+    active: boolean;
+    notes: string | null;
+  };
+  actorEmployeeId?: string | null;
+}) {
+  const db = getDb();
+  const before = await db.backgroundPullRule.findUnique({
+    where: { employeeId: input.values.employeeId },
+  });
+  const rule = await db.backgroundPullRule.upsert({
+    where: { employeeId: input.values.employeeId },
+    update: {
+      priorityRank: input.values.priorityRank,
+      maxPullsPerPeriod: input.values.maxPullsPerPeriod,
+      active: input.values.active,
+      notes: input.values.notes,
+    },
+    create: {
+      employeeId: input.values.employeeId,
+      priorityRank: input.values.priorityRank,
+      maxPullsPerPeriod: input.values.maxPullsPerPeriod,
+      active: input.values.active,
+      notes: input.values.notes,
+      createdByEmployeeId: input.actorEmployeeId ?? null,
+    },
+  });
+
+  await writeAuditLog({
+    actorEmployeeId: input.actorEmployeeId,
+    action: before ? "background_pull_rule.update" : "background_pull_rule.create",
+    entityType: "BackgroundPullRule",
+    entityId: rule.id,
+    before,
+    after: rule,
+  });
+
+  return rule;
+}
+
+export async function deactivateBackgroundPullRule(input: {
+  ruleId: string;
+  actorEmployeeId?: string | null;
+}) {
+  const db = getDb();
+  const before = await db.backgroundPullRule.findUniqueOrThrow({
+    where: { id: input.ruleId },
+  });
+  const rule = await db.backgroundPullRule.update({
+    where: { id: input.ruleId },
+    data: { active: false },
+  });
+
+  await writeAuditLog({
+    actorEmployeeId: input.actorEmployeeId,
+    action: "background_pull_rule.deactivate",
+    entityType: "BackgroundPullRule",
+    entityId: rule.id,
+    before,
+    after: rule,
+  });
+
+  return rule;
+}
+
 function definitionCreateData(
   values: BackgroundTaskDefinitionFormValues,
   createdByEmployeeId: string | null | undefined,
@@ -149,6 +229,7 @@ function definitionCreateData(
     mentor: values.mentor,
     primaryOwnerEmployeeId: values.primaryOwnerEmployeeId,
     canBePulledForClinic: values.canBePulledForClinic,
+    protectedFromPull: values.protectedFromPull,
     rolloverAllowed: values.rolloverAllowed,
     active: values.active,
     notes: values.notes,
@@ -174,6 +255,7 @@ function definitionUpdateData(values: BackgroundTaskDefinitionFormValues) {
     mentor: values.mentor,
     primaryOwnerEmployeeId: values.primaryOwnerEmployeeId,
     canBePulledForClinic: values.canBePulledForClinic,
+    protectedFromPull: values.protectedFromPull,
     rolloverAllowed: values.rolloverAllowed,
     active: values.active,
     notes: values.notes,

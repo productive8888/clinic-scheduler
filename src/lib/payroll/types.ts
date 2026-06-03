@@ -1,5 +1,6 @@
 import type {
   ClinicScenario,
+  EndoscopyCompPolicy,
   HolidayPayRule,
   PayrollAdjustmentType,
   ScheduleDayStatus,
@@ -13,6 +14,8 @@ export type PayrollSettingsInput = {
   bankOverExpectedHours: boolean;
   deductUnderExpectedHours: boolean;
   flagUnderExpectedHours: boolean;
+  endoscopyExtraHoursPolicy: EndoscopyCompPolicy;
+  endoscopyShortenShiftSuggestions: boolean;
 };
 
 export type PayrollEmployeeInput = {
@@ -49,6 +52,8 @@ export type PayrollTaskSlotInput = {
   startMinute?: number | null;
   endMinute?: number | null;
   paidHours?: number | null;
+  isEndoscopy?: boolean;
+  shiftCategory?: string | null;
   status: string;
   requirementLevel: string;
   assignments: PayrollAssignmentInput[];
@@ -129,6 +134,8 @@ export type PayrollReportRow = {
   paidHolidayHours: number;
   holidayCompTimeHours: number;
   holidayPtoCreditHours: number;
+  endoscopyWorkHours: number;
+  endoscopyPtoCreditHours: number;
   manualAdjustmentHours: number;
   compTimeCreditHours: number;
   compTimeDebitHours: number;
@@ -152,6 +159,7 @@ export type PayrollReportSummary = {
     ptoHours: number;
     nptoUnpaidHours: number;
     paidHolidayHours: number;
+    endoscopyPtoCreditHours: number;
     compTimeCreditHours: number;
     compTimeDebitHours: number;
     finalPaidHoursEstimate: number;

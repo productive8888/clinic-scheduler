@@ -15,8 +15,8 @@ versioned migrations in `prisma/migrations`.
 - `Skill` and `EmployeeSkill`: normalized boolean skill checklist.
 - `TaskType`: configurable clinic task catalog with skill requirements,
   difficulty, sort order, scenario-default flags, optional/manual-only flags,
-  clinical/background/skilled/endoscopy/float classification flags, and
-  interchangeable task group keys.
+  patient-facing/clinical/background/skilled/endoscopy/float/closure-candidate
+  classification flags, and interchangeable task group keys.
 - `TaskSkillRequirement`: required skill mapping per task type.
 - `WeeklyAvailability`: recurring employee normal working schedule by weekday,
   start/end minute, effective date range, and active state. Days without an
@@ -36,7 +36,8 @@ versioned migrations in `prisma/migrations`.
   manager-configurable NPTO cap. The default NPTO cap is 240 hours.
 - `PayrollSettings`: singleton payroll-reporting configuration for default
   period length, full-time weekly hours, default holiday hours, under-hour
-  flagging, and optional comp-time banking/debit behavior.
+  flagging, optional comp-time banking/debit behavior, and configurable
+  endoscopy extra-hour banking behavior.
 - `PaidHoliday`: manager-configured holiday calendar rows with date, name,
   hours, pay rule, active state, notes, and creator metadata.
 - `PayrollAdjustmentLedger`: append-only payroll accounting ledger for PTO
@@ -59,15 +60,32 @@ versioned migrations in `prisma/migrations`.
   type, shift template or shift category, weekday, scenario, effective date
   range, min/desired/max slots, requirement level, active state, and notes.
 - `FairnessSetting`: singleton scheduler scoring configuration for fairness
-  window and clinical/total/hour/Saturday/endoscopy weights.
+  window, clinical/total/hour/Saturday/endoscopy weights, Easton pattern
+  consistency, patient-facing, skill/role target, exposure-goal, and background
+  deferral weights.
 - `ShortageRule`: manager-facing shortage/cut recommendation storage by task
   type, shift template/category, scenario, priority, effective dates, and
-  instruction text. These rules provide visible guidance but do not hardcode
-  final closure order.
+  instruction text. These rules provide visible guidance and store Easton's
+  editable closure/pull order without silently dropping clinic roles.
+- `WorkPattern`: editable employee work-pattern templates, including Easton's
+  endoscopy Saturday and non-endoscopy Saturday patterns, target weekly hours,
+  Saturday paid hours, Monday/Friday-off allowance, and early-start day count.
+- `SchedulePattern` and `SchedulePatternSlot`: editable/reference weekly
+  schedule patterns parsed from the Easton workbook so Mondays can resemble
+  Mondays, Tuesdays can resemble Tuesdays, and PTO/regeneration can deviate when
+  required.
+- `EmployeeScheduleTarget`: spreadsheet-derived target counts by employee name
+  or employee link, including patient-shift targets, per-role counts, exposure
+  goals, and target hours.
+- `BackgroundPullRule`: employee-specific pull order and max-pull caps for
+  pullable, non-protected background work.
 - `BackgroundTaskCategory`, `BackgroundTaskDefinition`, and
   `BackgroundTaskInstance`: foundation for non-clinic work obligations,
   estimated hours, period type, priority, mentor/owner, eligibility, pullability
-  for clinic coverage, and future period instances.
+  for clinic coverage, protected-from-pull state, and future period instances.
+- `EastonImportReview`: private workbook parse/apply review snapshots with
+  counts and warnings. Private spreadsheet contents remain out of public docs
+  and source control.
 - `Assignment`: employee assigned to a task slot, including generated/manual
   source, lock state, short-notice override flag, and removal history.
 - `SchedulingRule`: database-driven preference, priority, avoidance, penalty,

@@ -26,6 +26,7 @@ export async function createEmployeeAction(formData: FormData) {
         ptoBalanceHours: values.ptoBalanceHours,
         expectedWeeklyHours: values.expectedWeeklyHours,
         weeklyAssignmentLimit: values.weeklyAssignmentLimit,
+        workPatternId: values.workPatternId,
         startDate: parseIsoDate(values.startDate),
         endDate: values.endDate ? parseIsoDate(values.endDate) : null,
         skills: {
@@ -76,6 +77,7 @@ export async function updateEmployeeAction(employeeId: string, formData: FormDat
         ptoBalanceHours: values.ptoBalanceHours,
         expectedWeeklyHours: values.expectedWeeklyHours,
         weeklyAssignmentLimit: values.weeklyAssignmentLimit,
+        workPatternId: values.workPatternId,
         startDate: parseIsoDate(values.startDate),
         endDate: values.endDate ? parseIsoDate(values.endDate) : null,
         skills: {

@@ -103,7 +103,28 @@ addresses:
 
 Role comes from the active `Employee` record matching the magic-link email.
 
-## 8. Local Development Auth
+## 8. Easton Scheduling Defaults
+
+The private Easton workbook is ignored by git and should not be uploaded to
+Vercel. To apply workbook-derived shift, staffing, fairness, shortage, and
+schedule-pattern defaults to a target database, point local `DATABASE_URL` at
+that database and run:
+
+```bash
+npm run review:easton
+npm run apply:easton
+```
+
+You can also pass an explicit local workbook path:
+
+```bash
+npm run apply:easton -- "C:\Users\Based\Downloads\Copy of Easton Scheduling.xlsx"
+```
+
+The admin `/admin/easton-import` page offers the same review/apply workflow
+when the workbook exists in local `private/`.
+
+## 9. Local Development Auth
 
 Local user switching is development-only:
 
@@ -119,7 +140,7 @@ DISABLE_LOCAL_DEV_AUTH="true"
 
 This prevents the local fallback admin from masking the real Auth.js session.
 
-## 9. Verify Deployment
+## 10. Verify Deployment
 
 After deployment and migration:
 
@@ -144,7 +165,7 @@ npm run check:deployment
 The check prints only whether required variables are present. It does not print
 secret values.
 
-## 10. Troubleshoot Employee Login
+## 11. Troubleshoot Employee Login
 
 If one email can sign in but another employee email fails:
 
@@ -178,7 +199,7 @@ matching them. Check these in Vercel, redeploy, then request a brand-new link:
 - Old magic links are one-time use. Always test with the newest email after an
   env var change or redeploy.
 
-## 11. Session Duration
+## 12. Session Duration
 
 Auth.js uses database sessions with:
 

@@ -5,6 +5,7 @@ export function getEmployeeAdminData() {
     getDb().employee.findMany({
       orderBy: [{ status: "asc" }, { fullName: "asc" }],
       include: {
+        workPattern: true,
         skills: {
           include: {
             skill: true,
@@ -19,6 +20,10 @@ export function getEmployeeAdminData() {
     getDb().skill.findMany({
       where: { active: true },
       orderBy: { name: "asc" },
+    }),
+    getDb().workPattern.findMany({
+      where: { active: true },
+      orderBy: [{ kind: "asc" }, { name: "asc" }],
     }),
   ]);
 }
