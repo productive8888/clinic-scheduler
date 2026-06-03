@@ -3,9 +3,10 @@ import { getDb } from "@/lib/db";
 
 type AuthAccountEmployee = {
   id: string;
+  authProviderId: string | null;
   email: string;
   fullName: string;
-  status: "ACTIVE" | "INACTIVE";
+  status: "ACTIVE" | "INACTIVE" | "DELETED";
 };
 
 export type AuthAccountProvisionResult =
@@ -91,6 +92,7 @@ export async function ensureAuthUserForEmployeeInTransaction(
     where: { id: employeeId },
     select: {
       id: true,
+      authProviderId: true,
       email: true,
       fullName: true,
       status: true,
@@ -122,7 +124,7 @@ async function ensureAuthUserForEmployeeRecordInTransaction(
     };
   }
 
-  const existingUser = await tx.user.findFirst({
+  const existingEmailUser = await tx.user.findFirst({
     where: {
       email: {
         equals: email,
@@ -134,6 +136,17 @@ async function ensureAuthUserForEmployeeRecordInTransaction(
       email: true,
     },
   });
+  const linkedUser =
+    employee.authProviderId && !existingEmailUser
+      ? await tx.user.findUnique({
+          where: { id: employee.authProviderId },
+          select: {
+            id: true,
+            email: true,
+          },
+        })
+      : null;
+  const existingUser = existingEmailUser ?? linkedUser;
 
   const user = existingUser
     ? await tx.user.update({

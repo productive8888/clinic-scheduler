@@ -539,7 +539,7 @@ export async function applyEastonDefaultsFromWorkbook(input: {
     await tx.workPattern.upsert({
       where: { code: "EASTON_ENDOSCOPY_SATURDAY" },
       update: {
-        name: "Easton endoscopy Saturday pattern",
+        name: "Endoscopy Saturday pattern",
         kind: "ENDOSCOPY_SATURDAY",
         targetWeeklyHours: 40,
         worksTuesdayThroughSaturday: true,
@@ -552,7 +552,7 @@ export async function applyEastonDefaultsFromWorkbook(input: {
       },
       create: {
         code: "EASTON_ENDOSCOPY_SATURDAY",
-        name: "Easton endoscopy Saturday pattern",
+        name: "Endoscopy Saturday pattern",
         kind: "ENDOSCOPY_SATURDAY",
         targetWeeklyHours: 40,
         worksTuesdayThroughSaturday: true,
@@ -569,7 +569,7 @@ export async function applyEastonDefaultsFromWorkbook(input: {
     await tx.workPattern.upsert({
       where: { code: "EASTON_NON_ENDOSCOPY_SATURDAY" },
       update: {
-        name: "Easton non-endoscopy Saturday pattern",
+        name: "Non-endoscopy Saturday pattern",
         kind: "NON_ENDOSCOPY_SATURDAY",
         targetWeeklyHours: 40,
         worksTuesdayThroughSaturday: false,
@@ -582,7 +582,7 @@ export async function applyEastonDefaultsFromWorkbook(input: {
       },
       create: {
         code: "EASTON_NON_ENDOSCOPY_SATURDAY",
-        name: "Easton non-endoscopy Saturday pattern",
+        name: "Non-endoscopy Saturday pattern",
         kind: "NON_ENDOSCOPY_SATURDAY",
         targetWeeklyHours: 40,
         worksTuesdayThroughSaturday: false,

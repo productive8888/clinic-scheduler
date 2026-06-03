@@ -1,6 +1,6 @@
 "use server";
 
-import type { Prisma } from "@prisma/client";
+import { AssignmentStatus, TaskSlotStatus, type Prisma } from "@prisma/client";
 import { revalidatePath } from "next/cache";
 import { auditActorId, requireManager } from "@/lib/auth";
 import { ensureAuthUserForEmployeeInTransaction } from "@/lib/auth/accounts";
@@ -89,7 +89,19 @@ export async function updateEmployeeAction(employeeId: string, formData: FormDat
     });
 
     await replaceEmployeeAvailability(tx, employeeId, values);
-    await ensureAuthUserForEmployeeInTransaction(tx, employeeId);
+    await ensureAuthUserForEmployeeInTransaction(tx, employeeId, {
+      clearVerificationTokens: before?.email?.toLowerCase() !== values.email,
+    });
+
+    if (before?.email && before.email.toLowerCase() !== values.email) {
+      await tx.verificationToken.deleteMany({
+        where: {
+          identifier: {
+            in: [before.email.toLowerCase(), values.email],
+          },
+        },
+      });
+    }
 
     return record;
   });
@@ -151,6 +163,7 @@ export async function deactivateEmployeeAction(employeeId: string) {
 export async function deleteEmployeeAction(employeeId: string) {
   const actor = await requireManager();
   const db = getDb();
+  const deletedAt = new Date();
   const before = await db.employee.findUnique({
     where: { id: employeeId },
     include: {
@@ -164,67 +177,161 @@ export async function deleteEmployeeAction(employeeId: string) {
     return;
   }
 
-  const [
-    assignmentCount,
-    ptoRequestCount,
-    reviewedPtoRequestCount,
-    schedulingRuleCount,
-    createdSchedulingRuleCount,
-    generationRunCount,
-    auditLogCount,
-    exportLogCount,
-    publishedScheduleCount,
-  ] = await Promise.all([
-    db.assignment.count({ where: { employeeId } }),
-    db.pTORequest.count({ where: { employeeId } }),
-    db.pTORequest.count({ where: { reviewedByEmployeeId: employeeId } }),
-    db.schedulingRule.count({ where: { employeeId } }),
-    db.schedulingRule.count({ where: { createdByEmployeeId: employeeId } }),
-    db.scheduleGenerationRun.count({ where: { requestedByEmployeeId: employeeId } }),
-    db.auditLog.count({ where: { actorEmployeeId: employeeId } }),
-    db.exportLog.count({ where: { requestedByEmployeeId: employeeId } }),
-    db.scheduleDay.count({ where: { publishedByEmployeeId: employeeId } }),
-  ]);
-  const relatedRecordCount =
-    assignmentCount +
-    ptoRequestCount +
-    reviewedPtoRequestCount +
-    schedulingRuleCount +
-    createdSchedulingRuleCount +
-    generationRunCount +
-    auditLogCount +
-    exportLogCount +
-    publishedScheduleCount;
-
-  if (relatedRecordCount > 0) {
-    const employee = await db.employee.update({
-      where: { id: employeeId },
-      data: { status: "INACTIVE" },
-    });
-
-    await writeAuditLog({
-      actorEmployeeId: auditActorId(actor),
-      action: "employee.delete_requested_deactivated",
-      entityType: "Employee",
-      entityId: employee.id,
-      before,
-      after: {
-        status: employee.status,
-        relatedRecordCount,
+  const result = await db.$transaction(async (tx) => {
+    const activeAssignedSlots = await tx.taskSlot.findMany({
+      where: {
+        assignments: {
+          some: {
+            employeeId,
+            status: AssignmentStatus.ACTIVE,
+          },
+        },
+        status: { not: TaskSlotStatus.CANCELLED },
+      },
+      select: {
+        id: true,
+        requiredStaff: true,
+        requirementLevel: true,
+        scheduleDay: {
+          select: {
+            id: true,
+            date: true,
+            status: true,
+            notes: true,
+          },
+        },
+        assignments: {
+          where: {
+            status: AssignmentStatus.ACTIVE,
+            employeeId: { not: employeeId },
+          },
+          select: { id: true },
+        },
       },
     });
-  } else {
-    await db.employee.delete({ where: { id: employeeId } });
+    const affectedScheduleDays = new Map(
+      activeAssignedSlots.map((slot) => [slot.scheduleDay.id, slot.scheduleDay]),
+    );
 
-    await writeAuditLog({
-      actorEmployeeId: auditActorId(actor),
-      action: "employee.delete",
-      entityType: "Employee",
-      entityId: employeeId,
-      before,
-      after: null,
+    await tx.assignment.updateMany({
+      where: {
+        employeeId,
+        status: AssignmentStatus.ACTIVE,
+      },
+      data: {
+        status: AssignmentStatus.REMOVED,
+        removedAt: deletedAt,
+        notes: "Removed because the employee was deleted.",
+      },
     });
-  }
+
+    for (const slot of activeAssignedSlots) {
+      const remainingAssignments = slot.assignments.length;
+      const status =
+        remainingAssignments > 0
+          ? TaskSlotStatus.FILLED
+          : slot.requiredStaff > 0 && slot.requirementLevel === "REQUIRED"
+            ? TaskSlotStatus.SHORTAGE
+            : TaskSlotStatus.OPEN;
+
+      await tx.taskSlot.update({
+        where: { id: slot.id },
+        data: {
+          status,
+          notes:
+            status === TaskSlotStatus.SHORTAGE
+              ? "Employee was deleted; regenerate or manually assign coverage."
+              : null,
+        },
+      });
+    }
+
+    for (const scheduleDay of affectedScheduleDays.values()) {
+      await tx.scheduleDay.update({
+        where: { id: scheduleDay.id },
+        data: {
+          status: "GENERATED",
+          publishedAt: null,
+          publishedByEmployeeId: null,
+          notes: appendNote(
+            scheduleDay.notes,
+            `Invalidated ${deletedAt.toISOString()} because ${before.fullName} was deleted.`,
+          ),
+        },
+      });
+    }
+
+    await tx.schedulingRule.updateMany({
+      where: { employeeId },
+      data: { active: false },
+    });
+    await tx.backgroundPullRule.updateMany({
+      where: { employeeId },
+      data: { active: false },
+    });
+    await tx.weeklyAvailability.updateMany({
+      where: { employeeId, active: true },
+      data: {
+        active: false,
+        effectiveEndDate: deletedAt,
+      },
+    });
+
+    if (before.authProviderId) {
+      await tx.session.deleteMany({ where: { userId: before.authProviderId } });
+    }
+    await tx.verificationToken.deleteMany({
+      where: {
+        identifier: {
+          in: [before.email.toLowerCase()],
+        },
+      },
+    });
+
+    const employee = await tx.employee.update({
+      where: { id: employeeId },
+      data: {
+        status: "DELETED",
+        email: deletedEmployeeEmail(employeeId),
+        authProviderId: null,
+        endDate: before.endDate ?? deletedAt,
+        notes: appendNote(
+          before.notes,
+          `Deleted ${deletedAt.toISOString()}. Previous email: ${before.email}.`,
+        ),
+      },
+    });
+
+    return {
+      employee,
+      affectedScheduleDayIds: [...affectedScheduleDays.keys()],
+      affectedSlotCount: activeAssignedSlots.length,
+    };
+  });
+
+  await writeAuditLog({
+    actorEmployeeId: auditActorId(actor),
+    action: "employee.delete",
+    entityType: "Employee",
+    entityId: result.employee.id,
+    before,
+    after: {
+      status: result.employee.status,
+      email: result.employee.email,
+      affectedScheduleDayIds: result.affectedScheduleDayIds,
+      affectedSlotCount: result.affectedSlotCount,
+    },
+  });
 
   revalidatePath("/admin/employees");
+  revalidatePath("/schedule");
+  revalidatePath("/admin/audit");
+}
+
+function deletedEmployeeEmail(employeeId: string) {
+  return `deleted-${employeeId}@deleted.local`;
+}
+
+function appendNote(existing: string | null | undefined, next: string) {
+  return [existing?.trim(), next].filter(Boolean).join("\n");
 }

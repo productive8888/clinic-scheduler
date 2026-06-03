@@ -67,7 +67,7 @@ versioned migrations in `prisma/migrations`.
   type, shift template/category, scenario, priority, effective dates, and
   instruction text. These rules provide visible guidance and store Easton's
   editable closure/pull order without silently dropping clinic roles.
-- `WorkPattern`: editable employee work-pattern templates, including Easton's
+- `WorkPattern`: editable employee work-pattern templates, including
   endoscopy Saturday and non-endoscopy Saturday patterns, target weekly hours,
   Saturday paid hours, Monday/Friday-off allowance, and early-start day count.
 - `SchedulePattern` and `SchedulePatternSlot`: editable/reference weekly

@@ -14,7 +14,7 @@ export const STANDARD_SHIFT_START_MINUTE = 8 * 60;
 export const STANDARD_SHIFT_END_MINUTE = 17 * 60;
 
 export function isDefaultWorkingWeekday(weekday: number) {
-  return weekday >= 1 && weekday <= 5;
+  return weekday >= 1 && weekday <= 6;
 }
 
 export function weekdayLabel(weekday: number) {

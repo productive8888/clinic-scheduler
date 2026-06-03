@@ -16,6 +16,7 @@ enum EmployeeRole {
 enum EmployeeStatus {
   ACTIVE
   INACTIVE
+  DELETED
 }
 
 enum PTORequestType {

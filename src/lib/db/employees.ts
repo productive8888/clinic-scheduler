@@ -3,6 +3,7 @@ import { getDb } from "@/lib/db";
 export function getEmployeeAdminData() {
   return Promise.all([
     getDb().employee.findMany({
+      where: { status: { not: "DELETED" } },
       orderBy: [{ status: "asc" }, { fullName: "asc" }],
       include: {
         workPattern: true,

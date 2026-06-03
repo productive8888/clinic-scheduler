@@ -26,6 +26,7 @@ export async function getStaffingAnalyticsPageData(
 
   const [employees, taskTypes, scheduleDays, ptoRequests] = await Promise.all([
     getDb().employee.findMany({
+      where: { status: { not: "DELETED" } },
       orderBy: { fullName: "asc" },
       select: { id: true, fullName: true },
     }),

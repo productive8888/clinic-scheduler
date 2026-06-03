@@ -147,7 +147,7 @@ export function EmployeeDirectory({
             <form action={deleteEmployeeAction.bind(null, employee.id)}>
               <button className="mt-3 inline-flex h-10 items-center gap-2 rounded-md border border-slate-300 px-4 text-sm font-semibold text-slate-700 transition hover:bg-slate-100">
                 <Trash2 size={16} aria-hidden="true" />
-                Delete if unused
+                Delete employee
               </button>
             </form>
           </div>

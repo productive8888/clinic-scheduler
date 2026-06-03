@@ -70,6 +70,7 @@ export async function getPayrollReport(input: {
   ] = await Promise.all([
     getPayrollSettings(),
     db.employee.findMany({
+      where: { status: { not: "DELETED" } },
       orderBy: [{ status: "asc" }, { fullName: "asc" }],
       include: {
         availability: {
