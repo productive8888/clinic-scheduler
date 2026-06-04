@@ -53,9 +53,17 @@ same schedule is regenerated because required clinic coverage is filled first.
 The bounded repair pass may also yield explicitly pullable background work to a
 required patient-facing clinic role before a shortage recommendation is shown.
 
-Easton `Shifts + Hours` background demand is imported as editable weekly
-background definitions. The June schedule remains a reference pattern rather
-than permanent assignments.
+Easton `Shifts + Hours` background demand is imported as editable,
+shift-template-specific staffing requirements. A BG, Front Background, Booking,
+Research, or Float count under an AM, PM, or Saturday column creates desired
+slots on that exact block. These spreadsheet counts are not collapsed into
+whole-day or weekly totals. Previously imported Easton weekly definitions are
+archived when the workbook defaults are reapplied.
+
+Period-based `BackgroundTaskDefinition` records remain available for obligations
+that truly recur weekly, biweekly, monthly, or over a custom window. The June
+workbook sheets remain reference patterns rather than permanent assignments or
+duplicate demand.
 
 The full rollover optimizer and final clinic background-priority policy remain
 deferred until clinic policy is finalized.

@@ -11,6 +11,8 @@ not contain scheduling decisions.
 - IT, Research, and PA / Prior Authorization task requirements are enforced like
   every other task skill. PA / Prior Authorization is distinct from Physician
   Assistant / MD.
+- Easton IT is classified as skilled clinic/patient-facing coverage, not
+  background work. It remains a configurable shortage/closure candidate.
 - Weekly availability is enforced by each employee's configured normal working
   weekdays and minute ranges. The scheduler has no Monday-Friday assumption.
 - Approved and overridden PTO/unavailability blocks assignments.
@@ -72,8 +74,9 @@ not contain scheduling decisions.
   shift template, shift category, weekday, clinic scenario, and effective date
   range. More specific rules win deterministically over broad rules.
 - Safe default staffing slots are created only on shift blocks marked as the
-  schedule default. Managers can create additional AM/PM/Saturday/Endoscopy
-  slots by configuring staffing rules against shift templates or categories.
+  schedule default when no more specific staffing rule exists. Applied Easton
+  workbook demand creates editable, shift-template-specific rules for every
+  applicable AM, PM, Saturday, clinic, Float, and background role.
 - Default seeded shift templates use Easton's spreadsheet times:
   weekday early AM 7:00 AM-12:00 PM where configured, weekday regular AM
   8:00 AM-12:00 PM, Monday long PM 1:00 PM-6:00 PM where configured,
@@ -83,6 +86,13 @@ not contain scheduling decisions.
   or `private/Copy of Easton Scheduling.xlsx` through the admin Easton import
   page. Parsed shifts, role demand, employee targets, and June sample assignment
   patterns are reviewed before applying editable database rules.
+- `Shifts + Hours` is the active reusable source for Easton shift templates and
+  staffing demand. Its counts are per shift block, never whole-day totals.
+  Background, Front Background, Booking, Research, and Float counts therefore
+  become desired staffing slots on the exact AM, PM, or Saturday block where
+  they appear. `June Shifts + Hours` and `June Schedule` remain reference
+  patterns and targets so applying the workbook does not double-count demand or
+  hardcode a single historical week.
 - For deployed databases, run `npm run review:easton` and then
   `npm run apply:easton` locally against the target `DATABASE_URL`; the workbook
   remains private and is not required on Vercel.
@@ -106,14 +116,27 @@ not contain scheduling decisions.
   for weekly, biweekly, monthly, or custom windows. Required count takes
   precedence over hours-based slot sizing. Definition-level required skills and
   eligible employees are hard constraints.
-- Bulk generation processes dates in stable ascending order, prepares shift and
-  background slots, preserves locked/manual overrides, and skips published dates
-  unless a manager explicitly confirms overwrite. Earlier generated days become
-  deterministic fairness history for later days in the range.
+- Bulk generation processes dates in stable ascending order. It prepares every
+  included date's shift blocks and staffing-rule slots before assignment, then
+  prepares period-based background instances and invokes the shared daily
+  scheduler. Locked/manual overrides are preserved and published dates are
+  skipped unless a manager explicitly confirms overwrite. Earlier generated
+  days become deterministic fairness and weekly-hours context for later days in
+  the range.
 - Day/week/month/range generation is one operation: it prepares dated shift
   blocks, reconciles clinic and period-linked background slots, invokes the
   shared scheduler, persists assignments and conflict state, and returns an
   aggregate review summary.
+- Generation summaries report total, AM, PM, and Saturday shift blocks,
+  clinic/background slots, fills, required shortages, conflicts, published
+  skips, regenerated dates, and employees under/over their weekly target.
+- Weekly target hours and assigned work patterns are soft scoring guidance.
+  They move employees toward configured weekly hours and pattern-compatible
+  shifts without bypassing skills, availability, PTO/NPTO, or overlap rules.
+- Managers can review draft/published/needs-regeneration status from the
+  schedule calendar. Unpublishing a day, week, month, or custom range preserves
+  assignments, records audit logs, and allows a later regeneration. Normal
+  generation continues to skip published dates.
 - If no shift template is marked as the schedule default, preparation
   deterministically uses the regular 8:00 AM block when available. This is a
   safety fallback only; managers can select a different default in shift

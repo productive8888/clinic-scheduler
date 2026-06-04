@@ -16,6 +16,26 @@ export function buildWholeDayShiftGroups<
   }));
 }
 
+export function summarizeShiftBlocks(input: {
+  date: string;
+  shiftBlocks: Array<{ shiftCategory: string }>;
+}) {
+  const isSaturday =
+    new Date(`${input.date}T00:00:00.000Z`).getUTCDay() === 6;
+
+  return {
+    total: input.shiftBlocks.length,
+    am: input.shiftBlocks.filter((block) => block.shiftCategory === "AM").length,
+    pm: input.shiftBlocks.filter((block) => block.shiftCategory === "PM").length,
+    saturday: input.shiftBlocks.filter(
+      (block) =>
+        isSaturday ||
+        block.shiftCategory === "SATURDAY" ||
+        block.shiftCategory === "ENDO",
+    ).length,
+  };
+}
+
 export function buildWeekDayHealth(input: {
   status: string;
   slots: Array<{

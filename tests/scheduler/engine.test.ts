@@ -45,13 +45,16 @@ import { validateManualAssignment } from "../../src/lib/schedule/manual-validati
 import { getSchedulePublishIssues } from "../../src/lib/schedule/publish-validation";
 import {
   clinicWeekRange,
+  monthCalendarRange,
   planScheduleRange,
+  planUnpublishScheduleRange,
   resolveScheduleRange,
 } from "../../src/lib/schedule/range";
 import {
   buildWeekStaffSummary,
   buildWeekDayHealth,
   buildWholeDayShiftGroups,
+  summarizeShiftBlocks,
 } from "../../src/lib/schedule/views";
 import { shouldPreserveSlotOutsideStaffingRequirements } from "../../src/lib/schedule/slot-reconciliation";
 import {
@@ -1051,6 +1054,257 @@ describe("generateSchedule", () => {
   });
 });
 
+describe("Easton full-week generation foundations", () => {
+  it("creates clinic and background demand on the exact AM and PM shift blocks", () => {
+    const specs = selectStaffingSlotSpecs({
+      date: "2026-06-02",
+      scenario: "ROUTINE",
+      taskTypes: [
+        {
+          id: "gi",
+          optional: false,
+          defaultForRoutine: false,
+          defaultForReduced: false,
+        },
+        {
+          id: "background",
+          optional: true,
+          defaultForRoutine: false,
+          defaultForReduced: false,
+        },
+      ],
+      shiftBlocks: [defaultShiftBlock, pmShiftBlock],
+      rules: [
+        {
+          id: "gi-am",
+          taskTypeId: "gi",
+          shiftTemplateId: defaultShiftBlock.shiftTemplateId,
+          weekday: 2,
+          scenario: "ROUTINE",
+          minRequiredSlots: 4,
+          desiredSlots: 4,
+          maxSlots: 4,
+          requirementLevel: "REQUIRED",
+          active: true,
+        },
+        {
+          id: "gi-pm",
+          taskTypeId: "gi",
+          shiftTemplateId: pmShiftBlock.shiftTemplateId,
+          weekday: 2,
+          scenario: "ROUTINE",
+          minRequiredSlots: 4,
+          desiredSlots: 4,
+          maxSlots: 4,
+          requirementLevel: "REQUIRED",
+          active: true,
+        },
+        {
+          id: "background-am",
+          taskTypeId: "background",
+          shiftTemplateId: defaultShiftBlock.shiftTemplateId,
+          weekday: 2,
+          scenario: "ROUTINE",
+          minRequiredSlots: 0,
+          desiredSlots: 3,
+          maxSlots: 3,
+          requirementLevel: "DESIRED",
+          active: true,
+        },
+        {
+          id: "background-pm",
+          taskTypeId: "background",
+          shiftTemplateId: pmShiftBlock.shiftTemplateId,
+          weekday: 2,
+          scenario: "ROUTINE",
+          minRequiredSlots: 0,
+          desiredSlots: 4,
+          maxSlots: 4,
+          requirementLevel: "DESIRED",
+          active: true,
+        },
+      ],
+    });
+
+    assert.equal(
+      specs.filter(
+        (spec) =>
+          spec.shiftBlockId === defaultShiftBlock.id && spec.taskTypeId === "gi",
+      ).length,
+      4,
+    );
+    assert.equal(
+      specs.filter(
+        (spec) => spec.shiftBlockId === pmShiftBlock.id && spec.taskTypeId === "gi",
+      ).length,
+      4,
+    );
+    assert.equal(
+      specs.filter(
+        (spec) =>
+          spec.shiftBlockId === defaultShiftBlock.id &&
+          spec.taskTypeId === "background",
+      ).length,
+      3,
+    );
+    assert.equal(
+      specs.filter(
+        (spec) =>
+          spec.shiftBlockId === pmShiftBlock.id &&
+          spec.taskTypeId === "background",
+      ).length,
+      4,
+    );
+  });
+
+  it("creates both configured Saturday blocks and their shift-specific slots", () => {
+    const endoscopyBlock = {
+      id: "saturday-endo",
+      shiftTemplateId: "saturday-endo-template",
+      shiftCategory: "ENDO" as const,
+      startMinute: 6 * 60,
+      defaultForSchedule: false,
+    };
+    const specs = selectStaffingSlotSpecs({
+      date: saturday,
+      scenario: "ROUTINE",
+      taskTypes: [
+        {
+          id: "endo",
+          optional: false,
+          defaultForRoutine: false,
+          defaultForReduced: false,
+        },
+        {
+          id: "allergy",
+          optional: false,
+          defaultForRoutine: false,
+          defaultForReduced: false,
+        },
+      ],
+      shiftBlocks: [endoscopyBlock, saturdayShiftBlock],
+      rules: [
+        {
+          id: "endo-saturday",
+          taskTypeId: "endo",
+          shiftTemplateId: endoscopyBlock.shiftTemplateId,
+          weekday: 6,
+          scenario: "ROUTINE",
+          minRequiredSlots: 8,
+          desiredSlots: 8,
+          maxSlots: 8,
+          requirementLevel: "REQUIRED",
+          active: true,
+        },
+        {
+          id: "allergy-saturday",
+          taskTypeId: "allergy",
+          shiftTemplateId: saturdayShiftBlock.shiftTemplateId,
+          weekday: 6,
+          scenario: "ROUTINE",
+          minRequiredSlots: 4,
+          desiredSlots: 4,
+          maxSlots: 4,
+          requirementLevel: "REQUIRED",
+          active: true,
+        },
+      ],
+    });
+
+    assert.equal(
+      specs.filter((spec) => spec.shiftBlockId === endoscopyBlock.id).length,
+      8,
+    );
+    assert.equal(
+      specs.filter((spec) => spec.shiftBlockId === saturdayShiftBlock.id).length,
+      4,
+    );
+  });
+
+  it("moves assignment selection toward configured weekly target hours", () => {
+    const result = generateSchedule({
+      seed: "weekly-target-hours",
+      employees: [
+        {
+          id: "nearly-full",
+          fullName: "Nearly Full",
+          skillIds: [],
+          availability: allDayMonday,
+          targetWeeklyHours: 40,
+          scheduledHoursThisWeek: 36,
+        },
+        {
+          id: "under-target",
+          fullName: "Under Target",
+          skillIds: [],
+          availability: allDayMonday,
+          targetWeeklyHours: 40,
+          scheduledHoursThisWeek: 8,
+        },
+      ],
+      taskTypes,
+      slots: [
+        {
+          id: "pm-target-slot",
+          date: monday,
+          taskTypeId: "front-desk",
+          slotIndex: 1,
+          startMinute: 780,
+          endMinute: 1020,
+          paidHours: 4,
+        },
+      ],
+    });
+
+    assert.equal(result.assignments[0].employeeId, "under-target");
+  });
+
+  it("summarizes AM, PM, and Saturday blocks explicitly", () => {
+    assert.deepEqual(
+      summarizeShiftBlocks({
+        date: "2026-06-02",
+        shiftBlocks: [
+          { shiftCategory: "AM" },
+          { shiftCategory: "AM" },
+          { shiftCategory: "PM" },
+        ],
+      }),
+      { total: 3, am: 2, pm: 1, saturday: 0 },
+    );
+    assert.deepEqual(
+      summarizeShiftBlocks({
+        date: saturday,
+        shiftBlocks: [
+          { shiftCategory: "ENDO" },
+          { shiftCategory: "SATURDAY" },
+        ],
+      }),
+      { total: 2, am: 0, pm: 0, saturday: 2 },
+    );
+  });
+
+  it("plans safe range unpublishing and a complete month status grid", () => {
+    assert.deepEqual(
+      planUnpublishScheduleRange({
+        startDate: "2026-06-01",
+        endDate: "2026-06-03",
+        publishedDates: ["2026-06-02"],
+      }),
+      [
+        { date: "2026-06-01", action: "SKIP_NOT_PUBLISHED" },
+        { date: "2026-06-02", action: "UNPUBLISH" },
+        { date: "2026-06-03", action: "SKIP_NOT_PUBLISHED" },
+      ],
+    );
+    assert.deepEqual(monthCalendarRange("2026-06-15"), {
+      monthStartDate: "2026-06-01",
+      monthEndDate: "2026-06-30",
+      gridStartDate: "2026-06-01",
+      gridEndDate: "2026-07-05",
+    });
+  });
+});
+
 describe("resolveDirectReplacement", () => {
   it("selects a compatible replacement when a staffed employee becomes unavailable", () => {
     const result = resolveDirectReplacement({
@@ -1822,11 +2076,18 @@ describe("Easton policy helpers", () => {
     const workbook = new ExcelJS.Workbook();
     const shifts = workbook.addWorksheet("Shifts + Hours");
 
-    shifts.getRow(1).values = ["", "Monday (1)", ""];
-    shifts.getRow(2).values = ["", "0700~1200 (5)", "0800~1200 (4)"];
-    shifts.getRow(3).values = ["Shift Hours", 5, 4];
-    shifts.getRow(4).values = ["GI", 1, 2];
-    shifts.getRow(5).values = ["Patients", 1, 2];
+    shifts.getRow(1).values = ["", "Monday (1)", "", "Saturday (1)", ""];
+    shifts.getRow(2).values = [
+      "",
+      "0700~1200 (5)",
+      "1300~1700 (4)",
+      "0600~1400 (8)",
+      "0800~1400 (6)",
+    ];
+    shifts.getRow(3).values = ["Shift Hours", 5, 4, 8, 6];
+    shifts.getRow(4).values = ["GI", 1, 2, 0, 1];
+    shifts.getRow(5).values = ["BG", 0, 3, 0, 1];
+    shifts.getRow(6).values = ["Patients", 1, 2, 0, 1];
 
     const targets = workbook.addWorksheet("Shifts by GY");
     targets.getRow(1).values = [
@@ -1865,6 +2126,28 @@ describe("Easton policy helpers", () => {
     assert.equal(preview.shifts[0].endMinute, 12 * 60);
     assert.equal(preview.shifts[0].paidHours, 5);
     assert.equal(preview.roleDemand[0].roleCode, "NEW_GI");
+    assert.equal(
+      preview.shifts.some(
+        (shift) =>
+          shift.weekday === 1 &&
+          shift.startMinute === 13 * 60 &&
+          shift.endMinute === 17 * 60,
+      ),
+      true,
+    );
+    assert.equal(
+      preview.shifts.filter((shift) => shift.weekday === 6).length,
+      2,
+    );
+    assert.equal(
+      preview.roleDemand.some(
+        (demand) =>
+          demand.roleCode === "BACKGROUND" &&
+          demand.startMinute === 13 * 60 &&
+          demand.count === 3,
+      ),
+      true,
+    );
     assert.equal(preview.employeeTargets[0].employeeName, "Yvonne");
     assert.equal(preview.sampleAssignments[0].roleCode, "NEW_GI");
   });
@@ -2152,7 +2435,9 @@ describe("automated scheduling workflow foundations", () => {
             code: taskCode,
             name: taskCode,
             requiredSkillIds: [skillCode],
-            isBackground: true,
+            isPatientFacing: taskCode === "IT",
+            isClinical: taskCode === "IT",
+            isBackground: taskCode !== "IT",
           },
         ],
         slots: [

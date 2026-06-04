@@ -33,5 +33,7 @@ export async function applyEastonDefaultsAction() {
   revalidatePath("/admin/background-tasks");
   revalidatePath("/admin/payroll");
   revalidatePath("/schedule");
+  revalidatePath("/schedule/week");
+  revalidatePath("/schedule/calendar");
   revalidatePath("/admin/audit");
 }

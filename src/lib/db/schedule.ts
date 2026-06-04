@@ -27,6 +27,7 @@ import { overlaps } from "@/lib/scheduler/constraints";
 import { isShortNoticeScheduleChange } from "@/lib/schedule/short-notice";
 import { patternPreferredEmployeeIdsForSlot } from "@/lib/schedule/pattern-preferences";
 import { getSchedulePublishIssues } from "@/lib/schedule/publish-validation";
+import { clinicWeekRange } from "@/lib/schedule/range";
 import { shouldPreserveSlotOutsideStaffingRequirements } from "@/lib/schedule/slot-reconciliation";
 import { buildShiftBlockSnapshot } from "@/lib/shifts/templates";
 import { LEGACY_SHIFT_TEMPLATE_ID } from "@/lib/shifts/legacy";
@@ -618,6 +619,7 @@ export async function generateScheduleForDate(input: {
   });
   const fairnessSetting = await fairnessSettingPromise;
   const fairnessWindow = getFairnessWindow(input.date, fairnessSetting);
+  const currentWeek = clinicWeekRange(input.date);
   const [
     scheduleDay,
     employees,
@@ -634,6 +636,7 @@ export async function generateScheduleForDate(input: {
       include: {
         skills: true,
         availability: { where: { active: true } },
+        workPattern: true,
         ptoRequests: {
           where: {
             status: { in: ["APPROVED", "OVERRIDDEN"] },
@@ -658,7 +661,7 @@ export async function generateScheduleForDate(input: {
           scheduleDay: {
             date: {
               gte: parseIsoDate(fairnessWindow.startDate),
-              lte: parseIsoDate(fairnessWindow.endDate),
+              lt: parseIsoDate(input.date),
             },
           },
         },
@@ -792,6 +795,9 @@ export async function generateScheduleForDate(input: {
   const historicalHoursByEmployee = new Map<string, number>();
   const historicalSaturdayCountByEmployee = new Map<string, number>();
   const historicalEndoscopyCountByEmployee = new Map<string, number>();
+  const scheduledHoursThisWeekByEmployee = new Map<string, number>();
+  const scheduledEarlyStartsThisWeekByEmployee = new Map<string, number>();
+  const countedCurrentWeekShifts = new Set<string>();
 
   for (const assignment of historicalAssignments) {
     historicalCountByEmployee.set(
@@ -843,6 +849,30 @@ export async function generateScheduleForDate(input: {
         assignment.employeeId,
         (historicalEndoscopyCountByEmployee.get(assignment.employeeId) ?? 0) + 1,
       );
+    }
+
+    const assignmentDate = toIsoDate(assignment.taskSlot.scheduleDay.date);
+    const currentWeekShiftKey = `${assignment.employeeId}:${assignmentDate}:${assignment.taskSlot.shiftBlock.id}`;
+
+    if (
+      assignmentDate >= currentWeek.startDate &&
+      assignmentDate <= currentWeek.endDate &&
+      !countedCurrentWeekShifts.has(currentWeekShiftKey)
+    ) {
+      countedCurrentWeekShifts.add(currentWeekShiftKey);
+      scheduledHoursThisWeekByEmployee.set(
+        assignment.employeeId,
+        (scheduledHoursThisWeekByEmployee.get(assignment.employeeId) ?? 0) +
+          Number(assignment.taskSlot.shiftBlock.paidHours),
+      );
+
+      if (assignment.taskSlot.shiftBlock.startMinute <= 7 * 60) {
+        scheduledEarlyStartsThisWeekByEmployee.set(
+          assignment.employeeId,
+          (scheduledEarlyStartsThisWeekByEmployee.get(assignment.employeeId) ?? 0) +
+            1,
+        );
+      }
     }
   }
 
@@ -898,6 +928,25 @@ export async function generateScheduleForDate(input: {
         historicalSaturdayCountByEmployee.get(employee.id) ?? 0,
       historicalEndoscopyAssignments:
         historicalEndoscopyCountByEmployee.get(employee.id) ?? 0,
+      targetWeeklyHours: Number(
+        employee.workPattern?.targetWeeklyHours ?? employee.expectedWeeklyHours,
+      ),
+      scheduledHoursThisWeek: scheduledHoursThisWeekByEmployee.get(employee.id) ?? 0,
+      scheduledEarlyStartShiftsThisWeek:
+        scheduledEarlyStartsThisWeekByEmployee.get(employee.id) ?? 0,
+      workPattern: employee.workPattern
+        ? {
+            kind: employee.workPattern.kind,
+            worksTuesdayThroughSaturday:
+              employee.workPattern.worksTuesdayThroughSaturday,
+            saturdayPaidHours: employee.workPattern.saturdayPaidHours
+              ? Number(employee.workPattern.saturdayPaidHours)
+              : null,
+            mondayOffAllowed: employee.workPattern.mondayOffAllowed,
+            fridayOffAllowed: employee.workPattern.fridayOffAllowed,
+            earlyStartDaysPerWeek: employee.workPattern.earlyStartDaysPerWeek,
+          }
+        : null,
       ...targetInputsForEmployee({
         employeeId: employee.id,
         employeeName: employee.fullName,

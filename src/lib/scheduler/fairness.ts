@@ -81,6 +81,18 @@ export function getFairnessScore(
     taskType,
     settings,
   });
+  score += getWeeklyHoursTargetScore({
+    employee,
+    assignments,
+    slot,
+    settings,
+  });
+  score += getWorkPatternScore({
+    employee,
+    assignments,
+    slot,
+    settings,
+  });
 
   if (taskType?.isBackground) {
     score -= settings.backgroundPenaltyWeight;
@@ -227,4 +239,75 @@ function getCurrentEndoscopyCount(
       assignment.employeeId === employeeId &&
       (assignment.isEndoscopy || assignment.shiftCategory === "ENDO"),
   ).length;
+}
+
+export function getWeeklyHoursTargetScore(input: {
+  employee: SchedulerEmployee;
+  assignments: ExistingAssignment[];
+  slot?: SchedulerTaskSlot;
+  settings: SchedulerFairnessSettings;
+}) {
+  const target = input.employee.targetWeeklyHours;
+
+  if (!target || target <= 0 || !input.slot) {
+    return 0;
+  }
+
+  const scheduledHours =
+    (input.employee.scheduledHoursThisWeek ?? 0) +
+    getCurrentScheduledHours(input.employee.id, input.assignments);
+  const nextHours = input.slot.paidHours ?? 0;
+  const remainingHours = target - scheduledHours;
+  const projectedOverage = Math.max(0, scheduledHours + nextHours - target);
+
+  if (remainingHours <= 0) {
+    return -(Math.abs(remainingHours) + nextHours) * input.settings.totalHoursWeight;
+  }
+
+  return (
+    remainingHours * input.settings.totalHoursWeight -
+    projectedOverage * input.settings.totalHoursWeight * 2
+  );
+}
+
+export function getWorkPatternScore(input: {
+  employee: SchedulerEmployee;
+  assignments: ExistingAssignment[];
+  slot?: SchedulerTaskSlot;
+  settings: SchedulerFairnessSettings;
+}) {
+  const pattern = input.employee.workPattern;
+
+  if (!pattern || !input.slot) {
+    return 0;
+  }
+
+  const weekday = dateToWeekday(input.slot.date);
+  const weight = input.settings.patternConsistencyWeight;
+  let score = 0;
+
+  if (pattern.worksTuesdayThroughSaturday) {
+    score += weekday >= 2 && weekday <= 6 ? weight : -weight;
+  }
+
+  if (weekday === 6 && pattern.saturdayPaidHours) {
+    score +=
+      input.slot.paidHours === pattern.saturdayPaidHours ? weight : -weight;
+  }
+
+  const targetEarlyStarts = pattern.earlyStartDaysPerWeek ?? 0;
+
+  if (targetEarlyStarts > 0 && (input.slot.startMinute ?? 24 * 60) <= 7 * 60) {
+    const currentEarlyStarts =
+      (input.employee.scheduledEarlyStartShiftsThisWeek ?? 0) +
+      input.assignments.filter(
+        (assignment) =>
+          assignment.employeeId === input.employee.id &&
+          (assignment.startMinute ?? 24 * 60) <= 7 * 60,
+      ).length;
+
+    score += currentEarlyStarts < targetEarlyStarts ? weight : -weight;
+  }
+
+  return score;
 }

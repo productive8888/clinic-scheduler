@@ -181,10 +181,10 @@ const EASTON_TASK_TYPE_DEFAULTS = [
     code: "IT",
     name: "IT",
     optional: false,
-    isPatientFacing: false,
-    isClinical: false,
-    isBackground: true,
-    isSkilled: false,
+    isPatientFacing: true,
+    isClinical: true,
+    isBackground: false,
+    isSkilled: true,
     isEndoscopy: false,
     isFloat: false,
     isClosureCandidate: true,
@@ -480,78 +480,33 @@ export async function applyEastonDefaultsFromWorkbook(input: {
       update: {
         name: "Easton spreadsheet background obligations",
         description:
-          "Editable weekly background-work requirements imported from Shifts + Hours.",
+          "Archived weekly background-work totals superseded by shift-specific staffing requirements.",
         active: true,
       },
       create: {
         code: "EASTON_BACKGROUND",
         name: "Easton spreadsheet background obligations",
         description:
-          "Editable weekly background-work requirements imported from Shifts + Hours.",
+          "Archived weekly background-work totals superseded by shift-specific staffing requirements.",
         active: true,
         sortOrder: 5,
       },
     });
-    const backgroundDemandByCode = new Map<
-      string,
-      { name: string; count: number; hours: number }
-    >();
-
-    for (const demand of preview.roleDemand.filter(
-      (item) =>
-        item.sheetName === "Shifts + Hours" &&
-        !item.aggregate &&
-        BACKGROUND_ROLE_CODES.has(item.roleCode),
-    )) {
-      const current = backgroundDemandByCode.get(demand.roleCode) ?? {
-        name: demand.roleName,
-        count: 0,
-        hours: 0,
-      };
-      current.count += demand.count;
-      current.hours += demand.count * demand.paidHours;
-      backgroundDemandByCode.set(demand.roleCode, current);
-    }
-
-    let backgroundDefinitionCount = 0;
-
-    for (const [roleCode, demand] of backgroundDemandByCode) {
-      const taskTypeId = taskTypeByCode.get(roleCode);
-      if (!taskTypeId) {
-        continue;
-      }
-
-      const name = `${demand.name} (Easton weekly)`;
-      const existing = await tx.backgroundTaskDefinition.findFirst({
-        where: { categoryId: backgroundCategory.id, name },
+    const deactivatedBackgroundDefinitions =
+      await tx.backgroundTaskDefinition.updateMany({
+        where: {
+          categoryId: backgroundCategory.id,
+          notes: {
+            startsWith:
+              "Easton spreadsheet default: editable weekly obligation derived from Shifts + Hours.",
+          },
+        },
+        data: {
+          active: false,
+          notes:
+            "Archived by Easton import: spreadsheet background demand is now applied per shift block through staffing requirements.",
+        },
       });
-      const data = {
-        categoryId: backgroundCategory.id,
-        taskTypeId,
-        name,
-        estimatedHoursPerPeriod: demand.hours,
-        requiredCountPerPeriod: Math.max(1, Math.round(demand.count)),
-        periodType: "WEEKLY" as const,
-        priority: 100,
-        canBePulledForClinic: true,
-        protectedFromPull: false,
-        rolloverAllowed: true,
-        active: true,
-        createdByEmployeeId: input.actorEmployeeId ?? null,
-        notes:
-          "Easton spreadsheet default: editable weekly obligation derived from Shifts + Hours.",
-      };
-
-      if (existing) {
-        await tx.backgroundTaskDefinition.update({
-          where: { id: existing.id },
-          data,
-        });
-      } else {
-        await tx.backgroundTaskDefinition.create({ data });
-      }
-      backgroundDefinitionCount += 1;
-    }
 
     await tx.shiftTemplate.updateMany({
       where: {
@@ -603,14 +558,11 @@ export async function applyEastonDefaultsFromWorkbook(input: {
     });
 
     let staffingRuleCount = 0;
+    let backgroundStaffingRuleCount = 0;
 
     for (const demand of preview.roleDemand.filter(
       (item) => item.sheetName === "Shifts + Hours" && !item.aggregate,
     )) {
-      if (BACKGROUND_ROLE_CODES.has(demand.roleCode)) {
-        continue;
-      }
-
       const taskTypeId = taskTypeByCode.get(demand.roleCode);
       const shiftTemplateId = shiftTemplateIdByKey.get(
         shiftDemandKey(demand.weekday, demand.startMinute, demand.endMinute, demand.paidHours),
@@ -622,6 +574,7 @@ export async function applyEastonDefaultsFromWorkbook(input: {
       }
 
       const required = REQUIRED_ROLE_CODES.has(demand.roleCode);
+      const background = BACKGROUND_ROLE_CODES.has(demand.roleCode);
 
       await tx.staffingRequirementRule.create({
         data: {
@@ -636,10 +589,11 @@ export async function applyEastonDefaultsFromWorkbook(input: {
           requirementLevel: required ? "REQUIRED" : "DESIRED",
           active: true,
           createdByEmployeeId: input.actorEmployeeId ?? null,
-          notes: `${EASTON_STAFFING_NOTE} ${demand.roleName} count ${count} for ${demand.shiftLabel}.`,
+          notes: `${EASTON_STAFFING_NOTE} ${background ? "background " : ""}${demand.roleName} count ${count} for ${demand.shiftLabel}.`,
         },
       });
       staffingRuleCount += 1;
+      backgroundStaffingRuleCount += background ? 1 : 0;
     }
 
     await tx.shortageRule.deleteMany({
@@ -867,12 +821,16 @@ export async function applyEastonDefaultsFromWorkbook(input: {
       reviewId: review.id,
       shiftTemplateCount: shiftTemplateIdByKey.size,
       staffingRuleCount,
-      backgroundDefinitionCount,
+      backgroundStaffingRuleCount,
+      deactivatedBackgroundDefinitionCount: deactivatedBackgroundDefinitions.count,
       shortageRuleCount: SHORTAGE_DEFAULTS.length,
       skippedPullNames,
       patternSlotCount: preview.sampleAssignments.length,
       employeeTargetCount: preview.employeeTargets.length,
     };
+  }, {
+    maxWait: 10_000,
+    timeout: 60_000,
   });
 
   await writeAuditLog({

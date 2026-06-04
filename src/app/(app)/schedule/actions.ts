@@ -16,6 +16,7 @@ import {
 import {
   generateScheduleRange,
   publishScheduleRange,
+  unpublishScheduleRange,
 } from "@/lib/db/schedule-workflows";
 import { auditActorId, requireManager } from "@/lib/auth";
 import {
@@ -34,6 +35,8 @@ export async function createScheduleDayAction(formData: FormData) {
 
   await ensureScheduleDayWithDefaultSlots(date, auditActorId(actor));
   revalidatePath("/schedule");
+  revalidatePath("/schedule/week");
+  revalidatePath("/schedule/calendar");
 }
 
 export async function generateScheduleAction(formData: FormData) {
@@ -45,10 +48,12 @@ export async function generateScheduleAction(formData: FormData) {
     startDate: date,
     endDate: date,
     seedPrefix: seed,
+    overwritePublished: formData.get("overwritePublished") === "on",
     actorEmployeeId: auditActorId(actor),
   });
   revalidatePath("/schedule");
   revalidatePath("/schedule/week");
+  revalidatePath("/schedule/calendar");
 }
 
 export async function publishScheduleAction(formData: FormData) {
@@ -60,6 +65,8 @@ export async function publishScheduleAction(formData: FormData) {
     actorEmployeeId: auditActorId(actor),
   });
   revalidatePath("/schedule");
+  revalidatePath("/schedule/week");
+  revalidatePath("/schedule/calendar");
 }
 
 export async function unpublishScheduleAction(formData: FormData) {
@@ -71,6 +78,8 @@ export async function unpublishScheduleAction(formData: FormData) {
     actorEmployeeId: auditActorId(actor),
   });
   revalidatePath("/schedule");
+  revalidatePath("/schedule/week");
+  revalidatePath("/schedule/calendar");
 }
 
 export async function manualAssignAction(slotId: string, formData: FormData) {
@@ -84,6 +93,8 @@ export async function manualAssignAction(slotId: string, formData: FormData) {
     overrideReason: String(formData.get("overrideReason") || "") || null,
   });
   revalidatePath("/schedule");
+  revalidatePath("/schedule/week");
+  revalidatePath("/schedule/calendar");
 }
 
 export async function manualAssignMultipleAction(formData: FormData) {
@@ -102,6 +113,8 @@ export async function manualAssignMultipleAction(formData: FormData) {
     overrideReason: String(formData.get("overrideReason") || "") || null,
   });
   revalidatePath("/schedule");
+  revalidatePath("/schedule/week");
+  revalidatePath("/schedule/calendar");
 }
 
 export async function copyScheduleDayAssignmentsAction(formData: FormData) {
@@ -121,6 +134,7 @@ export async function copyScheduleDayAssignmentsAction(formData: FormData) {
   });
   revalidatePath("/schedule");
   revalidatePath("/schedule/week");
+  revalidatePath("/schedule/calendar");
 }
 
 export async function bulkGenerateScheduleAction(formData: FormData) {
@@ -142,8 +156,9 @@ export async function bulkGenerateScheduleAction(formData: FormData) {
 
   revalidatePath("/schedule");
   revalidatePath("/schedule/week");
+  revalidatePath("/schedule/calendar");
   redirect(
-    `/schedule/week?date=${range.startDate}&processed=${summary.datesProcessed}&daysCreated=${summary.scheduleDaysCreated}&daysUpdated=${summary.scheduleDaysUpdated}&blocksCreated=${summary.shiftBlocksCreated}&slotsCreated=${summary.taskSlotsCreated}&clinicSlots=${summary.clinicSlots}&backgroundSlots=${summary.backgroundSlots}&filled=${summary.assignmentsFilled}&requiredUnfilled=${summary.requiredSlotsUnfilled}&shortages=${summary.shortages}&conflicts=${summary.conflicts}&review=${summary.datesNeedingManualReview.length}&publishedSkipped=${summary.publishedDatesSkipped.length}`,
+    `/schedule/week?date=${range.startDate}&processed=${summary.datesProcessed}&daysCreated=${summary.scheduleDaysCreated}&daysRegenerated=${summary.datesRegenerated}&blocks=${summary.shiftBlocks}&amBlocks=${summary.amShiftBlocks}&pmBlocks=${summary.pmShiftBlocks}&saturdayBlocks=${summary.saturdayShiftBlocks}&slotsCreated=${summary.taskSlotsCreated}&clinicSlots=${summary.clinicSlots}&backgroundSlots=${summary.backgroundSlots}&filled=${summary.assignmentsFilled}&requiredUnfilled=${summary.requiredSlotsUnfilled}&shortages=${summary.shortages}&conflicts=${summary.conflicts}&underTarget=${summary.employeesUnderTarget}&overTarget=${summary.employeesOverTarget}&review=${summary.datesNeedingManualReview.length}&publishedSkipped=${summary.publishedDatesSkipped.length}`,
   );
 }
 
@@ -163,8 +178,31 @@ export async function publishScheduleRangeAction(formData: FormData) {
 
   revalidatePath("/schedule");
   revalidatePath("/schedule/week");
+  revalidatePath("/schedule/calendar");
   redirect(
     `/schedule/week?date=${range.startDate}&published=${summary.publishedDates.length}&publishBlocked=${summary.skippedDates.length}`,
+  );
+}
+
+export async function unpublishScheduleRangeAction(formData: FormData) {
+  const actor = await requireManager();
+  const date = getDateFromForm(formData);
+  const range = resolveScheduleRange({
+    mode: scheduleRangeMode(formData.get("mode")),
+    date,
+    customStartDate: String(formData.get("startDate") || "") || null,
+    customEndDate: String(formData.get("endDate") || "") || null,
+  });
+  const summary = await unpublishScheduleRange({
+    ...range,
+    actorEmployeeId: auditActorId(actor),
+  });
+
+  revalidatePath("/schedule");
+  revalidatePath("/schedule/week");
+  revalidatePath("/schedule/calendar");
+  redirect(
+    `/schedule/week?date=${range.startDate}&unpublished=${summary.unpublishedDates.length}&unpublishSkipped=${summary.skippedNotPublishedDates.length}`,
   );
 }
 
@@ -183,6 +221,7 @@ export async function setScheduleScenarioAction(formData: FormData) {
     actorEmployeeId: auditActorId(actor),
   });
   revalidatePath("/schedule");
+  revalidatePath("/schedule/calendar");
 }
 
 export async function addTaskSlotAction(formData: FormData) {
@@ -202,6 +241,8 @@ export async function addTaskSlotAction(formData: FormData) {
     actorEmployeeId: auditActorId(actor),
   });
   revalidatePath("/schedule");
+  revalidatePath("/schedule/week");
+  revalidatePath("/schedule/calendar");
 }
 
 function isClinicScenario(value: string): value is ClinicScenario {

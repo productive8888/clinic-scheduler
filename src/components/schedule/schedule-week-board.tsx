@@ -1,6 +1,7 @@
 import {
   AlertTriangle,
   CalendarDays,
+  CalendarX2,
   CheckCircle2,
   ChevronLeft,
   ChevronRight,
@@ -11,6 +12,7 @@ import Link from "next/link";
 import {
   bulkGenerateScheduleAction,
   publishScheduleRangeAction,
+  unpublishScheduleRangeAction,
 } from "@/app/(app)/schedule/actions";
 import { backgroundTaskDisplayName } from "@/lib/background/display";
 import type { getScheduleWeekData } from "@/lib/db/schedule-workflows";
@@ -75,6 +77,13 @@ export function ScheduleWeekBoard({
             <CalendarDays size={16} aria-hidden="true" />
             Current week
           </Link>
+          <Link
+            href={`/schedule/calendar?date=${data.range.startDate}`}
+            className="inline-flex h-10 items-center gap-2 rounded-md border border-slate-300 px-3 text-sm font-semibold text-slate-700 hover:bg-slate-100"
+          >
+            <CalendarDays size={16} aria-hidden="true" />
+            Calendar
+          </Link>
           <form action="/schedule/week" className="flex gap-2">
             <input
               type="date"
@@ -103,6 +112,14 @@ export function ScheduleWeekBoard({
               Publish this week
             </button>
           </form>
+          <form action={unpublishScheduleRangeAction}>
+            <input type="hidden" name="date" value={data.range.startDate} />
+            <input type="hidden" name="mode" value="WEEK" />
+            <button className="inline-flex h-10 items-center gap-2 rounded-md border border-slate-300 px-4 text-sm font-semibold text-slate-700 hover:bg-slate-100">
+              <CalendarX2 size={16} aria-hidden="true" />
+              Unpublish this week
+            </button>
+          </form>
           <Link
             href="/api/exports/calendar/clinic"
             className="inline-flex h-10 items-center gap-2 rounded-md border border-emerald-200 px-4 text-sm font-semibold text-emerald-800 hover:bg-emerald-50"
@@ -128,6 +145,17 @@ export function ScheduleWeekBoard({
         </section>
       ) : null}
 
+      {data.configurationWarnings.length > 0 ? (
+        <section className="rounded-md border border-amber-200 bg-amber-50 p-4 text-sm text-amber-950">
+          <h2 className="font-semibold">Generation configuration needs attention</h2>
+          <ul className="mt-2 grid gap-1">
+            {data.configurationWarnings.map((warning) => (
+              <li key={warning}>{warning}</li>
+            ))}
+          </ul>
+        </section>
+      ) : null}
+
       {data.publishBlockingDays.length > 0 ? (
         <section className="rounded-md border border-amber-200 bg-amber-50 p-4 text-sm text-amber-950">
           <h2 className="font-semibold">Some days are not ready to publish</h2>
@@ -147,16 +175,18 @@ export function ScheduleWeekBoard({
         </section>
       ) : null}
 
-      {data.backgroundDefinitionCount === 0 ? (
+      {data.backgroundDefinitionCount === 0 &&
+      data.backgroundStaffingRuleCount === 0 ? (
         <section className="rounded-md border border-slate-200 bg-slate-50 p-4 text-sm text-slate-700">
-          No active background task definitions are configured. Week generation will
-          only create clinic staffing slots.
+          No active period-based background definitions or shift-specific background
+          staffing rules are configured.
         </section>
       ) : backgroundSlotCount === 0 ? (
         <section className="rounded-md border border-sky-200 bg-sky-50 p-4 text-sm text-sky-900">
-          {data.backgroundDefinitionCount} active background definitions are configured,
-          but this week has no visible background slots yet. Generate this week to
-          reconcile them into the schedule.
+          {data.backgroundStaffingRuleCount} shift-specific background rules and{" "}
+          {data.backgroundDefinitionCount} period-based background definitions are
+          configured, but this week has no visible background slots yet. Generate this
+          week to reconcile them into the schedule.
         </section>
       ) : null}
 
@@ -235,7 +265,9 @@ function StaffSummaryTable({
                     className={
                       row.totalHours > row.targetHours
                         ? "mt-1 text-amber-700"
-                        : "mt-1 text-slate-500"
+                        : row.totalHours < row.targetHours
+                          ? "mt-1 text-rose-700"
+                          : "mt-1 text-emerald-700"
                     }
                   >
                     {row.totalHours}/{row.targetHours} hours
@@ -364,38 +396,40 @@ function WeekDayCard({
             (slot) => slot.shiftBlockId === shiftBlock.id,
           );
 
-          if (slots.length === 0) {
-            return null;
-          }
-
           return (
             <div key={shiftBlock.id}>
               <h3 className="font-semibold text-slate-900">
                 {shiftBlock.name} / {formatMinuteOfDay(shiftBlock.startMinute)}-
                 {formatMinuteOfDay(shiftBlock.endMinute)}
               </h3>
-              <div className="mt-2 grid gap-2 md:grid-cols-2 xl:grid-cols-3">
-                {slots.map((slot) => (
-                  <div
-                    key={slot.id}
-                    className="rounded-md border border-slate-200 bg-slate-50 p-3 text-sm"
-                  >
-                    <div className="font-semibold text-slate-900">
-                      {backgroundTaskDisplayName({
-                        name: slot.label ?? slot.taskType.name,
-                        isBackground: slot.taskType.isBackground,
-                      })}
+              {slots.length > 0 ? (
+                <div className="mt-2 grid gap-2 md:grid-cols-2 xl:grid-cols-3">
+                  {slots.map((slot) => (
+                    <div
+                      key={slot.id}
+                      className="rounded-md border border-slate-200 bg-slate-50 p-3 text-sm"
+                    >
+                      <div className="font-semibold text-slate-900">
+                        {backgroundTaskDisplayName({
+                          name: slot.label ?? slot.taskType.name,
+                          isBackground: slot.taskType.isBackground,
+                        })}
+                      </div>
+                      <div className="mt-1 text-slate-500">
+                        {slot.assignments.length
+                          ? slot.assignments
+                              .map((assignment) => assignment.employee.fullName)
+                              .join(", ")
+                          : "Unfilled"}
+                      </div>
                     </div>
-                    <div className="mt-1 text-slate-500">
-                      {slot.assignments.length
-                        ? slot.assignments
-                            .map((assignment) => assignment.employee.fullName)
-                            .join(", ")
-                        : "Unfilled"}
-                    </div>
-                  </div>
-                ))}
-              </div>
+                  ))}
+                </div>
+              ) : (
+                <p className="mt-2 text-sm text-slate-500">
+                  No roles configured for this shift.
+                </p>
+              )}
             </div>
           );
         })}

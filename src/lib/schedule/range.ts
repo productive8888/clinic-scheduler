@@ -53,6 +53,29 @@ export function clinicWeekRange(date: string) {
   };
 }
 
+export function monthCalendarRange(date: string) {
+  const parsed = parseIsoDate(date);
+  const monthStart = new Date(
+    Date.UTC(parsed.getUTCFullYear(), parsed.getUTCMonth(), 1),
+  );
+  const monthEnd = new Date(
+    Date.UTC(parsed.getUTCFullYear(), parsed.getUTCMonth() + 1, 0),
+  );
+  const monthStartDate = toIsoDate(monthStart);
+  const monthEndDate = toIsoDate(monthEnd);
+  const startWeekday = monthStart.getUTCDay();
+  const mondayOffset = startWeekday === 0 ? -6 : 1 - startWeekday;
+  const endWeekday = monthEnd.getUTCDay();
+  const sundayOffset = endWeekday === 0 ? 0 : 7 - endWeekday;
+
+  return {
+    monthStartDate,
+    monthEndDate,
+    gridStartDate: addDaysIsoDate(monthStartDate, mondayOffset),
+    gridEndDate: addDaysIsoDate(monthEndDate, sundayOffset),
+  };
+}
+
 export function planScheduleRange(input: {
   startDate: string;
   endDate: string;
@@ -69,5 +92,20 @@ export function planScheduleRange(input: {
         : ("GENERATE" as const),
     overwritesPublished:
       publishedDates.has(date) && Boolean(input.overwritePublished),
+  }));
+}
+
+export function planUnpublishScheduleRange(input: {
+  startDate: string;
+  endDate: string;
+  publishedDates?: string[];
+}) {
+  const publishedDates = new Set(input.publishedDates ?? []);
+
+  return enumerateIsoDates(input.startDate, input.endDate).map((date) => ({
+    date,
+    action: publishedDates.has(date)
+      ? ("UNPUBLISH" as const)
+      : ("SKIP_NOT_PUBLISHED" as const),
   }));
 }

@@ -1,6 +1,7 @@
 import type { Prisma, TaskType } from "@prisma/client";
 import {
   AlertTriangle,
+  CalendarDays,
   CalendarPlus,
   CalendarRange,
   CalendarX2,
@@ -136,6 +137,13 @@ export function ScheduleBoard({
               >
                 <CalendarRange size={16} aria-hidden="true" />
                 Week
+              </Link>
+              <Link
+                href={`/schedule/calendar?date=${date}`}
+                className="inline-flex h-10 items-center justify-center gap-2 rounded-md border border-slate-200 px-3 text-sm font-semibold text-slate-700 hover:bg-slate-100"
+              >
+                <CalendarDays size={16} aria-hidden="true" />
+                Calendar
               </Link>
               <h1 className="text-3xl font-semibold text-slate-950">
                 {formatDisplayDate(date)}

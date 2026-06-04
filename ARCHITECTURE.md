@@ -472,7 +472,14 @@ primitive. Manager range generation is an orchestration layer that:
 
 The manager schedule route is the whole-day review surface. It displays every
 dated shift block without requiring AM/PM navigation. `/schedule/week` provides
-a compact Monday-Saturday review and week-level generate/publish actions.
+a compact Monday-Saturday review with all employee assignments and week-level
+generate/publish/unpublish actions. `/schedule/calendar` provides month-level
+draft, published, needs-regeneration, shortage, PTO, and NPTO status.
+
+Easton workbook application treats `Shifts + Hours` as the active reusable
+shift-demand source. Every clinic and background count is stored against the
+specific shift template where it appears. June sheets remain reference
+patterns, avoiding both missing PM demand and duplicated staffing counts.
 
 Manual assignment remains a manager override workflow. Server-side validation
 previews skill, PTO/NPTO, availability, overlap, weekly-limit, expected-hours,

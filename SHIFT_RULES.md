@@ -22,8 +22,10 @@ The manager whole-day view displays every shift block for one date. The week
 view includes an employee-row staff summary with AM/PM roles, unique-shift paid
 hours, patient/background counts, Saturday/endoscopy counts, and GI/Allergy/PCP
 exposure. Bulk generation prepares all applicable shift blocks and
-staffing-rule slots before running the same deterministic daily scheduler in
-ascending date order.
+staffing-rule slots for the complete selected range before running the same
+deterministic daily scheduler in ascending date order. This gives later dates
+the earlier dates' weekly-hours and fairness context while preserving the
+shared scheduler as the single assignment engine.
 
 The daily board always renders all configured shift blocks together. There is
 no normal shift-selection tab or dropdown. Manual roles are added from the
@@ -44,10 +46,16 @@ Safe defaults create routine task slots only on shift blocks marked
 through editable staffing requirement rules by shift template, weekday, and role
 demand count.
 
-Spreadsheet-derived regular 8:00 AM blocks are seeded as safe defaults. If a
-database has no configured default for a date, generation deterministically
-chooses the closest regular AM block so incomplete configuration creates a
-reviewable schedule instead of an empty one.
+`Shifts + Hours` is the active reusable Easton demand source. Every nonzero
+clinic and background count is stored against its exact shift template, so PM
+and Saturday blocks do not depend on the 8:00 AM safe default. `June Shifts +
+Hours` and `June Schedule` are retained as reference patterns rather than
+additional demand sources.
+
+Generation summaries explicitly report total, AM, PM, and Saturday block
+counts. The schedule status calendar provides day/month review, while day,
+week, month, and custom-range unpublish actions preserve assignments and make
+dates eligible for regeneration.
 
 The app does not hardcode final clinic policy in scheduler branches. Easton
 defaults seed editable rules for week-to-week patterns, shortage order, Saturday

@@ -68,6 +68,8 @@ versioned migrations in `prisma/migrations`.
 - `StaffingRequirementRule`: admin-configured multi-slot requirements by task
   type, shift template or shift category, weekday, scenario, effective date
   range, min/desired/max slots, requirement level, active state, and notes.
+  Easton `Shifts + Hours` clinic and background counts are applied through these
+  rows against their exact AM, PM, or Saturday shift template.
 - `FairnessSetting`: singleton scheduler scoring configuration for fairness
   window, clinical/total/hour/Saturday/endoscopy weights, Easton pattern
   consistency, patient-facing, skill/role target, exposure-goal, and background

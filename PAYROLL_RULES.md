@@ -86,6 +86,11 @@ model. Manual assignment previews use employee expected weekly hours for
 warnings, while payroll reports continue to calculate from dated shift-block
 paid hours.
 
+Range generation uses each employee's configured weekly target and unique
+assigned shift-block hours as soft scheduling guidance. The week review reports
+under/over-target employees, but payroll remains the authoritative reporting
+calculation and never assumes that every assignment is a full day.
+
 Easton's current default for endoscopy extra hours is:
 
 - never shorten shifts as the automatic suggestion

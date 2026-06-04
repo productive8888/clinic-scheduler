@@ -44,8 +44,11 @@ export default async function ScheduleWeekPage({
       resultSummary={{
         processed: stringParam(params.processed),
         daysCreated: stringParam(params.daysCreated),
-        daysUpdated: stringParam(params.daysUpdated),
-        blocksCreated: stringParam(params.blocksCreated),
+        daysRegenerated: stringParam(params.daysRegenerated),
+        blocks: stringParam(params.blocks),
+        amBlocks: stringParam(params.amBlocks),
+        pmBlocks: stringParam(params.pmBlocks),
+        saturdayBlocks: stringParam(params.saturdayBlocks),
         slotsCreated: stringParam(params.slotsCreated),
         clinicSlots: stringParam(params.clinicSlots),
         backgroundSlots: stringParam(params.backgroundSlots),
@@ -53,10 +56,14 @@ export default async function ScheduleWeekPage({
         requiredUnfilled: stringParam(params.requiredUnfilled),
         shortages: stringParam(params.shortages),
         conflicts: stringParam(params.conflicts),
+        underTarget: stringParam(params.underTarget),
+        overTarget: stringParam(params.overTarget),
         review: stringParam(params.review),
         publishedSkipped: stringParam(params.publishedSkipped),
         published: stringParam(params.published),
         publishBlocked: stringParam(params.publishBlocked),
+        unpublished: stringParam(params.unpublished),
+        unpublishSkipped: stringParam(params.unpublishSkipped),
       }}
     />
   );

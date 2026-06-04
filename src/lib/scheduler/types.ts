@@ -16,6 +16,17 @@ export type SchedulerEmployee = {
   historicalScheduledHours?: number;
   historicalSaturdayAssignments?: number;
   historicalEndoscopyAssignments?: number;
+  targetWeeklyHours?: number | null;
+  scheduledHoursThisWeek?: number;
+  scheduledEarlyStartShiftsThisWeek?: number;
+  workPattern?: {
+    kind?: "CUSTOM" | "ENDOSCOPY_SATURDAY" | "NON_ENDOSCOPY_SATURDAY";
+    worksTuesdayThroughSaturday?: boolean;
+    saturdayPaidHours?: number | null;
+    mondayOffAllowed?: boolean;
+    fridayOffAllowed?: boolean;
+    earlyStartDaysPerWeek?: number;
+  } | null;
   targetTaskAssignments?: Record<string, number>;
   targetPatientFacingAssignments?: number | null;
   exposureGoals?: string[];

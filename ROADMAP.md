@@ -24,6 +24,14 @@
 - Day/week/month/custom-range generation with published-date protection,
   deterministic per-date seeds, background-slot preparation, aggregate result
   summaries, and bulk audit logs.
+- Easton week generation now applies all `Shifts + Hours` demand to exact AM,
+  PM, and Saturday shift templates, including shift-specific BG, Front
+  Background, Booking, Research, and Float slots.
+- Schedule status calendar with draft/published/needs-regeneration visibility,
+  shortages, PTO/NPTO counts, day actions, and range unpublish workflows.
+- Weekly generation prepares the complete date range before assignment and uses
+  configured weekly-hour/work-pattern guidance while retaining deterministic
+  daily scheduler execution.
 - One-click generation pipeline that prepares visible shift blocks and clinic/
   background slots, invokes the shared scheduler, persists assignments and
   conflicts, and returns generation diagnostics without per-day manual

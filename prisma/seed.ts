@@ -224,13 +224,13 @@ const taskTypes = [
     code: "IT",
     name: "IT",
     interchangeableGroup: null,
-    difficultyWeight: 0,
+    difficultyWeight: 1,
     sortOrder: 98,
     optional: false,
     defaultForRoutine: false,
     defaultForReduced: false,
-    isClinical: false,
-    isBackground: true,
+    isClinical: true,
+    isBackground: false,
     isSkilled: true,
     isEndoscopy: false,
     isFloat: false,
@@ -583,7 +583,6 @@ const demoEmployees = [
 ];
 
 const nonPatientFacingTaskCodes = new Set([
-  "IT",
   "PRIOR_AUTHORIZATION",
   "RESEARCH",
   "BACKGROUND",

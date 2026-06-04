@@ -124,6 +124,13 @@ npm run apply:easton -- "C:\Users\Based\Downloads\Copy of Easton Scheduling.xlsx
 The admin `/admin/easton-import` page offers the same review/apply workflow
 when the workbook exists in local `private/`.
 
+`npm run apply:easton` must be run against each target database after this
+version is deployed. Applying the workbook replaces older Easton-generated
+weekly background totals with editable shift-specific staffing requirements
+from `Shifts + Hours`, including PM and Saturday demand. It does not upload the
+private workbook to Vercel and does not turn June sample assignments into
+permanent schedules.
+
 ## 9. Local Development Auth
 
 Local user switching is development-only:
