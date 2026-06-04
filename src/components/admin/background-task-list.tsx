@@ -3,6 +3,7 @@ import type {
   BackgroundTaskDefinition,
   Employee,
   Skill,
+  TaskType,
 } from "@prisma/client";
 import { CircleOff } from "lucide-react";
 import { deactivateBackgroundTaskDefinitionAction } from "@/app/(app)/admin/background-tasks/actions";
@@ -10,6 +11,7 @@ import { BackgroundTaskDefinitionForm } from "@/components/admin/background-task
 
 type BackgroundTaskDefinitionRecord = BackgroundTaskDefinition & {
   primaryOwner: Employee | null;
+  taskType: TaskType | null;
   eligibleEmployees: { employeeId: string; employee: Employee }[];
   requiredSkills: { skillId: string; skill: Skill }[];
   _count: { instances: number };
@@ -23,10 +25,12 @@ export function BackgroundTaskList({
   categories,
   employees,
   skills,
+  taskTypes,
 }: {
   categories: BackgroundTaskCategoryRecord[];
   employees: { id: string; fullName: string }[];
   skills: { id: string; name: string; code: string }[];
+  taskTypes: { id: string; name: string; code: string }[];
 }) {
   if (categories.length === 0) {
     return (
@@ -113,6 +117,7 @@ export function BackgroundTaskList({
                     </div>
                     <p className="mt-1 text-sm text-slate-500">
                       {Number(definition.estimatedHoursPerPeriod)} hours /{" "}
+                      {definition.requiredCountPerPeriod ?? "hours-based"} slots /{" "}
                       {formatEnumLabel(definition.periodType)} / priority{" "}
                       {definition.priority}
                     </p>
@@ -123,6 +128,7 @@ export function BackgroundTaskList({
                             .map((skill) => skill.skill.name)
                             .join(", ")
                         : "None"}
+                      {" / "}Task type: {definition.taskType?.name ?? "Not linked"}
                     </p>
                   </div>
                   <span className="text-sm text-slate-500">
@@ -135,6 +141,7 @@ export function BackgroundTaskList({
                     categories={categories}
                     employees={employees}
                     skills={skills}
+                    taskTypes={taskTypes}
                   />
                   {definition.active ? (
                     <form

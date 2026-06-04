@@ -81,6 +81,11 @@ start/end times remain important for calendar exports and eligibility checks,
 but payroll falls back to duration only when a shift block paid-hour value is
 missing.
 
+Whole-day/week views and range generation do not introduce a second hours
+model. Manual assignment previews use employee expected weekly hours for
+warnings, while payroll reports continue to calculate from dated shift-block
+paid hours.
+
 Easton's current default for endoscopy extra hours is:
 
 - never shorten shifts as the automatic suggestion

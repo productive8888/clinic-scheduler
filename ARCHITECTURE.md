@@ -459,5 +459,25 @@ Calendar export
 Prioritize maintainability, scalability, and modular architecture over rapid hacks.
 The application should be production-ready and architected for long-term expansion.
 
+## Schedule Review And Generation Workflow
+
+The existing deterministic single-day generator remains the scheduling
+primitive. Manager range generation is an orchestration layer that:
+
+1. resolves a selected day, clinic week, month, or custom date range
+2. skips Sundays and published dates unless overwrite is explicitly confirmed
+3. prepares shift blocks, staffing-rule slots, and period-linked background slots
+4. runs daily generation in stable ascending date order
+5. persists assignments and returns an aggregate shortage/conflict summary
+
+The manager schedule route is the whole-day review surface. It displays every
+dated shift block without requiring AM/PM navigation. `/schedule/week` provides
+a compact Monday-Saturday review and week-level generate/publish actions.
+
+Manual assignment remains a manager override workflow. Server-side validation
+previews skill, PTO/NPTO, availability, overlap, weekly-limit, expected-hours,
+and required-coverage warnings. Warned changes require a reason and are written
+to the audit log.
+
 
 

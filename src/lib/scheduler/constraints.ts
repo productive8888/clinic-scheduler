@@ -48,8 +48,9 @@ export function overlaps(
 export function hasRequiredSkills(
   employee: SchedulerEmployee,
   taskType: SchedulerTaskType,
+  slot?: SchedulerTaskSlot,
 ) {
-  return taskType.requiredSkillIds.every((skillId) =>
+  return [...taskType.requiredSkillIds, ...(slot?.requiredSkillIds ?? [])].every((skillId) =>
     employee.skillIds.includes(skillId),
   );
 }
@@ -148,8 +149,15 @@ export function getConstraintRejections(
     reasons.push("Employee is inactive");
   }
 
-  if (!hasRequiredSkills(employee, taskType)) {
+  if (!hasRequiredSkills(employee, taskType, slot)) {
     reasons.push("Missing required skill");
+  }
+
+  if (
+    slot.eligibleEmployeeIds?.length &&
+    !slot.eligibleEmployeeIds.includes(employee.id)
+  ) {
+    reasons.push("Not eligible for background task");
   }
 
   if (!isAvailableForSlot(employee, slot)) {

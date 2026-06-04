@@ -22,9 +22,11 @@ export const backgroundTaskCategoryFormSchema = z.object({
 export const backgroundTaskDefinitionFormSchema = z
   .object({
     categoryId: z.string().min(1, "Category is required"),
+    taskTypeId: z.string().min(1, "Background task type is required"),
     name: z.string().trim().min(1, "Task name is required"),
     description: optionalTrimmedString,
     estimatedHoursPerPeriod: z.coerce.number().min(0).max(500),
+    requiredCountPerPeriod: z.coerce.number().int().min(0).max(500).nullable(),
     periodType: z.nativeEnum(BackgroundTaskPeriodType),
     customPeriodDays: z.coerce.number().int().min(1).max(366).nullable(),
     priority: z.coerce.number().int().min(0).max(10000),
@@ -69,12 +71,15 @@ export function backgroundTaskCategoryValuesFromFormData(formData: FormData) {
 
 export function backgroundTaskDefinitionValuesFromFormData(formData: FormData) {
   const customPeriodDaysValue = formData.get("customPeriodDays");
+  const requiredCountValue = formData.get("requiredCountPerPeriod");
 
   return backgroundTaskDefinitionFormSchema.parse({
     categoryId: formData.get("categoryId"),
+    taskTypeId: formData.get("taskTypeId"),
     name: formData.get("name"),
     description: formData.get("description"),
     estimatedHoursPerPeriod: formData.get("estimatedHoursPerPeriod"),
+    requiredCountPerPeriod: requiredCountValue ? requiredCountValue : null,
     periodType: formData.get("periodType"),
     customPeriodDays: customPeriodDaysValue ? customPeriodDaysValue : null,
     priority: formData.get("priority"),

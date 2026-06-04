@@ -57,6 +57,8 @@ export type SchedulerTaskSlot = {
   lockedEmployeeId?: string | null;
   lockedEmployeeIds?: string[];
   patternPreferredEmployeeIds?: string[];
+  requiredSkillIds?: string[];
+  eligibleEmployeeIds?: string[];
 };
 
 export type AvailabilityWindow = {

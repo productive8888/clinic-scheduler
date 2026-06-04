@@ -10,6 +10,11 @@
   and per-weekday recurring availability.
 - Daily schedule board with default task-slot creation, deterministic generation,
   and locked manual overrides.
+- Whole-day schedule review with every shift block visible, plus a manager week
+  view with Monday-Saturday status, shortage, PTO, and NPTO summaries.
+- Day/week/month/custom-range generation with published-date protection,
+  deterministic per-date seeds, background-slot preparation, aggregate result
+  summaries, and bulk audit logs.
 - Manager draft/review/publish workflow with previous/next day navigation and
   visible shortage indicators.
 - PTO/unavailability request submission, manager approval/rejection, and
@@ -55,6 +60,14 @@
   closure/cut recommendations without hardcoded final order.
 - Background task category/definition foundation with estimated hours, period
   type, priority, ownership, eligibility, pullability, and admin UI.
+- Period-aware background task slot generation with required-count/hour support,
+  task-type links, due windows, required-skill/employee eligibility enforcement,
+  protected assignment preservation, and clear `(Background)` labels.
+- IT, Research, and PA / Prior Authorization skills and task requirements,
+  including a clear distinction between Prior Authorization and Physician
+  Assistant / MD.
+- Manual reassignment warning previews and audited override reasons, plus a
+  multi-shift AM/PM assignment helper.
 - Easton spreadsheet import/review foundation for private workbook parsing,
   parsed shift/demand/target/sample-pattern review, and applying editable
   database defaults.
@@ -99,7 +112,7 @@
    history after clinic payroll policies are finalized.
 5. Add richer conflict resolution for desired/conditional staffing shortages.
 6. Continue validating Easton shortage/closure defaults with clinic leadership.
-7. Finalize full background task priority/protection/pullability policy and build the
-   period optimizer/rollover workflow.
+7. Finalize full background task priority/protection/pullability policy and build
+   the remaining rollover optimizer workflow.
 8. Finalize endoscopy overtime/payout policy and add report snapshots.
 9. Implement Google Calendar, Google Sheets, and printable exports.

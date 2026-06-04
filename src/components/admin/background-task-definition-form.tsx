@@ -17,6 +17,7 @@ type BackgroundTaskDefinitionFormProps = {
   categories: Pick<BackgroundTaskCategory, "id" | "name" | "active">[];
   employees: { id: string; fullName: string }[];
   skills: { id: string; name: string; code: string }[];
+  taskTypes: { id: string; name: string; code: string }[];
 };
 
 export function BackgroundTaskDefinitionForm({
@@ -24,6 +25,7 @@ export function BackgroundTaskDefinitionForm({
   categories,
   employees,
   skills,
+  taskTypes,
 }: BackgroundTaskDefinitionFormProps) {
   const action = definition
     ? updateBackgroundTaskDefinitionAction.bind(null, definition.id)
@@ -34,7 +36,7 @@ export function BackgroundTaskDefinitionForm({
 
   return (
     <form action={action} className="grid gap-4">
-      <div className="grid gap-4 lg:grid-cols-4">
+      <div className="grid gap-4 lg:grid-cols-5">
         <label className="grid gap-1 text-sm font-medium text-slate-700">
           Category
           <select
@@ -48,6 +50,22 @@ export function BackgroundTaskDefinitionForm({
               <option key={category.id} value={category.id}>
                 {category.name}
                 {category.active ? "" : " (inactive)"}
+              </option>
+            ))}
+          </select>
+        </label>
+        <label className="grid gap-1 text-sm font-medium text-slate-700">
+          Generated task type
+          <select
+            name="taskTypeId"
+            required
+            defaultValue={definition?.taskTypeId ?? ""}
+            className="h-10 rounded-md border border-slate-300 bg-white px-3 text-slate-950 outline-none focus:border-emerald-700"
+          >
+            <option value="">Select task type</option>
+            {taskTypes.map((taskType) => (
+              <option key={taskType.id} value={taskType.id}>
+                {taskType.name}
               </option>
             ))}
           </select>
@@ -77,7 +95,7 @@ export function BackgroundTaskDefinitionForm({
         </label>
       </div>
 
-      <div className="grid gap-4 lg:grid-cols-5">
+      <div className="grid gap-4 lg:grid-cols-6">
         <label className="grid gap-1 text-sm font-medium text-slate-700">
           Est. hours
           <input
@@ -89,6 +107,18 @@ export function BackgroundTaskDefinitionForm({
             defaultValue={
               definition ? Number(definition.estimatedHoursPerPeriod) : 2
             }
+            className="h-10 rounded-md border border-slate-300 bg-white px-3 text-slate-950 outline-none focus:border-emerald-700"
+          />
+        </label>
+        <label className="grid gap-1 text-sm font-medium text-slate-700">
+          Required count
+          <input
+            name="requiredCountPerPeriod"
+            type="number"
+            min="0"
+            max="500"
+            defaultValue={definition?.requiredCountPerPeriod ?? ""}
+            placeholder="Use hours"
             className="h-10 rounded-md border border-slate-300 bg-white px-3 text-slate-950 outline-none focus:border-emerald-700"
           />
         </label>

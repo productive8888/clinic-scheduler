@@ -18,6 +18,32 @@ export function generateSchedule(input: GenerateScheduleInput) {
     ...(input.existingAssignments ?? []),
   ];
 
+  for (const slot of input.slots) {
+    const taskType = taskTypesById.get(slot.taskTypeId);
+    const lockedEmployeeIds = [
+      ...(slot.lockedEmployeeIds ?? []),
+      ...(slot.lockedEmployeeId ? [slot.lockedEmployeeId] : []),
+    ];
+
+    if (!taskType) {
+      continue;
+    }
+
+    for (const lockedEmployeeId of lockedEmployeeIds) {
+      const lockedAssignment: ScheduleAssignment = {
+        slotId: slot.id,
+        employeeId: lockedEmployeeId,
+        taskTypeId: taskType.id,
+        date: slot.date,
+        source: "LOCKED",
+        score: Number.POSITIVE_INFINITY,
+      };
+
+      assignments.push(lockedAssignment);
+      occupiedAssignments.push(toExistingAssignment(lockedAssignment, slot, taskType));
+    }
+  }
+
   for (const slot of sortSlots(input.slots, taskTypesById)) {
     const taskType = taskTypesById.get(slot.taskTypeId);
 
@@ -36,20 +62,6 @@ export function generateSchedule(input: GenerateScheduleInput) {
       ...(slot.lockedEmployeeIds ?? []),
       ...(slot.lockedEmployeeId ? [slot.lockedEmployeeId] : []),
     ];
-
-    for (const lockedEmployeeId of lockedEmployeeIds) {
-      const lockedAssignment: ScheduleAssignment = {
-        slotId: slot.id,
-        employeeId: lockedEmployeeId,
-        taskTypeId: taskType.id,
-        date: slot.date,
-        source: "LOCKED",
-        score: Number.POSITIVE_INFINITY,
-      };
-
-      assignments.push(lockedAssignment);
-      occupiedAssignments.push(toExistingAssignment(lockedAssignment, slot, taskType));
-    }
 
     const requiredStaff = Math.max(1, slot.requiredStaff ?? 1);
     const remainingStaffNeeded = Math.max(0, requiredStaff - lockedEmployeeIds.length);

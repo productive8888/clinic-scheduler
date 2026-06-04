@@ -1,4 +1,5 @@
-import { Workflow } from "lucide-react";
+import { CalendarRange, Workflow } from "lucide-react";
+import { generateBackgroundTaskSlotsAction } from "@/app/(app)/admin/background-tasks/actions";
 import { BackgroundPullRuleList } from "@/components/admin/background-pull-rule-list";
 import { BackgroundTaskCategoryForm } from "@/components/admin/background-task-category-form";
 import { BackgroundTaskDefinitionForm } from "@/components/admin/background-task-definition-form";
@@ -8,7 +9,12 @@ import { getBackgroundTasksPageData } from "@/lib/db/background-tasks";
 
 export const dynamic = "force-dynamic";
 
-export default async function BackgroundTasksPage() {
+export default async function BackgroundTasksPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ generated?: string; instances?: string }>;
+}) {
+  const params = await searchParams;
   let data: Awaited<ReturnType<typeof getBackgroundTasksPageData>>;
 
   try {
@@ -23,7 +29,7 @@ export default async function BackgroundTasksPage() {
     );
   }
 
-  const [categories, employees, skills, pullRules] = data;
+  const [categories, employees, skills, taskTypes, pullRules] = data;
   const activeDefinitionCount = categories.reduce(
     (count, category) =>
       count + category.definitions.filter((definition) => definition.active).length,
@@ -59,6 +65,70 @@ export default async function BackgroundTasksPage() {
         </div>
       </section>
 
+      <section className="rounded-md border border-slate-200 bg-white p-5 shadow-sm">
+        <div className="flex items-center gap-2">
+          <CalendarRange size={18} className="text-emerald-700" aria-hidden="true" />
+          <h2 className="text-lg font-semibold text-slate-950">
+            Generate background task slots
+          </h2>
+        </div>
+        <p className="mt-1 text-sm text-slate-500">
+          Creates optional, period-linked slots from active definitions. Required
+          clinic coverage remains higher priority during schedule generation.
+        </p>
+        {params.generated ? (
+          <p className="mt-3 rounded-md border border-emerald-200 bg-emerald-50 p-3 text-sm font-semibold text-emerald-900">
+            Created {params.generated} slots across {params.instances ?? "0"} period
+            instances.
+          </p>
+        ) : null}
+        <form
+          action={generateBackgroundTaskSlotsAction}
+          className="mt-4 grid gap-3 sm:grid-cols-4"
+        >
+          <label className="grid gap-1 text-sm font-medium text-slate-700">
+            Anchor date
+            <input
+              type="date"
+              name="date"
+              required
+              defaultValue={new Date().toISOString().slice(0, 10)}
+              className="h-10 rounded-md border border-slate-300 bg-white px-3"
+            />
+          </label>
+          <label className="grid gap-1 text-sm font-medium text-slate-700">
+            Range
+            <select
+              name="mode"
+              defaultValue="WEEK"
+              className="h-10 rounded-md border border-slate-300 bg-white px-3"
+            >
+              <option value="WEEK">This week</option>
+              <option value="CUSTOM">Custom range</option>
+            </select>
+          </label>
+          <label className="grid gap-1 text-sm font-medium text-slate-700">
+            Custom start
+            <input
+              type="date"
+              name="startDate"
+              className="h-10 rounded-md border border-slate-300 bg-white px-3"
+            />
+          </label>
+          <label className="grid gap-1 text-sm font-medium text-slate-700">
+            Custom end
+            <input
+              type="date"
+              name="endDate"
+              className="h-10 rounded-md border border-slate-300 bg-white px-3"
+            />
+          </label>
+          <button className="h-10 w-fit rounded-md bg-emerald-700 px-4 text-sm font-semibold text-white hover:bg-emerald-800 sm:col-span-4">
+            Generate background slots
+          </button>
+        </form>
+      </section>
+
       {categories.length ? (
         <section className="rounded-md border border-slate-200 bg-white p-5 shadow-sm">
           <h2 className="text-lg font-semibold text-slate-950">
@@ -69,6 +139,7 @@ export default async function BackgroundTasksPage() {
               categories={categories}
               employees={employees}
               skills={skills}
+              taskTypes={taskTypes}
             />
           </div>
         </section>
@@ -82,6 +153,7 @@ export default async function BackgroundTasksPage() {
           categories={categories}
           employees={employees}
           skills={skills}
+          taskTypes={taskTypes}
         />
       </section>
     </div>

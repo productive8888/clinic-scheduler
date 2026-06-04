@@ -1,7 +1,8 @@
-import type { Employee, Prisma, TaskType } from "@prisma/client";
+import type { Prisma, TaskType } from "@prisma/client";
 import {
   AlertTriangle,
   CalendarPlus,
+  CalendarRange,
   CalendarX2,
   CheckCircle2,
   ChevronLeft,
@@ -11,19 +12,30 @@ import {
   RefreshCw,
   SlidersHorizontal,
   UserCheck,
+  Copy,
 } from "lucide-react";
 import Link from "next/link";
 import {
   createScheduleDayAction,
   addTaskSlotAction,
+  copyScheduleDayAssignmentsAction,
   generateScheduleAction,
-  manualAssignAction,
   publishScheduleAction,
   setScheduleScenarioAction,
   unpublishScheduleAction,
 } from "@/app/(app)/schedule/actions";
 import { ShortNoticeBadge } from "@/components/ui/short-notice-badge";
-import { addDaysIsoDate, formatDisplayDate } from "@/lib/utils/date";
+import { BulkGenerationForm } from "@/components/schedule/bulk-generation-form";
+import { ManualAssignmentForm } from "@/components/schedule/manual-assignment-form";
+import { MultiShiftAssignmentForm } from "@/components/schedule/multi-shift-assignment-form";
+import { backgroundTaskDisplayName } from "@/lib/background/display";
+import type { ManualAssignmentWarningMatrix } from "@/lib/db/manual-assignment";
+import { buildWholeDayShiftGroups } from "@/lib/schedule/views";
+import {
+  addDaysIsoDate,
+  formatDisplayDate,
+  todayIsoDate,
+} from "@/lib/utils/date";
 import { formatMinuteOfDay } from "@/lib/utils/time";
 
 type ScheduleDayWithSlots = Prisma.ScheduleDayGetPayload<{
@@ -43,21 +55,21 @@ type ScheduleDayWithSlots = Prisma.ScheduleDayGetPayload<{
 type ScheduleBoardProps = {
   date: string;
   scheduleDay: ScheduleDayWithSlots | null;
-  employees: Employee[];
+  employees: { id: string; fullName: string }[];
   taskTypes: Array<
     TaskType & {
       skillRequirements: { skill: { name: string } }[];
     }
   >;
+  manualWarnings: ManualAssignmentWarningMatrix;
 };
-
-type ScheduleSlot = ScheduleDayWithSlots["taskSlots"][number];
 
 export function ScheduleBoard({
   date,
   scheduleDay,
   employees,
   taskTypes,
+  manualWarnings,
 }: ScheduleBoardProps) {
   const currentScenario = scheduleDay?.scenario ?? "ROUTINE";
   const unfilledCount =
@@ -94,31 +106,20 @@ export function ScheduleBoard({
           ? taskType.defaultForRoutine
           : false),
   ).length;
-  const taskSlotsByShiftBlockId = new Map<string, ScheduleSlot[]>();
-
-  if (scheduleDay) {
-    for (const slot of scheduleDay.taskSlots) {
-      const shiftSlots = taskSlotsByShiftBlockId.get(slot.shiftBlockId) ?? [];
-      shiftSlots.push(slot);
-      taskSlotsByShiftBlockId.set(slot.shiftBlockId, shiftSlots);
-    }
-  }
-
-  const shiftGroups =
-    scheduleDay?.shiftBlocks
-      .map((shiftBlock) => ({
-        shiftBlock,
-        slots: taskSlotsByShiftBlockId.get(shiftBlock.id) ?? [],
-      }))
-      .filter((group) => group.slots.length > 0) ?? [];
+  const shiftGroups = scheduleDay
+    ? buildWholeDayShiftGroups({
+        shiftBlocks: scheduleDay.shiftBlocks,
+        taskSlots: scheduleDay.taskSlots,
+      }).filter((group) => group.slots.length > 0)
+    : [];
 
   return (
     <div className="grid gap-6">
       <section className="rounded-md border border-slate-200 bg-white p-4 shadow-sm">
-        <div className="grid gap-4 lg:grid-cols-[1fr_auto] lg:items-end">
+        <div className="grid gap-4">
           <div>
             <p className="text-sm font-medium uppercase tracking-normal text-emerald-800">
-              Daily staffing board
+              Whole-day staffing board
             </p>
             <div className="mt-1 flex flex-wrap items-center gap-3">
               <Link
@@ -127,6 +128,19 @@ export function ScheduleBoard({
                 aria-label="Previous day"
               >
                 <ChevronLeft size={18} aria-hidden="true" />
+              </Link>
+              <Link
+                href={`/schedule?date=${todayIsoDate()}`}
+                className="inline-flex h-10 items-center justify-center rounded-md border border-slate-200 px-3 text-sm font-semibold text-slate-700 hover:bg-slate-100"
+              >
+                Today
+              </Link>
+              <Link
+                href={`/schedule/week?date=${date}`}
+                className="inline-flex h-10 items-center justify-center gap-2 rounded-md border border-slate-200 px-3 text-sm font-semibold text-slate-700 hover:bg-slate-100"
+              >
+                <CalendarRange size={16} aria-hidden="true" />
+                Week
               </Link>
               <h1 className="text-3xl font-semibold text-slate-950">
                 {formatDisplayDate(date)}
@@ -151,7 +165,7 @@ export function ScheduleBoard({
               </p>
             ) : null}
           </div>
-          <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-5">
+          <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5">
             <form action={setScheduleScenarioAction} className="flex gap-2">
               <input type="hidden" name="date" value={date} />
               <select
@@ -286,6 +300,9 @@ export function ScheduleBoard({
             an ICS file containing published assignments only.
           </div>
         </div>
+        <div className="mt-4">
+          <BulkGenerationForm date={date} />
+        </div>
       </section>
 
       {shortageCount > 0 ? (
@@ -317,6 +334,55 @@ export function ScheduleBoard({
         </section>
       ) : (
         <section className="grid gap-5">
+          {scheduleDay.taskSlots.length > 0 ? (
+            <details className="rounded-md border border-slate-200 bg-white shadow-sm">
+              <summary className="cursor-pointer px-4 py-3 text-sm font-semibold text-slate-800">
+                Assignment helpers
+              </summary>
+              <div className="grid gap-4 border-t border-slate-200 p-4">
+                <MultiShiftAssignmentForm
+                  employees={employees}
+                  warningMatrix={manualWarnings}
+                  slots={scheduleDay.taskSlots.map((slot) => ({
+                    id: slot.id,
+                    label: `${slot.shiftBlock.name}: ${backgroundTaskDisplayName({
+                      name: slot.label ?? slot.taskType.name,
+                      isBackground: slot.taskType.isBackground,
+                    })}`,
+                    startMinute: slot.startMinute ?? slot.shiftBlock.startMinute,
+                    endMinute: slot.endMinute ?? slot.shiftBlock.endMinute,
+                  }))}
+                />
+                <form
+                  action={copyScheduleDayAssignmentsAction}
+                  className="grid gap-3 rounded-md border border-slate-200 bg-white p-4 sm:grid-cols-[1fr_1fr_auto]"
+                >
+                  <input type="hidden" name="date" value={date} />
+                  <label className="grid gap-1 text-sm font-medium text-slate-700">
+                    Copy this day to
+                    <input
+                      type="date"
+                      name="targetDate"
+                      required
+                      defaultValue={addDaysIsoDate(date, 7)}
+                      className="h-10 rounded-md border border-slate-300 bg-white px-3"
+                    />
+                  </label>
+                  <label className="grid gap-1 text-sm font-medium text-slate-700">
+                    Override reason if warnings occur
+                    <input
+                      name="overrideReason"
+                      className="h-10 rounded-md border border-slate-300 bg-white px-3"
+                    />
+                  </label>
+                  <button className="inline-flex h-10 items-center gap-2 self-end rounded-md border border-slate-300 px-4 text-sm font-semibold text-slate-700 hover:bg-slate-100">
+                    <Copy size={16} aria-hidden="true" />
+                    Copy day pattern
+                  </button>
+                </form>
+              </div>
+            </details>
+          ) : null}
           {scheduleDay.taskSlots.length === 0 ? (
             <div className="rounded-md border border-dashed border-slate-300 bg-white p-8 text-center lg:col-span-3">
               {currentScenario === "CLINIC_CLOSED" ? (
@@ -370,6 +436,7 @@ export function ScheduleBoard({
                     key={slot.id}
                     slot={slot}
                     employees={employees}
+                    warningsByEmployee={manualWarnings[slot.id]}
                   />
                 ))}
               </div>
@@ -384,9 +451,11 @@ export function ScheduleBoard({
 function ScheduleSlotCard({
   slot,
   employees,
+  warningsByEmployee,
 }: {
   slot: ScheduleDayWithSlots["taskSlots"][number];
-  employees: Employee[];
+  employees: { id: string; fullName: string }[];
+  warningsByEmployee: ManualAssignmentWarningMatrix[string] | undefined;
 }) {
   const currentAssignment = slot.assignments[0];
   const requiredSkills = slot.taskType.skillRequirements.map(
@@ -405,7 +474,10 @@ function ScheduleSlotCard({
         <div>
           <div className="flex flex-wrap items-center gap-2">
             <h3 className="text-lg font-semibold text-slate-950">
-              {slot.label ?? slot.taskType.name}
+              {backgroundTaskDisplayName({
+                name: slot.label ?? slot.taskType.name,
+                isBackground: slot.taskType.isBackground,
+              })}
             </h3>
             {slot.shortNotice ? <ShortNoticeBadge /> : null}
             <span className={requirementLevelClassName(slot.requirementLevel)}>
@@ -490,23 +562,12 @@ function ScheduleSlotCard({
         )}
       </div>
 
-      <form action={manualAssignAction.bind(null, slot.id)} className="mt-4 flex gap-2">
-        <select
-          name="employeeId"
-          defaultValue={currentAssignment?.employeeId ?? ""}
-          className="h-10 min-w-0 flex-1 rounded-md border border-slate-300 bg-white px-3 text-sm outline-none focus:border-emerald-700"
-        >
-          <option value="">Unassigned</option>
-          {employees.map((employee) => (
-            <option key={employee.id} value={employee.id}>
-              {employee.fullName}
-            </option>
-          ))}
-        </select>
-        <button className="h-10 rounded-md border border-slate-300 px-3 text-sm font-semibold text-slate-700 hover:bg-slate-100">
-          Save
-        </button>
-      </form>
+      <ManualAssignmentForm
+        slotId={slot.id}
+        currentEmployeeId={currentAssignment?.employeeId}
+        employees={employees}
+        warningsByEmployee={warningsByEmployee}
+      />
     </article>
   );
 }

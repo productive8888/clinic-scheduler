@@ -1,0 +1,269 @@
+import {
+  AlertTriangle,
+  CalendarDays,
+  CheckCircle2,
+  ChevronLeft,
+  ChevronRight,
+  Download,
+  RefreshCw,
+} from "lucide-react";
+import Link from "next/link";
+import {
+  bulkGenerateScheduleAction,
+  publishScheduleRangeAction,
+} from "@/app/(app)/schedule/actions";
+import { backgroundTaskDisplayName } from "@/lib/background/display";
+import type { getScheduleWeekData } from "@/lib/db/schedule-workflows";
+import {
+  addDaysIsoDate,
+  enumerateIsoDates,
+  formatDisplayDate,
+  todayIsoDate,
+} from "@/lib/utils/date";
+import { formatMinuteOfDay } from "@/lib/utils/time";
+
+type WeekData = Awaited<ReturnType<typeof getScheduleWeekData>>;
+
+export function ScheduleWeekBoard({
+  data,
+  resultSummary,
+}: {
+  data: WeekData;
+  resultSummary: Record<string, string | null>;
+}) {
+  const previousWeek = addDaysIsoDate(data.range.startDate, -7);
+  const nextWeek = addDaysIsoDate(data.range.startDate, 7);
+  const daysByDate = new Map(data.days.map((day) => [day.date, day]));
+  const weekDates = enumerateIsoDates(data.range.startDate, data.range.endDate);
+  const hasSummary = Object.values(resultSummary).some(Boolean);
+
+  return (
+    <div className="grid gap-6">
+      <section className="rounded-md border border-slate-200 bg-white p-5 shadow-sm">
+        <p className="text-sm font-medium uppercase tracking-normal text-emerald-800">
+          Week review
+        </p>
+        <div className="mt-1 flex flex-wrap items-center gap-3">
+          <Link
+            href={`/schedule/week?date=${previousWeek}`}
+            className="inline-flex size-10 items-center justify-center rounded-md border border-slate-200 text-slate-700 hover:bg-slate-100"
+            aria-label="Previous week"
+          >
+            <ChevronLeft size={18} aria-hidden="true" />
+          </Link>
+          <h1 className="text-3xl font-semibold text-slate-950">
+            {formatDisplayDate(data.range.startDate)} to{" "}
+            {formatDisplayDate(data.range.endDate)}
+          </h1>
+          <Link
+            href={`/schedule/week?date=${nextWeek}`}
+            className="inline-flex size-10 items-center justify-center rounded-md border border-slate-200 text-slate-700 hover:bg-slate-100"
+            aria-label="Next week"
+          >
+            <ChevronRight size={18} aria-hidden="true" />
+          </Link>
+        </div>
+        <div className="mt-4 flex flex-wrap gap-2">
+          <Link
+            href={`/schedule/week?date=${todayIsoDate()}`}
+            className="inline-flex h-10 items-center gap-2 rounded-md border border-slate-300 px-3 text-sm font-semibold text-slate-700 hover:bg-slate-100"
+          >
+            <CalendarDays size={16} aria-hidden="true" />
+            Current week
+          </Link>
+          <form action="/schedule/week" className="flex gap-2">
+            <input
+              type="date"
+              name="date"
+              defaultValue={data.range.startDate}
+              className="h-10 rounded-md border border-slate-300 bg-white px-3 text-sm"
+            />
+            <button className="h-10 rounded-md border border-slate-300 px-3 text-sm font-semibold text-slate-700 hover:bg-slate-100">
+              Go
+            </button>
+          </form>
+          <form action={bulkGenerateScheduleAction}>
+            <input type="hidden" name="date" value={data.range.startDate} />
+            <input type="hidden" name="mode" value="WEEK" />
+            <input type="hidden" name="seedPrefix" value="clinic-week" />
+            <button className="inline-flex h-10 items-center gap-2 rounded-md bg-emerald-700 px-4 text-sm font-semibold text-white hover:bg-emerald-800">
+              <RefreshCw size={16} aria-hidden="true" />
+              Generate this week
+            </button>
+          </form>
+          <form action={publishScheduleRangeAction}>
+            <input type="hidden" name="date" value={data.range.startDate} />
+            <input type="hidden" name="mode" value="WEEK" />
+            <button className="inline-flex h-10 items-center gap-2 rounded-md bg-slate-950 px-4 text-sm font-semibold text-white hover:bg-slate-800">
+              <CheckCircle2 size={16} aria-hidden="true" />
+              Publish this week
+            </button>
+          </form>
+          <Link
+            href="/api/exports/calendar/clinic"
+            className="inline-flex h-10 items-center gap-2 rounded-md border border-emerald-200 px-4 text-sm font-semibold text-emerald-800 hover:bg-emerald-50"
+          >
+            <Download size={16} aria-hidden="true" />
+            Export published calendar
+          </Link>
+        </div>
+      </section>
+
+      {hasSummary ? (
+        <section className="grid gap-2 rounded-md border border-emerald-200 bg-emerald-50 p-4 text-sm text-emerald-950 sm:grid-cols-3 lg:grid-cols-6">
+          {Object.entries(resultSummary)
+            .filter(([, value]) => value)
+            .map(([label, value]) => (
+              <div key={label}>
+                <div className="text-xs font-semibold uppercase text-emerald-700">
+                  {formatLabel(label)}
+                </div>
+                <div className="mt-1 text-lg font-semibold">{value}</div>
+              </div>
+            ))}
+        </section>
+      ) : null}
+
+      {data.weeklyHourWarnings.length > 0 ? (
+        <section className="rounded-md border border-amber-200 bg-amber-50 p-4">
+          <h2 className="font-semibold text-amber-950">
+            Weekly hours and work-pattern warnings
+          </h2>
+          <div className="mt-2 flex flex-wrap gap-2">
+            {data.weeklyHourWarnings.map((warning) => (
+              <span
+                key={warning.employeeId}
+                className="rounded-md bg-white px-2 py-1 text-xs font-semibold text-amber-900"
+              >
+                {warning.fullName}: {warning.scheduledHours}/{warning.targetHours} hours
+              </span>
+            ))}
+          </div>
+        </section>
+      ) : null}
+
+      <section className="grid gap-4">
+        {weekDates.map((date) => {
+          const day = daysByDate.get(date);
+
+          return <WeekDayCard key={date} date={date} day={day} />;
+        })}
+      </section>
+    </div>
+  );
+}
+
+function WeekDayCard({
+  date,
+  day,
+}: {
+  date: string;
+  day: WeekData["days"][number] | undefined;
+}) {
+  if (!day) {
+    return (
+      <article className="rounded-md border border-dashed border-slate-300 bg-white p-4">
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <h2 className="font-semibold text-slate-950">{formatDisplayDate(date)}</h2>
+          <Link
+            href={`/schedule?date=${date}`}
+            className="text-sm font-semibold text-emerald-800 hover:underline"
+          >
+            Open whole day
+          </Link>
+        </div>
+        <p className="mt-2 text-sm text-slate-500">Not prepared yet.</p>
+      </article>
+    );
+  }
+
+  return (
+    <details className="rounded-md border border-slate-200 bg-white shadow-sm">
+      <summary className="grid cursor-pointer gap-3 p-4 md:grid-cols-[1fr_auto] md:items-center">
+        <div>
+          <div className="flex flex-wrap items-center gap-2">
+            <h2 className="font-semibold text-slate-950">{formatDisplayDate(date)}</h2>
+            <StatusBadge status={day.status} />
+            {day.shortageCount > 0 || day.unfilledRequiredCount > 0 ? (
+              <span className="inline-flex items-center gap-1 rounded-md bg-amber-50 px-2 py-1 text-xs font-semibold text-amber-800">
+                <AlertTriangle size={13} aria-hidden="true" />
+                {day.shortageCount} shortages
+              </span>
+            ) : null}
+          </div>
+          <p className="mt-1 text-sm text-slate-500">
+            {day.scenario.replaceAll("_", " ")} / {day.shiftBlocks.length} shift
+            blocks / {day.taskSlots.length} task slots / PTO {day.ptoCount} / NPTO{" "}
+            {day.nptoCount}
+          </p>
+        </div>
+        <Link
+          href={`/schedule?date=${date}`}
+          className="text-sm font-semibold text-emerald-800 hover:underline"
+        >
+          Open whole day
+        </Link>
+      </summary>
+      <div className="grid gap-4 border-t border-slate-200 p-4">
+        {day.shiftBlocks.map((shiftBlock) => {
+          const slots = day.taskSlots.filter(
+            (slot) => slot.shiftBlockId === shiftBlock.id,
+          );
+
+          if (slots.length === 0) {
+            return null;
+          }
+
+          return (
+            <div key={shiftBlock.id}>
+              <h3 className="font-semibold text-slate-900">
+                {shiftBlock.name} / {formatMinuteOfDay(shiftBlock.startMinute)}-
+                {formatMinuteOfDay(shiftBlock.endMinute)}
+              </h3>
+              <div className="mt-2 grid gap-2 md:grid-cols-2 xl:grid-cols-3">
+                {slots.map((slot) => (
+                  <div
+                    key={slot.id}
+                    className="rounded-md border border-slate-200 bg-slate-50 p-3 text-sm"
+                  >
+                    <div className="font-semibold text-slate-900">
+                      {backgroundTaskDisplayName({
+                        name: slot.label ?? slot.taskType.name,
+                        isBackground: slot.taskType.isBackground,
+                      })}
+                    </div>
+                    <div className="mt-1 text-slate-500">
+                      {slot.assignments.length
+                        ? slot.assignments
+                            .map((assignment) => assignment.employee.fullName)
+                            .join(", ")
+                        : "Unfilled"}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          );
+        })}
+      </div>
+    </details>
+  );
+}
+
+function StatusBadge({ status }: { status: string }) {
+  return (
+    <span
+      className={
+        status === "PUBLISHED"
+          ? "rounded-md bg-emerald-50 px-2 py-1 text-xs font-semibold text-emerald-800"
+          : "rounded-md bg-slate-100 px-2 py-1 text-xs font-semibold text-slate-700"
+      }
+    >
+      {status}
+    </span>
+  );
+}
+
+function formatLabel(value: string) {
+  return value.replace(/([A-Z])/g, " $1").trim();
+}

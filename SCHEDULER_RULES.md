@@ -8,6 +8,9 @@ not contain scheduling decisions.
 
 - Deterministic generation uses a caller-provided seed and stable tie-breakers.
 - Required skills are enforced before scoring.
+- IT, Research, and PA / Prior Authorization task requirements are enforced like
+  every other task skill. PA / Prior Authorization is distinct from Physician
+  Assistant / MD.
 - Weekly availability is enforced by each employee's configured normal working
   weekdays and minute ranges. The scheduler has no Monday-Friday assumption.
 - Approved and overridden PTO/unavailability blocks assignments.
@@ -38,6 +41,8 @@ not contain scheduling decisions.
   Within the same requirement level, skilled and difficult slots are filled
   before easier general slots.
 - Manual locked assignments are preserved during regeneration.
+- Protected background assignments are preloaded with locked/manual assignments
+  before clinic slot selection, so generation cannot silently pull them.
 - Locked assignments that conflict with approved PTO are preserved but surfaced
   as shortage/conflict slots until a manager resolves them.
 - Generated task slots are attached to concrete shift blocks. Employees are
@@ -90,6 +95,17 @@ not contain scheduling decisions.
   Pullability, protected-from-pull state, estimated hours, eligibility, and
   period type are stored. Employee-specific pull-priority rules are configurable
   and respect max-pull caps.
+- Active background definitions can generate optional, period-linked task slots
+  for weekly, biweekly, monthly, or custom windows. Required count takes
+  precedence over hours-based slot sizing. Definition-level required skills and
+  eligible employees are hard constraints.
+- Bulk generation processes dates in stable ascending order, prepares shift and
+  background slots, preserves locked/manual overrides, and skips published dates
+  unless a manager explicitly confirms overwrite. Earlier generated days become
+  deterministic fairness history for later days in the range.
+- Manual assignment validation previews skill, PTO/NPTO, availability, overlap,
+  weekly assignment limit, expected-hours, and required-slot warnings. A manager
+  can proceed with a recorded override reason.
 - Manual task-slot additions, scenario changes, and manual assignment overrides
   made within 7 days of the affected shift are marked short notice in audit and
   schedule views.
@@ -132,14 +148,16 @@ not contain scheduling decisions.
 - Procedure
 - Physician Assistant / MD
 
-Optional manual-only task types:
+Optional/background task types:
 
 - Research
 - Background
 - Booking
 - Float
 - Extra
+- PA / Prior Authorization
 
 Seed data creates interchangeable groups for Allergy and GI virtual/in-person
-pairs, required skills for Civil Surgeon, Allergy Shots, and Procedure, and a
+pairs, required skills for Civil Surgeon, Allergy Shots, Procedure, IT,
+Research, and Prior Authorization, and a
 mix of Monday-Friday and Tuesday-Saturday employee schedules.

@@ -8,7 +8,12 @@ import {
   TaskSlotStatus,
 } from "@prisma/client";
 import { writeAuditLog } from "@/lib/audit";
+import { selectBackgroundPullCandidates } from "@/lib/background/pull-priority";
 import { getDb } from "@/lib/db";
+import {
+  getManualAssignmentWarningMatrix,
+  getManualAssignmentWarnings,
+} from "@/lib/db/manual-assignment";
 import {
   generateSchedule,
   isUnavailableForSlot,
@@ -51,6 +56,16 @@ export async function getScheduleBoard(date: string) {
               },
             },
           },
+          backgroundTaskInstance: {
+            include: {
+              definition: {
+                include: {
+                  requiredSkills: true,
+                  eligibleEmployees: true,
+                },
+              },
+            },
+          },
           assignments: {
             where: { status: "ACTIVE" },
             include: { employee: true },
@@ -68,21 +83,22 @@ export async function getScheduleBoard(date: string) {
 }
 
 export async function getSchedulePageData(date: string) {
-  const [scheduleDay, employees, taskTypes] = await Promise.all([
+  const [scheduleDay, employees, taskTypes, manualWarnings] = await Promise.all([
     getScheduleBoard(date),
     getDb().employee.findMany({
       where: { status: "ACTIVE" },
       orderBy: { fullName: "asc" },
-      include: { skills: { include: { skill: true } } },
+      select: { id: true, fullName: true },
     }),
     getDb().taskType.findMany({
       where: { active: true },
       orderBy: { sortOrder: "asc" },
       include: { skillRequirements: { include: { skill: true } } },
     }),
+    getManualAssignmentWarningMatrix(date),
   ]);
 
-  return { scheduleDay, employees, taskTypes };
+  return { scheduleDay, employees, taskTypes, manualWarnings };
 }
 
 export async function ensureScheduleDayWithDefaultSlots(
@@ -277,9 +293,17 @@ export async function manuallyAssignSlot(input: {
   slotId: string;
   employeeId: string | null;
   actorEmployeeId?: string | null;
+  overrideReason?: string | null;
 }) {
   const db = getDb();
   const changedAt = new Date();
+  const warnings = await getManualAssignmentWarnings(input);
+
+  if (warnings.length > 0 && !input.overrideReason?.trim()) {
+    throw new Error(
+      `Manual override reason required: ${warnings.map((warning) => warning.message).join(" ")}`,
+    );
+  }
 
   const result = await db.$transaction(async (tx) => {
     const slot = await tx.taskSlot.findUniqueOrThrow({
@@ -318,6 +342,7 @@ export async function manuallyAssignSlot(input: {
             shortNotice,
             assignedByEmployeeId: input.actorEmployeeId ?? undefined,
             assignedAt: changedAt,
+            notes: input.overrideReason?.trim() || undefined,
           },
         })
       : null;
@@ -328,6 +353,15 @@ export async function manuallyAssignSlot(input: {
         status: input.employeeId ? "FILLED" : "OPEN",
         shortNotice: slot.shortNotice || shortNotice,
         notes: null,
+      },
+    });
+
+    await tx.scheduleDay.update({
+      where: { id: slot.scheduleDayId },
+      data: {
+        status: "GENERATED",
+        publishedAt: null,
+        publishedByEmployeeId: null,
       },
     });
 
@@ -355,8 +389,149 @@ export async function manuallyAssignSlot(input: {
         shortNotice: result.assignment.shortNotice,
       }
       : null,
-    metadata: { shortNotice: result.shortNotice },
+    metadata: {
+      shortNotice: result.shortNotice,
+      overrideReason: input.overrideReason?.trim() || null,
+      warnings,
+    },
   });
+}
+
+export async function manuallyAssignSlots(input: {
+  slotIds: string[];
+  employeeId: string;
+  actorEmployeeId?: string | null;
+  overrideReason?: string | null;
+}) {
+  const slotIds = [...new Set(input.slotIds)].sort();
+  const warningsBySlot = new Map<string, Awaited<ReturnType<typeof getManualAssignmentWarnings>>>();
+
+  for (const slotId of slotIds) {
+    warningsBySlot.set(
+      slotId,
+      await getManualAssignmentWarnings({
+        slotId,
+        employeeId: input.employeeId,
+      }),
+    );
+  }
+
+  const warningCount = [...warningsBySlot.values()].reduce(
+    (count, warnings) => count + warnings.length,
+    0,
+  );
+
+  if (warningCount > 0 && !input.overrideReason?.trim()) {
+    throw new Error("Review the multi-shift warnings and provide an override reason.");
+  }
+
+  for (const slotId of slotIds) {
+    await manuallyAssignSlot({
+      slotId,
+      employeeId: input.employeeId,
+      actorEmployeeId: input.actorEmployeeId,
+      overrideReason: input.overrideReason,
+    });
+  }
+
+  await writeAuditLog({
+    actorEmployeeId: input.actorEmployeeId,
+    action: "assignment.multi_shift_override",
+    entityType: "TaskSlot",
+    entityId: slotIds.join(","),
+    after: {
+      employeeId: input.employeeId,
+      slotIds,
+      warningCount,
+      overrideReason: input.overrideReason?.trim() || null,
+    },
+  });
+
+  return { slotIds, warningCount };
+}
+
+export async function copyScheduleDayAssignments(input: {
+  sourceDate: string;
+  targetDate: string;
+  actorEmployeeId?: string | null;
+  overrideReason?: string | null;
+}) {
+  await ensureScheduleDayWithDefaultSlots(input.targetDate, input.actorEmployeeId);
+  const [source, target] = await Promise.all([
+    getScheduleBoard(input.sourceDate),
+    getScheduleBoard(input.targetDate),
+  ]);
+
+  if (!source || !target) {
+    throw new Error("Both source and target schedule days must exist.");
+  }
+
+  if (target.status === "PUBLISHED") {
+    throw new Error("Unpublish the target date before copying assignments.");
+  }
+
+  const mappings = source.taskSlots.flatMap((sourceSlot) => {
+    const assignment = sourceSlot.assignments[0];
+    if (!assignment) {
+      return [];
+    }
+
+    const targetSlot =
+      target.taskSlots.find(
+        (slot) =>
+          slot.taskTypeId === sourceSlot.taskTypeId &&
+          slot.slotIndex === sourceSlot.slotIndex &&
+          slot.shiftBlock.shiftTemplateId === sourceSlot.shiftBlock.shiftTemplateId,
+      ) ??
+      target.taskSlots.find(
+        (slot) =>
+          slot.taskTypeId === sourceSlot.taskTypeId &&
+          slot.slotIndex === sourceSlot.slotIndex &&
+          slot.shiftBlock.shiftCategory === sourceSlot.shiftBlock.shiftCategory,
+      );
+
+    return targetSlot
+      ? [{ slotId: targetSlot.id, employeeId: assignment.employeeId }]
+      : [];
+  });
+  const warnings = [];
+
+  for (const mapping of mappings) {
+    warnings.push(
+      ...(await getManualAssignmentWarnings({
+        slotId: mapping.slotId,
+        employeeId: mapping.employeeId,
+      })),
+    );
+  }
+
+  if (warnings.length > 0 && !input.overrideReason?.trim()) {
+    throw new Error("Copied assignments have warnings. Provide an override reason.");
+  }
+
+  for (const mapping of mappings) {
+    await manuallyAssignSlot({
+      ...mapping,
+      actorEmployeeId: input.actorEmployeeId,
+      overrideReason: input.overrideReason,
+    });
+  }
+
+  await writeAuditLog({
+    actorEmployeeId: input.actorEmployeeId,
+    action: "assignment.copy_day_pattern",
+    entityType: "ScheduleDay",
+    entityId: target.id,
+    after: {
+      sourceDate: input.sourceDate,
+      targetDate: input.targetDate,
+      copiedAssignments: mappings.length,
+      warningCount: warnings.length,
+      overrideReason: input.overrideReason?.trim() || null,
+    },
+  });
+
+  return { copiedAssignments: mappings.length, warningCount: warnings.length };
 }
 
 export async function generateScheduleForDate(input: {
@@ -379,6 +554,7 @@ export async function generateScheduleForDate(input: {
     historicalAssignments,
     rules,
     shortageRules,
+    backgroundPullRules,
     patternSlots,
     scheduleTargets,
   ] = await Promise.all([
@@ -467,6 +643,10 @@ export async function generateScheduleForDate(input: {
         ],
       },
       orderBy: [{ closurePriority: "asc" }, { updatedAt: "desc" }, { id: "asc" }],
+    }),
+    getDb().backgroundPullRule.findMany({
+      where: { active: true },
+      orderBy: [{ priorityRank: "asc" }, { employeeId: "asc" }],
     }),
     getDb().schedulePatternSlot.findMany({
       where: {
@@ -676,13 +856,56 @@ export async function generateScheduleForDate(input: {
       slot,
       patternSlots,
     }),
+    requiredSkillIds:
+      slot.backgroundTaskInstance?.definition.requiredSkills.map(
+        (requirement) => requirement.skillId,
+      ) ?? [],
+    eligibleEmployeeIds:
+      slot.backgroundTaskInstance?.definition.eligibleEmployees.map(
+        (eligible) => eligible.employeeId,
+      ) ?? [],
     lockedEmployeeIds: slot.assignments
-      .filter((assignment) => assignment.locked)
+      .filter(
+        (assignment) =>
+          assignment.locked ||
+          slot.backgroundTaskInstance?.definition.protectedFromPull === true,
+      )
       .map((assignment) => assignment.employeeId)
       .sort(),
   }));
 
   const existingAssignments: ExistingAssignment[] = [];
+  const pullCandidates = selectBackgroundPullCandidates({
+    assignments: scheduleDay.taskSlots.flatMap((slot) =>
+      slot.assignments.map((assignment) => ({
+        assignmentId: assignment.id,
+        employeeId: assignment.employeeId,
+        taskTypeCode: slot.taskType.code,
+        canBePulledForClinic:
+          slot.backgroundTaskInstance?.definition.canBePulledForClinic ?? false,
+        protectedFromPull:
+          slot.backgroundTaskInstance?.definition.protectedFromPull ?? false,
+      })),
+    ),
+    rules: backgroundPullRules,
+  });
+  const pullPriorityRules = pullCandidates.flatMap((candidate) =>
+    [...taskTypes.values()]
+      .filter((taskType) => taskType.isClinical && !taskType.isBackground)
+      .map((taskType) => ({
+        id: `background-pull:${candidate.assignmentId}:${taskType.id}`,
+        type: "PRIORITY_BOOST" as const,
+        employeeId: candidate.employeeId,
+        taskTypeId: taskType.id,
+        weight: Math.max(1, 1000 - candidate.priorityRank * 10),
+        priority: 1000,
+        active: true,
+        parameters: {
+          source: "BACKGROUND_PULL_RULE",
+          priorityRank: candidate.priorityRank,
+        },
+      })),
+  );
 
   const schedulerInput = {
     seed: input.seed,
@@ -691,20 +914,25 @@ export async function generateScheduleForDate(input: {
       left.id.localeCompare(right.id),
     ),
     slots,
-    rules: rules.map((rule) => ({
-      id: rule.id,
-      type: rule.type,
-      employeeId: rule.employeeId,
-      taskTypeId: rule.taskTypeId,
-      weight: rule.weight,
-      priority: rule.priority,
-      active: rule.active,
-      effectiveStartDate: rule.effectiveStartDate
-        ? toIsoDate(rule.effectiveStartDate)
-        : null,
-      effectiveEndDate: rule.effectiveEndDate ? toIsoDate(rule.effectiveEndDate) : null,
-      parameters: jsonRecord(rule.parameters),
-    })),
+    rules: [
+      ...rules.map((rule) => ({
+        id: rule.id,
+        type: rule.type,
+        employeeId: rule.employeeId,
+        taskTypeId: rule.taskTypeId,
+        weight: rule.weight,
+        priority: rule.priority,
+        active: rule.active,
+        effectiveStartDate: rule.effectiveStartDate
+          ? toIsoDate(rule.effectiveStartDate)
+          : null,
+        effectiveEndDate: rule.effectiveEndDate
+          ? toIsoDate(rule.effectiveEndDate)
+          : null,
+        parameters: jsonRecord(rule.parameters),
+      })),
+      ...pullPriorityRules,
+    ],
     existingAssignments,
     fairness: {
       clinicalShiftWeight: fairnessSetting.clinicalShiftWeight,
@@ -750,6 +978,16 @@ export async function generateScheduleForDate(input: {
         in: [
           AssignmentSource.GENERATED,
           AssignmentSource.COVERAGE_REPLACEMENT,
+        ],
+      },
+      taskSlot: {
+        OR: [
+          { backgroundTaskInstanceId: null },
+          {
+            backgroundTaskInstance: {
+              definition: { protectedFromPull: false },
+            },
+          },
         ],
       },
     },

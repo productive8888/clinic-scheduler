@@ -13,6 +13,9 @@ versioned migrations in `prisma/migrations`.
   authentication tables for magic-link users, persistent sessions, and email
   verification tokens.
 - `Skill` and `EmployeeSkill`: normalized boolean skill checklist.
+- Seeded configurable skills include IT, Research, and `PA / Prior
+  Authorization`. Prior Authorization is intentionally distinct from the
+  `Physician Assistant / MD` task type.
 - `TaskType`: configurable clinic task catalog with skill requirements,
   difficulty, sort order, scenario-default flags, optional/manual-only flags,
   patient-facing/clinical/background/skilled/endoscopy/float/closure-candidate
@@ -55,7 +58,9 @@ versioned migrations in `prisma/migrations`.
   templates are edited.
 - `TaskSlot`: concrete task opening on a schedule day, including `slotIndex`,
   `shiftBlockId`, requirement level (`REQUIRED`, `DESIRED`, `OPTIONAL`, or
-  `CONDITIONAL`), and source (`DEFAULT`, `STAFFING_RULE`, or `MANUAL`).
+  `CONDITIONAL`), source (`DEFAULT`, `STAFFING_RULE`, `MANUAL`, or
+  `BACKGROUND_DEFINITION`), and an optional link to the generated background
+  task instance that created it.
 - `StaffingRequirementRule`: admin-configured multi-slot requirements by task
   type, shift template or shift category, weekday, scenario, effective date
   range, min/desired/max slots, requirement level, active state, and notes.
@@ -81,8 +86,10 @@ versioned migrations in `prisma/migrations`.
   pullable, non-protected background work.
 - `BackgroundTaskCategory`, `BackgroundTaskDefinition`, and
   `BackgroundTaskInstance`: foundation for non-clinic work obligations,
-  estimated hours, period type, priority, mentor/owner, eligibility, pullability
-  for clinic coverage, protected-from-pull state, and future period instances.
+  required count or estimated hours per period, generated task type, period
+  type, priority, mentor/owner, eligibility, required skills, pullability for
+  clinic coverage, protected-from-pull state, due window, and generated period
+  instances.
 - `EastonImportReview`: private workbook parse/apply review snapshots with
   counts and warnings. Private spreadsheet contents remain out of public docs
   and source control.
@@ -117,7 +124,8 @@ Staffing`, and `Custom Scenario`. Clinic-closed days create no default task
 slots. Routine and reduced-staffing days start from safe defaults unless active
 staffing requirement rules override them. Optional task types such as Research,
 Background, Booking, Float, and Extra appear only when manually added or
-configured by a staffing requirement rule.
+configured by a staffing requirement rule or generated from an active
+background task definition.
 
 ## Analytics
 

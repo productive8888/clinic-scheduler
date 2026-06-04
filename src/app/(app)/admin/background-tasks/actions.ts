@@ -1,6 +1,7 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
+import { redirect } from "next/navigation";
 import { auditActorId, requireManager } from "@/lib/auth";
 import {
   createBackgroundTaskCategory,
@@ -10,6 +11,9 @@ import {
   updateBackgroundTaskDefinition,
   upsertBackgroundPullRule,
 } from "@/lib/db/background-tasks";
+import { generateBackgroundTaskSlotsForRange } from "@/lib/db/background-generation";
+import { resolveScheduleRange } from "@/lib/schedule/range";
+import { todayIsoDate } from "@/lib/utils/date";
 import {
   backgroundTaskCategoryValuesFromFormData,
   backgroundTaskDefinitionValuesFromFormData,
@@ -99,6 +103,29 @@ export async function deactivateBackgroundPullRuleAction(ruleId: string) {
 
   revalidatePath("/admin/background-tasks");
   revalidatePath("/admin/audit");
+}
+
+export async function generateBackgroundTaskSlotsAction(formData: FormData) {
+  const actor = await requireManager();
+  const date = String(formData.get("date") || todayIsoDate()).slice(0, 10);
+  const mode = formData.get("mode") === "CUSTOM" ? "CUSTOM" : "WEEK";
+  const range = resolveScheduleRange({
+    mode,
+    date,
+    customStartDate: stringField(formData.get("startDate")),
+    customEndDate: stringField(formData.get("endDate")),
+  });
+  const summary = await generateBackgroundTaskSlotsForRange({
+    ...range,
+    actorEmployeeId: auditActorId(actor),
+  });
+
+  revalidatePath("/admin/background-tasks");
+  revalidatePath("/schedule");
+  revalidatePath("/schedule/week");
+  redirect(
+    `/admin/background-tasks?generated=${summary.slotsCreated}&instances=${summary.instanceCount}`,
+  );
 }
 
 function stringField(value: FormDataEntryValue | null) {

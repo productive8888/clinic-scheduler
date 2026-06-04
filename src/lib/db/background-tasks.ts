@@ -14,6 +14,7 @@ export function getBackgroundTasksPageData() {
           orderBy: [{ active: "desc" }, { priority: "asc" }, { name: "asc" }],
           include: {
             primaryOwner: true,
+            taskType: true,
             eligibleEmployees: { include: { employee: true } },
             requiredSkills: { include: { skill: true } },
             _count: { select: { instances: true } },
@@ -29,6 +30,11 @@ export function getBackgroundTasksPageData() {
     getDb().skill.findMany({
       where: { active: true },
       orderBy: { name: "asc" },
+      select: { id: true, name: true, code: true },
+    }),
+    getDb().taskType.findMany({
+      where: { active: true, isBackground: true },
+      orderBy: [{ sortOrder: "asc" }, { name: "asc" }],
       select: { id: true, name: true, code: true },
     }),
     getDb().backgroundPullRule.findMany({
@@ -220,9 +226,11 @@ function definitionCreateData(
 ) {
   return {
     categoryId: values.categoryId,
+    taskTypeId: values.taskTypeId,
     name: values.name,
     description: values.description,
     estimatedHoursPerPeriod: values.estimatedHoursPerPeriod,
+    requiredCountPerPeriod: values.requiredCountPerPeriod,
     periodType: values.periodType,
     customPeriodDays: values.customPeriodDays,
     priority: values.priority,
@@ -246,9 +254,11 @@ function definitionCreateData(
 function definitionUpdateData(values: BackgroundTaskDefinitionFormValues) {
   return {
     categoryId: values.categoryId,
+    taskTypeId: values.taskTypeId,
     name: values.name,
     description: values.description,
     estimatedHoursPerPeriod: values.estimatedHoursPerPeriod,
+    requiredCountPerPeriod: values.requiredCountPerPeriod,
     periodType: values.periodType,
     customPeriodDays: values.customPeriodDays,
     priority: values.priority,

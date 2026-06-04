@@ -315,12 +315,13 @@ model TaskType {
   createdAt            DateTime @default(now())
   updatedAt            DateTime @updatedAt
 
-  skillRequirements    TaskSkillRequirement[]
-  taskSlots            TaskSlot[]
-  schedulingRules      SchedulingRule[]
-  staffingRules        StaffingRequirementRule[]
-  shortageRules        ShortageRule[]
-  schedulePatternSlots SchedulePatternSlot[]
+  skillRequirements     TaskSkillRequirement[]
+  taskSlots             TaskSlot[]
+  schedulingRules       SchedulingRule[]
+  staffingRules         StaffingRequirementRule[]
+  shortageRules         ShortageRule[]
+  schedulePatternSlots  SchedulePatternSlot[]
+  backgroundDefinitions BackgroundTaskDefinition[]
 
   @@index([active, sortOrder])
   @@index([optional])
@@ -539,6 +540,7 @@ model TaskSlot {
   requirementLevel          TaskSlotRequirementLevel @default(REQUIRED)
   source                    String                   @default("DEFAULT")
   staffingRequirementRuleId String?
+  backgroundTaskInstanceId  String?
   status                    TaskSlotStatus           @default(OPEN)
   shortNotice               Boolean                  @default(false)
   notes                     String?
@@ -549,12 +551,14 @@ model TaskSlot {
   shiftBlock              ShiftBlock               @relation(fields: [shiftBlockId], references: [id], onDelete: Cascade)
   taskType                TaskType                 @relation(fields: [taskTypeId], references: [id])
   staffingRequirementRule StaffingRequirementRule? @relation(fields: [staffingRequirementRuleId], references: [id], onDelete: SetNull)
+  backgroundTaskInstance  BackgroundTaskInstance?  @relation(fields: [backgroundTaskInstanceId], references: [id], onDelete: SetNull)
   assignments             Assignment[]
 
   @@unique([scheduleDayId, shiftBlockId, taskTypeId, slotIndex])
   @@index([scheduleDayId, status])
   @@index([shiftBlockId])
   @@index([staffingRequirementRuleId])
+  @@index([backgroundTaskInstanceId])
 }
 
 model StaffingRequirementRule {
@@ -677,9 +681,11 @@ model BackgroundTaskCategory {
 model BackgroundTaskDefinition {
   id                      String                   @id @default(cuid())
   categoryId              String
+  taskTypeId              String?
   name                    String
   description             String?
   estimatedHoursPerPeriod Decimal                  @db.Decimal(6, 2)
+  requiredCountPerPeriod  Int?
   periodType              BackgroundTaskPeriodType @default(WEEKLY)
   customPeriodDays        Int?
   priority                Int                      @default(100)
@@ -695,6 +701,7 @@ model BackgroundTaskDefinition {
   updatedAt               DateTime                 @updatedAt
 
   category          BackgroundTaskCategory           @relation(fields: [categoryId], references: [id], onDelete: Cascade)
+  taskType          TaskType?                        @relation(fields: [taskTypeId], references: [id], onDelete: SetNull)
   primaryOwner      Employee?                        @relation("BackgroundTaskOwner", fields: [primaryOwnerEmployeeId], references: [id], onDelete: SetNull)
   createdBy         Employee?                        @relation("BackgroundTaskCreator", fields: [createdByEmployeeId], references: [id], onDelete: SetNull)
   eligibleEmployees BackgroundTaskEligibleEmployee[]
@@ -702,6 +709,7 @@ model BackgroundTaskDefinition {
   instances         BackgroundTaskInstance[]
 
   @@index([categoryId, active])
+  @@index([taskTypeId, active])
   @@index([priority, active])
   @@index([primaryOwnerEmployeeId])
   @@index([createdByEmployeeId])
@@ -838,18 +846,20 @@ model BackgroundTaskRequiredSkill {
 }
 
 model BackgroundTaskInstance {
-  id               String   @id @default(cuid())
+  id               String    @id @default(cuid())
   definitionId     String
-  periodStartDate  DateTime @db.Date
-  periodEndDate    DateTime @db.Date
-  estimatedHours   Decimal  @db.Decimal(6, 2)
+  periodStartDate  DateTime  @db.Date
+  periodEndDate    DateTime  @db.Date
+  dueDate          DateTime? @db.Date
+  estimatedHours   Decimal   @db.Decimal(6, 2)
   prioritySnapshot Int
-  status           String   @default("OPEN")
+  status           String    @default("OPEN")
   notes            String?
-  createdAt        DateTime @default(now())
-  updatedAt        DateTime @updatedAt
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt
 
   definition BackgroundTaskDefinition @relation(fields: [definitionId], references: [id], onDelete: Cascade)
+  taskSlots  TaskSlot[]
 
   @@unique([definitionId, periodStartDate, periodEndDate])
   @@index([periodStartDate, periodEndDate])

@@ -44,6 +44,7 @@ export default async function SchedulePage({
       scheduleDay={data.scheduleDay}
       employees={data.employees}
       taskTypes={data.taskTypes}
+      manualWarnings={data.manualWarnings}
     />
   );
 }

@@ -7,6 +7,10 @@ import {
   type EastonParsedShift,
   type EastonWorkbookPreview,
 } from "@/lib/easton-import/parser";
+import {
+  REQUIRED_CONFIGURABLE_SKILLS,
+  REQUIRED_TASK_SKILL_CODES,
+} from "@/lib/skills/catalog";
 
 const EASTON_STAFFING_NOTE = "Easton spreadsheet default:";
 const EASTON_SHORTAGE_NOTE = "Easton default:";
@@ -434,6 +438,121 @@ export async function applyEastonDefaultsFromWorkbook(input: {
       taskTypeByCode.set(record.code, record.id);
     }
 
+    const configurableSkillIdByCode = new Map<string, string>();
+
+    for (const skill of REQUIRED_CONFIGURABLE_SKILLS) {
+      const record = await tx.skill.upsert({
+        where: { code: skill.code },
+        update: {
+          name: skill.name,
+          description: skill.description,
+          active: true,
+        },
+        create: skill,
+      });
+      configurableSkillIdByCode.set(record.code, record.id);
+    }
+
+    for (const [taskCode, skillCodes] of Object.entries(REQUIRED_TASK_SKILL_CODES)) {
+      const taskTypeId = taskTypeByCode.get(taskCode);
+
+      if (!taskTypeId) {
+        continue;
+      }
+
+      for (const skillCode of skillCodes) {
+        const skillId = configurableSkillIdByCode.get(skillCode);
+
+        if (!skillId) {
+          continue;
+        }
+
+        await tx.taskSkillRequirement.upsert({
+          where: { taskTypeId_skillId: { taskTypeId, skillId } },
+          update: { required: true },
+          create: { taskTypeId, skillId, required: true },
+        });
+      }
+    }
+
+    const backgroundCategory = await tx.backgroundTaskCategory.upsert({
+      where: { code: "EASTON_BACKGROUND" },
+      update: {
+        name: "Easton spreadsheet background obligations",
+        description:
+          "Editable weekly background-work requirements imported from Shifts + Hours.",
+        active: true,
+      },
+      create: {
+        code: "EASTON_BACKGROUND",
+        name: "Easton spreadsheet background obligations",
+        description:
+          "Editable weekly background-work requirements imported from Shifts + Hours.",
+        active: true,
+        sortOrder: 5,
+      },
+    });
+    const backgroundDemandByCode = new Map<
+      string,
+      { name: string; count: number; hours: number }
+    >();
+
+    for (const demand of preview.roleDemand.filter(
+      (item) =>
+        item.sheetName === "Shifts + Hours" &&
+        !item.aggregate &&
+        BACKGROUND_ROLE_CODES.has(item.roleCode),
+    )) {
+      const current = backgroundDemandByCode.get(demand.roleCode) ?? {
+        name: demand.roleName,
+        count: 0,
+        hours: 0,
+      };
+      current.count += demand.count;
+      current.hours += demand.count * demand.paidHours;
+      backgroundDemandByCode.set(demand.roleCode, current);
+    }
+
+    let backgroundDefinitionCount = 0;
+
+    for (const [roleCode, demand] of backgroundDemandByCode) {
+      const taskTypeId = taskTypeByCode.get(roleCode);
+      if (!taskTypeId) {
+        continue;
+      }
+
+      const name = `${demand.name} (Easton weekly)`;
+      const existing = await tx.backgroundTaskDefinition.findFirst({
+        where: { categoryId: backgroundCategory.id, name },
+      });
+      const data = {
+        categoryId: backgroundCategory.id,
+        taskTypeId,
+        name,
+        estimatedHoursPerPeriod: demand.hours,
+        requiredCountPerPeriod: Math.max(1, Math.round(demand.count)),
+        periodType: "WEEKLY" as const,
+        priority: 100,
+        canBePulledForClinic: true,
+        protectedFromPull: false,
+        rolloverAllowed: true,
+        active: true,
+        createdByEmployeeId: input.actorEmployeeId ?? null,
+        notes:
+          "Easton spreadsheet default: editable weekly obligation derived from Shifts + Hours.",
+      };
+
+      if (existing) {
+        await tx.backgroundTaskDefinition.update({
+          where: { id: existing.id },
+          data,
+        });
+      } else {
+        await tx.backgroundTaskDefinition.create({ data });
+      }
+      backgroundDefinitionCount += 1;
+    }
+
     await tx.shiftTemplate.updateMany({
       where: {
         name: {
@@ -488,6 +607,10 @@ export async function applyEastonDefaultsFromWorkbook(input: {
     for (const demand of preview.roleDemand.filter(
       (item) => item.sheetName === "Shifts + Hours" && !item.aggregate,
     )) {
+      if (BACKGROUND_ROLE_CODES.has(demand.roleCode)) {
+        continue;
+      }
+
       const taskTypeId = taskTypeByCode.get(demand.roleCode);
       const shiftTemplateId = shiftTemplateIdByKey.get(
         shiftDemandKey(demand.weekday, demand.startMinute, demand.endMinute, demand.paidHours),
@@ -744,6 +867,7 @@ export async function applyEastonDefaultsFromWorkbook(input: {
       reviewId: review.id,
       shiftTemplateCount: shiftTemplateIdByKey.size,
       staffingRuleCount,
+      backgroundDefinitionCount,
       shortageRuleCount: SHORTAGE_DEFAULTS.length,
       skippedPullNames,
       patternSlotCount: preview.sampleAssignments.length,

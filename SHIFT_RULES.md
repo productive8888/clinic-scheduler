@@ -18,6 +18,16 @@ by day. A blank weekday is still supported for future broad templates.
 belong to shift blocks, which lets the same task type appear in multiple shifts
 on the same date without duplicate task types.
 
+The manager whole-day view displays every shift block for one date. The week
+view summarizes Monday-Saturday and links back to each whole-day board. Bulk
+generation prepares all applicable shift blocks and staffing-rule slots before
+running the same deterministic daily scheduler in ascending date order.
+
+Automatic generation continues to limit employees to one generated assignment
+per day. Managers can use the multi-shift helper for non-overlapping AM/PM
+assignments; true overlaps and other rule violations require an explicit
+override reason.
+
 Safe defaults create routine task slots only on shift blocks marked
 `defaultForSchedule`. Easton spreadsheet defaults are instead applied primarily
 through editable staffing requirement rules by shift template, weekday, and role

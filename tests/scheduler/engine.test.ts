@@ -6,6 +6,10 @@ import { describe, it } from "node:test";
 import ExcelJS from "exceljs";
 import { selectBackgroundPullCandidates } from "../../src/lib/background/pull-priority";
 import {
+  backgroundSlotCount,
+  enumerateBackgroundPeriods,
+} from "../../src/lib/background/periods";
+import {
   generateSchedule,
   isUnavailableForSlot,
   resolveDirectReplacement,
@@ -32,6 +36,16 @@ import { buildStaffingAnalytics } from "../../src/lib/analytics/staffing";
 import { buildAssignmentCalendarEvents } from "../../src/lib/calendar/events";
 import { buildIcsCalendar } from "../../src/lib/calendar/ics";
 import { selectDefaultTaskTypesForScenario } from "../../src/lib/schedule/scenarios";
+import { validateManualAssignment } from "../../src/lib/schedule/manual-validation";
+import {
+  clinicWeekRange,
+  planScheduleRange,
+  resolveScheduleRange,
+} from "../../src/lib/schedule/range";
+import {
+  buildWeekDayHealth,
+  buildWholeDayShiftGroups,
+} from "../../src/lib/schedule/views";
 import {
   isShortNoticeForDateRange,
   isShortNoticeScheduleChange,
@@ -40,6 +54,10 @@ import { selectStaffingSlotSpecs } from "../../src/lib/staffing/requirements";
 import { selectShortageRecommendations } from "../../src/lib/shortage/recommendations";
 import { buildShiftBlockSnapshot } from "../../src/lib/shifts/templates";
 import { enumerateIsoDates } from "../../src/lib/utils/date";
+import {
+  REQUIRED_CONFIGURABLE_SKILLS,
+  REQUIRED_TASK_SKILL_CODES,
+} from "../../src/lib/skills/catalog";
 
 const monday = "2026-06-01";
 const saturday = "2026-06-06";
@@ -1811,6 +1829,361 @@ describe("staffing analytics aggregation", () => {
       analytics.roleLeaders.find((leader) => leader.taskTypeName === "Front Desk")
         ?.fullName,
       "Alice Admin",
+    );
+  });
+});
+
+describe("automated scheduling workflow foundations", () => {
+  it("defines distinct IT, prior authorization, and Research skills", () => {
+    assert.deepEqual(
+      REQUIRED_CONFIGURABLE_SKILLS.map((skill) => skill.code),
+      ["IT", "PRIOR_AUTHORIZATION", "RESEARCH"],
+    );
+    assert.deepEqual(REQUIRED_TASK_SKILL_CODES.PRIOR_AUTHORIZATION, [
+      "PRIOR_AUTHORIZATION",
+    ]);
+  });
+
+  for (const [taskCode, skillCode] of [
+    ["IT", "IT"],
+    ["PRIOR_AUTHORIZATION", "PRIOR_AUTHORIZATION"],
+    ["RESEARCH", "RESEARCH"],
+  ] as const) {
+    it(`enforces the ${taskCode} skill during generation`, () => {
+      const result = generateSchedule({
+        seed: `skill-${taskCode}`,
+        employees: [
+          {
+            id: "unskilled",
+            fullName: "Unskilled",
+            skillIds: [],
+            availability: allDayMonday,
+          },
+          {
+            id: "skilled",
+            fullName: "Skilled",
+            skillIds: [skillCode],
+            availability: allDayMonday,
+          },
+        ],
+        taskTypes: [
+          {
+            id: taskCode,
+            code: taskCode,
+            name: taskCode,
+            requiredSkillIds: [skillCode],
+            isBackground: true,
+          },
+        ],
+        slots: [
+          {
+            id: `${taskCode}-slot`,
+            date: monday,
+            taskTypeId: taskCode,
+            slotIndex: 1,
+            startMinute: 480,
+            endMinute: 720,
+            requirementLevel: "OPTIONAL",
+          },
+        ],
+      });
+
+      assert.equal(result.assignments[0].employeeId, "skilled");
+    });
+  }
+
+  it("plans deterministic week and month ranges and skips published dates", () => {
+    assert.deepEqual(clinicWeekRange("2026-06-04"), {
+      startDate: "2026-06-01",
+      endDate: "2026-06-06",
+    });
+    assert.deepEqual(resolveScheduleRange({ mode: "MONTH", date: "2026-06-04" }), {
+      startDate: "2026-06-01",
+      endDate: "2026-06-30",
+    });
+    assert.deepEqual(
+      planScheduleRange({
+        startDate: "2026-06-01",
+        endDate: "2026-06-03",
+        publishedDates: ["2026-06-02"],
+      }).map((item) => [item.date, item.action]),
+      [
+        ["2026-06-01", "GENERATE"],
+        ["2026-06-02", "SKIP_PUBLISHED"],
+        ["2026-06-03", "GENERATE"],
+      ],
+    );
+  });
+
+  it("creates canonical weekly, biweekly, and monthly background periods", () => {
+    assert.deepEqual(
+      enumerateBackgroundPeriods({
+        startDate: "2026-06-01",
+        endDate: "2026-06-14",
+        definition: { periodType: "WEEKLY" },
+      }),
+      [
+        { startDate: "2026-06-01", endDate: "2026-06-07" },
+        { startDate: "2026-06-08", endDate: "2026-06-14" },
+      ],
+    );
+    assert.equal(
+      enumerateBackgroundPeriods({
+        startDate: "2026-06-01",
+        endDate: "2026-06-14",
+        definition: { periodType: "BIWEEKLY" },
+      }).length,
+      2,
+    );
+    assert.deepEqual(
+      enumerateBackgroundPeriods({
+        startDate: "2026-06-10",
+        endDate: "2026-06-20",
+        definition: { periodType: "MONTHLY" },
+      }),
+      [{ startDate: "2026-06-01", endDate: "2026-06-30" }],
+    );
+    assert.equal(
+      backgroundSlotCount({
+        requiredCountPerPeriod: 3,
+        estimatedHoursPerPeriod: 30,
+        paidHoursPerSlot: 4,
+      }),
+      3,
+    );
+    assert.equal(
+      backgroundSlotCount({
+        requiredCountPerPeriod: null,
+        estimatedHoursPerPeriod: 10,
+        paidHoursPerSlot: 4,
+      }),
+      3,
+    );
+  });
+
+  it("fills required clinic coverage before generated background work", () => {
+    const result = generateSchedule({
+      seed: "clinic-before-background",
+      employees: [
+        {
+          id: "one-person",
+          fullName: "One Person",
+          skillIds: [],
+          availability: allDayMonday,
+        },
+      ],
+      taskTypes: [
+        {
+          id: "clinic",
+          code: "CLINIC",
+          name: "Clinic",
+          requiredSkillIds: [],
+          isClinical: true,
+        },
+        {
+          id: "background",
+          code: "BACKGROUND",
+          name: "Background",
+          requiredSkillIds: [],
+          isBackground: true,
+        },
+      ],
+      slots: [
+        {
+          id: "background-slot",
+          date: monday,
+          taskTypeId: "background",
+          slotIndex: 1,
+          requirementLevel: "OPTIONAL",
+          startMinute: 480,
+          endMinute: 720,
+        },
+        {
+          id: "clinic-slot",
+          date: monday,
+          taskTypeId: "clinic",
+          slotIndex: 1,
+          requirementLevel: "REQUIRED",
+          startMinute: 480,
+          endMinute: 720,
+        },
+      ],
+    });
+
+    assert.equal(result.assignments[0].slotId, "clinic-slot");
+    assert.equal(
+      result.assignments.some((assignment) => assignment.slotId === "background-slot"),
+      false,
+    );
+  });
+
+  it("preloads protected background assignments before filling clinic coverage", () => {
+    const result = generateSchedule({
+      seed: "protected-background",
+      employees: [
+        {
+          id: "protected-owner",
+          fullName: "Protected Owner",
+          skillIds: [],
+          availability: allDayMonday,
+        },
+      ],
+      taskTypes: [
+        {
+          id: "clinic",
+          code: "CLINIC",
+          name: "Clinic",
+          requiredSkillIds: [],
+          isClinical: true,
+        },
+        {
+          id: "background",
+          code: "BACKGROUND",
+          name: "Background",
+          requiredSkillIds: [],
+          isBackground: true,
+        },
+      ],
+      slots: [
+        {
+          id: "clinic-slot",
+          date: monday,
+          taskTypeId: "clinic",
+          slotIndex: 1,
+          requirementLevel: "REQUIRED",
+          startMinute: 480,
+          endMinute: 720,
+        },
+        {
+          id: "protected-background-slot",
+          date: monday,
+          taskTypeId: "background",
+          slotIndex: 1,
+          requirementLevel: "OPTIONAL",
+          startMinute: 480,
+          endMinute: 720,
+          lockedEmployeeIds: ["protected-owner"],
+        },
+      ],
+    });
+
+    assert.equal(
+      result.assignments.some((assignment) => assignment.slotId === "clinic-slot"),
+      false,
+    );
+    assert.equal(result.conflicts[0].slotId, "clinic-slot");
+  });
+
+  it("warns before skill and PTO violating manual reassignment", () => {
+    const warnings = validateManualAssignment({
+      employee: {
+        id: "employee",
+        fullName: "Employee",
+        skillIds: [],
+        availability: allDayMonday,
+        unavailable: [{ startDate: monday, endDate: monday }],
+      },
+      taskType: {
+        id: "it",
+        code: "IT",
+        name: "IT",
+        requiredSkillIds: ["IT"],
+      },
+      slot: {
+        id: "it-slot",
+        date: monday,
+        taskTypeId: "it",
+        slotIndex: 1,
+        startMinute: 480,
+        endMinute: 720,
+      },
+      assignments: [],
+    });
+
+    assert.equal(warnings.some((warning) => warning.code === "MISSING_SKILL"), true);
+    assert.equal(warnings.some((warning) => warning.code === "PTO_NPTO"), true);
+  });
+
+  it("whole-day view data keeps every shift block and week health aggregates status", () => {
+    const groups = buildWholeDayShiftGroups({
+      shiftBlocks: [{ id: "am" }, { id: "pm" }, { id: "empty" }],
+      taskSlots: [
+        { id: "am-slot", shiftBlockId: "am" },
+        { id: "pm-slot", shiftBlockId: "pm" },
+      ],
+    });
+
+    assert.deepEqual(
+      groups.map((group) => [group.shiftBlock.id, group.slots.length]),
+      [
+        ["am", 1],
+        ["pm", 1],
+        ["empty", 0],
+      ],
+    );
+    assert.deepEqual(
+      buildWeekDayHealth({
+        status: "GENERATED",
+        ptoCount: 2,
+        nptoCount: 1,
+        slots: [
+          {
+            status: "FILLED",
+            requirementLevel: "REQUIRED",
+            requiredStaff: 1,
+            assignmentCount: 1,
+          },
+          {
+            status: "SHORTAGE",
+            requirementLevel: "REQUIRED",
+            requiredStaff: 1,
+            assignmentCount: 0,
+          },
+        ],
+      }),
+      {
+        status: "GENERATED",
+        taskSlotCount: 2,
+        shortageCount: 1,
+        unfilledRequiredCount: 1,
+        ptoCount: 2,
+        nptoCount: 1,
+      },
+    );
+  });
+
+  it("manual multi-shift validation allows non-overlapping AM and PM shifts", () => {
+    const warnings = validateManualAssignment({
+      employee: {
+        id: "employee",
+        fullName: "Employee",
+        skillIds: [],
+        availability: allDayMonday,
+      },
+      taskType: taskTypes[0],
+      slot: {
+        id: "pm-slot",
+        date: monday,
+        taskTypeId: taskTypes[0].id,
+        slotIndex: 1,
+        startMinute: 780,
+        endMinute: 1020,
+      },
+      assignments: [
+        {
+          slotId: "am-slot",
+          employeeId: "employee",
+          date: monday,
+          taskTypeId: taskTypes[0].id,
+          startMinute: 480,
+          endMinute: 720,
+        },
+      ],
+    });
+
+    assert.equal(
+      warnings.some((warning) => warning.code === "OVERLAPPING_SHIFT"),
+      false,
     );
   });
 });

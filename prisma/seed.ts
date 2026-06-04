@@ -1,4 +1,5 @@
 import { PrismaClient } from "@prisma/client";
+import { REQUIRED_CONFIGURABLE_SKILLS } from "../src/lib/skills/catalog";
 
 const prisma = new PrismaClient();
 
@@ -6,18 +7,7 @@ const skills = [
   {
     code: "FRONT_BACKGROUND",
     name: "Front Background",
-    interchangeableGroup: null,
-    difficultyWeight: 0,
-    sortOrder: 65,
-    optional: true,
-    defaultForRoutine: false,
-    defaultForReduced: false,
-    isClinical: false,
-    isBackground: true,
-    isSkilled: false,
-    isEndoscopy: false,
-    isFloat: false,
-    requiredSkillCodes: [],
+    description: "Supports Front Background assignments when configured.",
   },
   {
     code: "CIVIL_SURGEON",
@@ -34,6 +24,7 @@ const skills = [
     name: "Procedure",
     description: "Required for procedure room staffing assignments.",
   },
+  ...REQUIRED_CONFIGURABLE_SKILLS,
 ];
 
 const taskTypes = [
@@ -240,17 +231,33 @@ const taskTypes = [
     defaultForReduced: false,
     isClinical: false,
     isBackground: true,
-    isSkilled: false,
+    isSkilled: true,
     isEndoscopy: false,
     isFloat: false,
-    requiredSkillCodes: [],
+    requiredSkillCodes: ["IT"],
+  },
+  {
+    code: "PRIOR_AUTHORIZATION",
+    name: "PA / Prior Authorization",
+    interchangeableGroup: null,
+    difficultyWeight: 1,
+    sortOrder: 99,
+    optional: true,
+    defaultForRoutine: false,
+    defaultForReduced: false,
+    isClinical: false,
+    isBackground: true,
+    isSkilled: true,
+    isEndoscopy: false,
+    isFloat: false,
+    requiredSkillCodes: ["PRIOR_AUTHORIZATION"],
   },
   {
     code: "PHYSICIAN_ASSISTANT_MD",
     name: "Physician Assistant / MD",
     interchangeableGroup: null,
     difficultyWeight: 2,
-    sortOrder: 99,
+    sortOrder: 100,
     optional: false,
     defaultForRoutine: false,
     defaultForReduced: false,
@@ -266,23 +273,23 @@ const taskTypes = [
     name: "Research",
     interchangeableGroup: null,
     difficultyWeight: 0,
-    sortOrder: 100,
+    sortOrder: 110,
     optional: true,
     defaultForRoutine: false,
     defaultForReduced: false,
     isClinical: false,
     isBackground: true,
-    isSkilled: false,
+    isSkilled: true,
     isEndoscopy: false,
     isFloat: false,
-    requiredSkillCodes: [],
+    requiredSkillCodes: ["RESEARCH"],
   },
   {
     code: "BACKGROUND",
     name: "Background",
     interchangeableGroup: null,
     difficultyWeight: 0,
-    sortOrder: 110,
+    sortOrder: 120,
     optional: true,
     defaultForRoutine: false,
     defaultForReduced: false,
@@ -298,7 +305,7 @@ const taskTypes = [
     name: "Booking",
     interchangeableGroup: null,
     difficultyWeight: 0,
-    sortOrder: 120,
+    sortOrder: 130,
     optional: true,
     defaultForRoutine: false,
     defaultForReduced: false,
@@ -314,7 +321,7 @@ const taskTypes = [
     name: "Float",
     interchangeableGroup: null,
     difficultyWeight: 0,
-    sortOrder: 130,
+    sortOrder: 140,
     optional: true,
     defaultForRoutine: false,
     defaultForReduced: false,
@@ -330,7 +337,7 @@ const taskTypes = [
     name: "Extra",
     interchangeableGroup: null,
     difficultyWeight: 0,
-    sortOrder: 140,
+    sortOrder: 150,
     optional: true,
     defaultForRoutine: false,
     defaultForReduced: false,
@@ -487,7 +494,7 @@ const demoEmployees = [
     email: "ava.allergy@clinic.test",
     fullName: "Ava Allergy",
     role: "ADMIN" as const,
-    skillCodes: ["ALLERGY_SHOT"],
+    skillCodes: ["ALLERGY_SHOT", "IT"],
     ptoBalanceHours: 80,
     expectedWeeklyHours: 40,
     weeklyAssignmentLimit: 5,
@@ -497,7 +504,7 @@ const demoEmployees = [
     email: "ben.frontdesk@clinic.test",
     fullName: "Ben Front Desk",
     role: "MANAGER" as const,
-    skillCodes: [],
+    skillCodes: ["PRIOR_AUTHORIZATION"],
     ptoBalanceHours: 64,
     expectedWeeklyHours: 40,
     weeklyAssignmentLimit: 5,
@@ -537,7 +544,7 @@ const demoEmployees = [
     email: "finn.gi@clinic.test",
     fullName: "Finn GI",
     role: "EMPLOYEE" as const,
-    skillCodes: [],
+    skillCodes: ["RESEARCH"],
     ptoBalanceHours: 60,
     expectedWeeklyHours: 32,
     weeklyAssignmentLimit: 5,
@@ -577,6 +584,7 @@ const demoEmployees = [
 
 const nonPatientFacingTaskCodes = new Set([
   "IT",
+  "PRIOR_AUTHORIZATION",
   "RESEARCH",
   "BACKGROUND",
   "BOOKING",
@@ -756,6 +764,8 @@ async function main() {
     }
   }
 
+  const backgroundCategoryByCode = new Map<string, string>();
+
   for (const category of [
     {
       code: "ADMIN_OPS",
@@ -776,7 +786,7 @@ async function main() {
       sortOrder: 30,
     },
   ]) {
-    await prisma.backgroundTaskCategory.upsert({
+    const record = await prisma.backgroundTaskCategory.upsert({
       where: { code: category.code },
       update: {
         name: category.name,
@@ -789,6 +799,78 @@ async function main() {
         active: true,
       },
     });
+
+    backgroundCategoryByCode.set(record.code, record.id);
+  }
+
+  for (const definition of [
+    {
+      categoryCode: "ADMIN_OPS",
+      taskTypeCode: "IT",
+      name: "IT support",
+      estimatedHoursPerPeriod: 4,
+      requiredCountPerPeriod: 1,
+      priority: 80,
+    },
+    {
+      categoryCode: "ADMIN_OPS",
+      taskTypeCode: "PRIOR_AUTHORIZATION",
+      name: "Prior authorization",
+      estimatedHoursPerPeriod: 4,
+      requiredCountPerPeriod: 1,
+      priority: 70,
+    },
+    {
+      categoryCode: "RESEARCH",
+      taskTypeCode: "RESEARCH",
+      name: "Research",
+      estimatedHoursPerPeriod: 4,
+      requiredCountPerPeriod: 1,
+      priority: 100,
+    },
+    {
+      categoryCode: "BOOKING",
+      taskTypeCode: "BOOKING",
+      name: "Booking",
+      estimatedHoursPerPeriod: 4,
+      requiredCountPerPeriod: 1,
+      priority: 90,
+    },
+  ]) {
+    const categoryId = backgroundCategoryByCode.get(definition.categoryCode);
+    const taskTypeId = taskTypeByCode.get(definition.taskTypeCode);
+
+    if (!categoryId || !taskTypeId) {
+      continue;
+    }
+
+    const existing = await prisma.backgroundTaskDefinition.findFirst({
+      where: { categoryId, name: definition.name },
+    });
+    const data = {
+      categoryId,
+      taskTypeId,
+      name: definition.name,
+      estimatedHoursPerPeriod: definition.estimatedHoursPerPeriod,
+      requiredCountPerPeriod: definition.requiredCountPerPeriod,
+      periodType: "WEEKLY" as const,
+      priority: definition.priority,
+      canBePulledForClinic: true,
+      protectedFromPull: false,
+      rolloverAllowed: true,
+      active: true,
+      notes: "Seed: editable weekly background-task generation example.",
+      createdByEmployeeId: demoAdminId,
+    };
+
+    if (existing) {
+      await prisma.backgroundTaskDefinition.update({
+        where: { id: existing.id },
+        data,
+      });
+    } else {
+      await prisma.backgroundTaskDefinition.create({ data });
+    }
   }
 
   await prisma.taskType.updateMany({
