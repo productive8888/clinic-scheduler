@@ -15,12 +15,21 @@
 - Dense shift-block daily board with compact configured time labels, clear
   clinic/background/Float classification, assignment warnings, and no normal
   legacy full-day workflow.
+- Simplified whole-day workflow with every shift shown automatically, no
+  shift-selection tab, no normal prepare-only action, and per-shift manual role
+  additions.
 - Weekly employee-row staff summary for AM/PM roles, unique-shift paid hours,
   patient/background workload, Saturday/endoscopy counts, and GI/Allergy/PCP
   exposure review.
 - Day/week/month/custom-range generation with published-date protection,
   deterministic per-date seeds, background-slot preparation, aggregate result
   summaries, and bulk audit logs.
+- One-click generation pipeline that prepares visible shift blocks and clinic/
+  background slots, invokes the shared scheduler, persists assignments and
+  conflicts, and returns generation diagnostics without per-day manual
+  preparation.
+- Empty non-closed schedule publish protection with required-slot blocker
+  details and week-level manual-review visibility.
 - Manager draft/review/publish workflow with previous/next day navigation and
   visible shortage indicators.
 - PTO/unavailability request submission, manager approval/rejection, and

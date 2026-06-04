@@ -11,28 +11,51 @@ import {
   buildWeekDayHealth,
   buildWeekStaffSummary,
 } from "@/lib/schedule/views";
+import { getSchedulePublishIssues } from "@/lib/schedule/publish-validation";
 import { LEGACY_SHIFT_TEMPLATE_ID } from "@/lib/shifts/legacy";
 import { parseIsoDate, toIsoDate } from "@/lib/utils/date";
 
 export type BulkGenerationSummary = {
   startDate: string;
   endDate: string;
+  datesProcessed: number;
   datesGenerated: number;
+  scheduleDaysCreated: number;
+  scheduleDaysUpdated: number;
   shiftBlocks: number;
+  shiftBlocksCreated: number;
   taskSlots: number;
+  taskSlotsCreated: number;
   clinicSlots: number;
   backgroundSlots: number;
+  backgroundDefinitionCount: number;
+  backgroundInstanceCount: number;
   assignmentsFilled: number;
+  assignmentsGenerated: number;
   unfilledSlots: number;
+  requiredSlotsUnfilled: number;
   shortages: number;
   unresolvedShortages: number;
   schedulesRequiringRegeneration: number;
   conflicts: number;
+  datesNeedingManualReview: string[];
+  generationDiagnostics: Array<{
+    date: string;
+    employeeCount: number;
+    employeesWithAvailability: number;
+    slotCount: number;
+    requiredSlotCount: number;
+    assignmentCount: number;
+    conflictCount: number;
+    firstConflictReasons: unknown[];
+  }>;
   skippedClosedDates: string[];
   skippedSundays: string[];
   publishedDatesSkipped: string[];
   publishedDatesOverwritten: string[];
   backgroundSlotsCreated: number;
+  backgroundSkippedDefinitions: string[];
+  backgroundSkippedPeriods: string[];
 };
 
 export async function generateScheduleRange(input: {
@@ -63,22 +86,35 @@ export async function generateScheduleRange(input: {
   const summary: BulkGenerationSummary = {
     startDate: input.startDate,
     endDate: input.endDate,
+    datesProcessed: 0,
     datesGenerated: 0,
+    scheduleDaysCreated: 0,
+    scheduleDaysUpdated: 0,
     shiftBlocks: 0,
+    shiftBlocksCreated: 0,
     taskSlots: 0,
+    taskSlotsCreated: 0,
     clinicSlots: 0,
     backgroundSlots: 0,
+    backgroundDefinitionCount: 0,
+    backgroundInstanceCount: 0,
     assignmentsFilled: 0,
+    assignmentsGenerated: 0,
     unfilledSlots: 0,
+    requiredSlotsUnfilled: 0,
     shortages: 0,
     unresolvedShortages: 0,
     schedulesRequiringRegeneration: 0,
     conflicts: 0,
+    datesNeedingManualReview: [],
+    generationDiagnostics: [],
     skippedClosedDates: [],
     skippedSundays: [],
     publishedDatesSkipped: [],
     publishedDatesOverwritten: [],
     backgroundSlotsCreated: 0,
+    backgroundSkippedDefinitions: [],
+    backgroundSkippedPeriods: [],
   };
   const datesToGenerate: string[] = [];
 
@@ -99,6 +135,12 @@ export async function generateScheduleRange(input: {
     }
   }
 
+  const beforeBoards = new Map(
+    await Promise.all(
+      datesToGenerate.map(async (date) => [date, await getScheduleBoard(date)] as const),
+    ),
+  );
+
   if (datesToGenerate.length > 0) {
     const backgroundSummary = await generateBackgroundTaskSlotsForRange({
       startDate: input.startDate,
@@ -107,10 +149,15 @@ export async function generateScheduleRange(input: {
       includePublished: input.overwritePublished,
       actorEmployeeId: input.actorEmployeeId,
     });
+    summary.backgroundDefinitionCount = backgroundSummary.definitionCount;
+    summary.backgroundInstanceCount = backgroundSummary.instanceCount;
     summary.backgroundSlotsCreated = backgroundSummary.slotsCreated;
+    summary.backgroundSkippedDefinitions = backgroundSummary.skippedDefinitions;
+    summary.backgroundSkippedPeriods = backgroundSummary.skippedPeriods;
   }
 
   for (const date of datesToGenerate) {
+    const beforeBoard = beforeBoards.get(date) ?? null;
     const result = await generateScheduleForDate({
       date,
       seed: `${input.seedPrefix}:${date}`,
@@ -122,9 +169,23 @@ export async function generateScheduleRange(input: {
       continue;
     }
 
+    summary.datesProcessed += 1;
     summary.datesGenerated += 1;
+    if (beforeBoard) {
+      summary.scheduleDaysUpdated += 1;
+    } else {
+      summary.scheduleDaysCreated += 1;
+    }
     summary.shiftBlocks += board.shiftBlocks.length;
+    summary.shiftBlocksCreated += Math.max(
+      0,
+      board.shiftBlocks.length - (beforeBoard?.shiftBlocks.length ?? 0),
+    );
     summary.taskSlots += board.taskSlots.length;
+    summary.taskSlotsCreated += Math.max(
+      0,
+      board.taskSlots.length - (beforeBoard?.taskSlots.length ?? 0),
+    );
     summary.clinicSlots += board.taskSlots.filter(
       (slot) => !slot.taskType.isBackground,
     ).length;
@@ -135,6 +196,7 @@ export async function generateScheduleRange(input: {
       (count, slot) => count + slot.assignments.length,
       0,
     );
+    summary.assignmentsGenerated += result.diagnostics.assignmentCount;
     summary.unfilledSlots += board.taskSlots.filter(
       (slot) => slot.assignments.length < slot.requiredStaff,
     ).length;
@@ -147,9 +209,31 @@ export async function generateScheduleRange(input: {
         (slot.status === "SHORTAGE" ||
           slot.assignments.length < slot.requiredStaff),
     ).length;
+    summary.requiredSlotsUnfilled += board.taskSlots.filter(
+      (slot) =>
+        slot.requirementLevel === "REQUIRED" &&
+        slot.assignments.length < slot.requiredStaff,
+    ).length;
     summary.schedulesRequiringRegeneration +=
       board.status === "NEEDS_REGENERATION" ? 1 : 0;
     summary.conflicts += result.diagnostics.conflictCount;
+    summary.generationDiagnostics.push({
+      date,
+      employeeCount: result.diagnostics.employeeCount,
+      employeesWithAvailability: result.diagnostics.employeesWithAvailability,
+      slotCount: result.diagnostics.slotCount,
+      requiredSlotCount: result.diagnostics.requiredSlotCount,
+      assignmentCount: result.diagnostics.assignmentCount,
+      conflictCount: result.diagnostics.conflictCount,
+      firstConflictReasons: result.diagnostics.firstConflictReasons,
+    });
+
+    if (
+      getSchedulePublishIssues(board).length > 0 ||
+      result.diagnostics.conflictCount > 0
+    ) {
+      summary.datesNeedingManualReview.push(date);
+    }
 
     if (board.scenario === "CLINIC_CLOSED") {
       summary.skippedClosedDates.push(date);
@@ -225,7 +309,8 @@ export async function publishScheduleRange(input: {
 
 export async function getScheduleWeekData(anchorDate: string) {
   const range = clinicWeekRange(anchorDate);
-  const [scheduleDays, ptoRequests, nptoRequests, employees] = await Promise.all([
+  const [scheduleDays, ptoRequests, nptoRequests, employees, backgroundDefinitionCount] =
+    await Promise.all([
     getDb().scheduleDay.findMany({
       where: {
         date: {
@@ -303,6 +388,13 @@ export async function getScheduleWeekData(anchorDate: string) {
         workPattern: { select: { targetWeeklyHours: true } },
       },
     }),
+    getDb().backgroundTaskDefinition.count({
+      where: {
+        active: true,
+        taskTypeId: { not: null },
+        taskType: { active: true, isBackground: true },
+      },
+    }),
   ]);
   const staffRows = buildWeekStaffSummary({
     employees: employees.map((employee) => ({
@@ -336,6 +428,13 @@ export async function getScheduleWeekData(anchorDate: string) {
 
   return {
     range,
+    backgroundDefinitionCount,
+    publishBlockingDays: scheduleDays
+      .map((day) => ({
+        date: toIsoDate(day.date),
+        issues: getSchedulePublishIssues(day),
+      }))
+      .filter((day) => day.issues.length > 0),
     staffRows,
     weeklyHourWarnings: staffRows
       .map((employee) => {
@@ -367,6 +466,7 @@ export async function getScheduleWeekData(anchorDate: string) {
             requirementLevel: slot.requirementLevel,
             requiredStaff: slot.requiredStaff,
             assignmentCount: slot.assignments.length,
+            isBackground: slot.taskType.isBackground,
           })),
           ptoCount: countRequestsOnDate(date, ptoRequests),
           nptoCount: countRequestsOnDate(date, nptoRequests),

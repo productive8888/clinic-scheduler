@@ -143,7 +143,7 @@ export async function bulkGenerateScheduleAction(formData: FormData) {
   revalidatePath("/schedule");
   revalidatePath("/schedule/week");
   redirect(
-    `/schedule/week?date=${range.startDate}&generated=${summary.datesGenerated}&shifts=${summary.shiftBlocks}&clinicSlots=${summary.clinicSlots}&backgroundSlots=${summary.backgroundSlots}&filled=${summary.assignmentsFilled}&shortages=${summary.unresolvedShortages}&publishedSkipped=${summary.publishedDatesSkipped.length}`,
+    `/schedule/week?date=${range.startDate}&processed=${summary.datesProcessed}&daysCreated=${summary.scheduleDaysCreated}&daysUpdated=${summary.scheduleDaysUpdated}&blocksCreated=${summary.shiftBlocksCreated}&slotsCreated=${summary.taskSlotsCreated}&clinicSlots=${summary.clinicSlots}&backgroundSlots=${summary.backgroundSlots}&filled=${summary.assignmentsFilled}&requiredUnfilled=${summary.requiredSlotsUnfilled}&shortages=${summary.shortages}&conflicts=${summary.conflicts}&review=${summary.datesNeedingManualReview.length}&publishedSkipped=${summary.publishedDatesSkipped.length}`,
   );
 }
 
@@ -164,7 +164,7 @@ export async function publishScheduleRangeAction(formData: FormData) {
   revalidatePath("/schedule");
   revalidatePath("/schedule/week");
   redirect(
-    `/schedule/week?date=${range.startDate}&published=${summary.publishedDates.length}&publishSkipped=${summary.skippedDates.length}`,
+    `/schedule/week?date=${range.startDate}&published=${summary.publishedDates.length}&publishBlocked=${summary.skippedDates.length}`,
   );
 }
 

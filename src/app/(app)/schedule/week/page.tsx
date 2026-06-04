@@ -42,15 +42,21 @@ export default async function ScheduleWeekPage({
     <ScheduleWeekBoard
       data={data}
       resultSummary={{
-        generated: stringParam(params.generated),
-        shifts: stringParam(params.shifts),
+        processed: stringParam(params.processed),
+        daysCreated: stringParam(params.daysCreated),
+        daysUpdated: stringParam(params.daysUpdated),
+        blocksCreated: stringParam(params.blocksCreated),
+        slotsCreated: stringParam(params.slotsCreated),
         clinicSlots: stringParam(params.clinicSlots),
         backgroundSlots: stringParam(params.backgroundSlots),
         filled: stringParam(params.filled),
+        requiredUnfilled: stringParam(params.requiredUnfilled),
         shortages: stringParam(params.shortages),
+        conflicts: stringParam(params.conflicts),
+        review: stringParam(params.review),
         publishedSkipped: stringParam(params.publishedSkipped),
         published: stringParam(params.published),
-        publishSkipped: stringParam(params.publishSkipped),
+        publishBlocked: stringParam(params.publishBlocked),
       }}
     />
   );

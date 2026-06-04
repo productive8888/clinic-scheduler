@@ -23,6 +23,7 @@ export function buildWeekDayHealth(input: {
     requirementLevel: string;
     requiredStaff: number;
     assignmentCount: number;
+    isBackground?: boolean;
   }>;
   ptoCount: number;
   nptoCount: number;
@@ -30,6 +31,17 @@ export function buildWeekDayHealth(input: {
   return {
     status: input.status,
     taskSlotCount: input.slots.length,
+    assignmentCount: input.slots.reduce(
+      (count, slot) => count + slot.assignmentCount,
+      0,
+    ),
+    filledClinicSlotCount: input.slots.filter(
+      (slot) => !slot.isBackground && slot.assignmentCount >= slot.requiredStaff,
+    ).length,
+    unfilledClinicSlotCount: input.slots.filter(
+      (slot) => !slot.isBackground && slot.assignmentCount < slot.requiredStaff,
+    ).length,
+    backgroundSlotCount: input.slots.filter((slot) => slot.isBackground).length,
     shortageCount: input.slots.filter((slot) => slot.status === "SHORTAGE").length,
     unfilledRequiredCount: input.slots.filter(
       (slot) =>

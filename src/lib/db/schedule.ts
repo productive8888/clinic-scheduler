@@ -26,6 +26,8 @@ import {
 import { overlaps } from "@/lib/scheduler/constraints";
 import { isShortNoticeScheduleChange } from "@/lib/schedule/short-notice";
 import { patternPreferredEmployeeIdsForSlot } from "@/lib/schedule/pattern-preferences";
+import { getSchedulePublishIssues } from "@/lib/schedule/publish-validation";
+import { shouldPreserveSlotOutsideStaffingRequirements } from "@/lib/schedule/slot-reconciliation";
 import { buildShiftBlockSnapshot } from "@/lib/shifts/templates";
 import { LEGACY_SHIFT_TEMPLATE_ID } from "@/lib/shifts/legacy";
 import {
@@ -1024,6 +1026,30 @@ export async function generateScheduleForDate(input: {
     .update(stableStringify(schedulerInput))
     .digest("hex");
   const result = generateSchedule(schedulerInput);
+  const runtimeDiagnostics = {
+    ...result.diagnostics,
+    employeeCount: schedulerEmployees.length,
+    activeEmployeeCount: schedulerEmployees.filter((employee) => employee.active !== false)
+      .length,
+    employeesWithAvailability: schedulerEmployees.filter(
+      (employee) => employee.availability.length > 0,
+    ).length,
+    requiredSlotCount: slots.filter(
+      (slot) => slot.requirementLevel === "REQUIRED",
+    ).length,
+    firstConflictReasons: result.conflicts.slice(0, 5).map((conflict) => ({
+      slotId: conflict.slotId,
+      reason: conflict.reason,
+      rejectedCandidates: conflict.rejectedCandidates.slice(0, 3),
+    })),
+  };
+
+  if (process.env.NODE_ENV !== "production") {
+    console.info("[schedule.generate]", {
+      date: input.date,
+      ...runtimeDiagnostics,
+    });
+  }
 
   const generationRun = await getDb().scheduleGenerationRun.create({
     data: {
@@ -1035,7 +1061,7 @@ export async function generateScheduleForDate(input: {
       requestedByEmployeeId: input.actorEmployeeId ?? undefined,
       status: "COMPLETED",
       completedAt: new Date(),
-      summary: result.diagnostics,
+      summary: runtimeDiagnostics,
     },
   });
 
@@ -1125,11 +1151,9 @@ export async function generateScheduleForDate(input: {
   );
 
   for (const slotId of slotIds) {
-    const schedulerSlot = schedulerSlotsById.get(slotId);
-    const requiredSlot = schedulerSlot?.requirementLevel === "REQUIRED";
     const hasBlockingConflict =
       lockedPtoConflictsBySlotId.has(slotId) ||
-      (requiredSlot && conflictSlotIds.has(slotId));
+      conflictSlotIds.has(slotId);
     const status =
       hasBlockingConflict
         ? TaskSlotStatus.SHORTAGE
@@ -1173,11 +1197,11 @@ export async function generateScheduleForDate(input: {
     entityId: scheduleDay.id,
     after: {
       generationRunId: generationRun.id,
-      diagnostics: result.diagnostics,
+      diagnostics: runtimeDiagnostics,
     },
   });
 
-  return result;
+  return { ...result, diagnostics: runtimeDiagnostics };
 }
 
 export async function publishScheduleForDate(input: {
@@ -1190,18 +1214,15 @@ export async function publishScheduleForDate(input: {
     throw new Error("Prepare and generate a schedule before publishing.");
   }
 
-  if (scheduleDay.status === "NEEDS_REGENERATION") {
-    throw new Error("Generate a new draft before publishing this invalidated schedule.");
-  }
+  const publishIssues = getSchedulePublishIssues(scheduleDay);
 
-  const shortageCount = scheduleDay.taskSlots.filter(
-    (slot) =>
-      slot.requirementLevel === "REQUIRED" &&
-      (slot.status === "SHORTAGE" || slot.assignments.length < slot.requiredStaff),
-  ).length;
-
-  if (shortageCount > 0) {
-    throw new Error("Resolve all shortages before publishing the schedule.");
+  if (publishIssues.length > 0) {
+    throw new Error(
+      `Schedule cannot be published. ${publishIssues
+        .slice(0, 6)
+        .map((issue) => issue.message)
+        .join(" ")}`,
+    );
   }
 
   const published = await getDb().scheduleDay.update({
@@ -1448,9 +1469,11 @@ async function reconcileSlotsForStaffingRequirements(input: {
 
   for (const slot of slots) {
     const key = slotSpecKey(slot);
-    const shouldPreserveAsManual =
-      slot.source === "MANUAL" || (slot.taskType.optional && slot.source === "DEFAULT");
-    const shouldCancel = !desiredKeys.has(key) && !shouldPreserveAsManual;
+    const shouldPreserve = shouldPreserveSlotOutsideStaffingRequirements({
+      source: slot.source,
+      taskTypeOptional: slot.taskType.optional,
+    });
+    const shouldCancel = !desiredKeys.has(key) && !shouldPreserve;
 
     if (!shouldCancel) {
       continue;
@@ -1553,7 +1576,10 @@ async function ensureShiftBlocksForScheduleDay(input: {
           shiftTemplateId: template.id,
         },
       },
-      update: {},
+      update: {
+        defaultForSchedule: template.defaultForSchedule,
+        active: true,
+      },
       create: {
         scheduleDayId: input.scheduleDayId,
         ...buildShiftBlockSnapshot(template),

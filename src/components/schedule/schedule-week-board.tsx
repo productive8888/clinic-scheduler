@@ -36,6 +36,10 @@ export function ScheduleWeekBoard({
   const daysByDate = new Map(data.days.map((day) => [day.date, day]));
   const weekDates = enumerateIsoDates(data.range.startDate, data.range.endDate);
   const hasSummary = Object.values(resultSummary).some(Boolean);
+  const backgroundSlotCount = data.days.reduce(
+    (count, day) => count + day.backgroundSlotCount,
+    0,
+  );
 
   return (
     <div className="grid gap-6">
@@ -121,6 +125,38 @@ export function ScheduleWeekBoard({
                 <div className="mt-1 text-lg font-semibold">{value}</div>
               </div>
             ))}
+        </section>
+      ) : null}
+
+      {data.publishBlockingDays.length > 0 ? (
+        <section className="rounded-md border border-amber-200 bg-amber-50 p-4 text-sm text-amber-950">
+          <h2 className="font-semibold">Some days are not ready to publish</h2>
+          <div className="mt-2 grid gap-2 md:grid-cols-2">
+            {data.publishBlockingDays.map((day) => (
+              <div key={day.date} className="border-l-2 border-amber-400 pl-3">
+                <div className="font-semibold">{formatDisplayDate(day.date)}</div>
+                <div className="mt-1 text-xs">
+                  {day.issues
+                    .slice(0, 3)
+                    .map((issue) => issue.message)
+                    .join(" ")}
+                </div>
+              </div>
+            ))}
+          </div>
+        </section>
+      ) : null}
+
+      {data.backgroundDefinitionCount === 0 ? (
+        <section className="rounded-md border border-slate-200 bg-slate-50 p-4 text-sm text-slate-700">
+          No active background task definitions are configured. Week generation will
+          only create clinic staffing slots.
+        </section>
+      ) : backgroundSlotCount === 0 ? (
+        <section className="rounded-md border border-sky-200 bg-sky-50 p-4 text-sm text-sky-900">
+          {data.backgroundDefinitionCount} active background definitions are configured,
+          but this week has no visible background slots yet. Generate this week to
+          reconcile them into the schedule.
         </section>
       ) : null}
 
@@ -303,13 +339,15 @@ function WeekDayCard({
             {day.shortageCount > 0 || day.unfilledRequiredCount > 0 ? (
               <span className="inline-flex items-center gap-1 rounded-md bg-amber-50 px-2 py-1 text-xs font-semibold text-amber-800">
                 <AlertTriangle size={13} aria-hidden="true" />
-                {day.shortageCount} shortages
+                {day.unfilledRequiredCount} required unfilled
               </span>
             ) : null}
           </div>
           <p className="mt-1 text-sm text-slate-500">
-            {day.scenario.replaceAll("_", " ")} / {day.shiftBlocks.length} shift
-            blocks / {day.taskSlots.length} task slots / PTO {day.ptoCount} / NPTO{" "}
+            {day.scenario.replaceAll("_", " ")} / {day.shiftBlocks.length} shifts /{" "}
+            {day.assignmentCount} assignments / {day.filledClinicSlotCount} clinic
+            filled / {day.unfilledClinicSlotCount} clinic unfilled /{" "}
+            {day.backgroundSlotCount} background / PTO {day.ptoCount} / NPTO{" "}
             {day.nptoCount}
           </p>
         </div>

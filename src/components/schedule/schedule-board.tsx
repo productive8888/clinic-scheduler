@@ -16,7 +16,6 @@ import {
 } from "lucide-react";
 import Link from "next/link";
 import {
-  createScheduleDayAction,
   addTaskSlotAction,
   copyScheduleDayAssignmentsAction,
   generateScheduleAction,
@@ -30,6 +29,7 @@ import { ManualAssignmentForm } from "@/components/schedule/manual-assignment-fo
 import { MultiShiftAssignmentForm } from "@/components/schedule/multi-shift-assignment-form";
 import { backgroundTaskDisplayName } from "@/lib/background/display";
 import type { ManualAssignmentWarningMatrix } from "@/lib/db/manual-assignment";
+import { getSchedulePublishIssues } from "@/lib/schedule/publish-validation";
 import { buildWholeDayShiftGroups } from "@/lib/schedule/views";
 import {
   addDaysIsoDate,
@@ -78,24 +78,16 @@ export function ScheduleBoard({
     scheduleDay?.taskSlots.filter((slot) => slot.status !== "FILLED").length ?? 0;
   const shortageCount =
     scheduleDay?.taskSlots.filter((slot) => slot.status === "SHORTAGE").length ?? 0;
-  const requiredShortageCount =
-    scheduleDay?.taskSlots.filter(
-      (slot) =>
-        slot.requirementLevel === "REQUIRED" &&
-        (slot.status === "SHORTAGE" ||
-          slot.assignments.length < slot.requiredStaff),
-    ).length ?? 0;
   const assignedCount =
     scheduleDay?.taskSlots.reduce(
       (count, slot) => count + slot.assignments.length,
       0,
     ) ?? 0;
+  const publishIssues = scheduleDay ? getSchedulePublishIssues(scheduleDay) : [];
   const canPublish = Boolean(
-      scheduleDay &&
+    scheduleDay &&
       scheduleDay.status !== "PUBLISHED" &&
-      scheduleDay.status !== "NEEDS_REGENERATION" &&
-      requiredShortageCount === 0 &&
-      assignedCount > 0,
+      publishIssues.length === 0,
   );
   const canUnpublish = scheduleDay?.status === "PUBLISHED";
   const previousDate = addDaysIsoDate(date, -1);
@@ -113,7 +105,7 @@ export function ScheduleBoard({
     ? buildWholeDayShiftGroups({
         shiftBlocks: scheduleDay.shiftBlocks,
         taskSlots: scheduleDay.taskSlots,
-      }).filter((group) => group.slots.length > 0)
+      })
     : [];
 
   return (
@@ -168,7 +160,7 @@ export function ScheduleBoard({
               </p>
             ) : null}
           </div>
-          <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5">
+          <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
             <form action={setScheduleScenarioAction} className="flex gap-2">
               <input type="hidden" name="date" value={date} />
               <select
@@ -199,24 +191,11 @@ export function ScheduleBoard({
                 Go
               </button>
             </form>
-            <form action={createScheduleDayAction}>
+            <form action={generateScheduleAction}>
               <input type="hidden" name="date" value={date} />
-              <button className="inline-flex h-10 w-full items-center justify-center gap-2 rounded-md border border-emerald-200 px-3 text-sm font-semibold text-emerald-800 hover:bg-emerald-50">
-                <CalendarPlus size={16} aria-hidden="true" />
-                Prepare slots
-              </button>
-            </form>
-            <form action={generateScheduleAction} className="flex gap-2">
-              <input type="hidden" name="date" value={date} />
-              <input
-                name="seed"
-                defaultValue={`clinic-${date}`}
-                className="h-10 min-w-0 rounded-md border border-slate-300 bg-white px-3 font-mono text-xs outline-none focus:border-emerald-700"
-                aria-label="Generation seed"
-              />
-              <button className="inline-flex h-10 items-center justify-center gap-2 rounded-md bg-emerald-700 px-3 text-sm font-semibold text-white hover:bg-emerald-800">
+              <button className="inline-flex h-10 w-full items-center justify-center gap-2 rounded-md bg-emerald-700 px-3 text-sm font-semibold text-white hover:bg-emerald-800">
                 <RefreshCw size={16} aria-hidden="true" />
-                Generate draft
+                Generate day
               </button>
             </form>
             <form action={publishScheduleAction}>
@@ -248,43 +227,6 @@ export function ScheduleBoard({
             </Link>
           </div>
         </div>
-        <form action={addTaskSlotAction} className="mt-4 flex flex-col gap-2 border-t border-slate-200 pt-4 sm:flex-row">
-          <input type="hidden" name="date" value={date} />
-          {scheduleDay?.shiftBlocks.length ? (
-            <select
-              name="shiftBlockId"
-              defaultValue={
-                scheduleDay.shiftBlocks.find((shiftBlock) => shiftBlock.defaultForSchedule)
-                  ?.id ?? scheduleDay.shiftBlocks[0]?.id
-              }
-              className="h-10 min-w-0 flex-1 rounded-md border border-slate-300 bg-white px-3 text-sm outline-none focus:border-emerald-700"
-            >
-              {scheduleDay.shiftBlocks.map((shiftBlock) => (
-                <option key={shiftBlock.id} value={shiftBlock.id}>
-                  {shiftBlock.name} ({formatMinuteOfDay(shiftBlock.startMinute)}-
-                  {formatMinuteOfDay(shiftBlock.endMinute)})
-                </option>
-              ))}
-            </select>
-          ) : null}
-          <select
-            name="taskTypeId"
-            defaultValue=""
-            className="h-10 min-w-0 flex-1 rounded-md border border-slate-300 bg-white px-3 text-sm outline-none focus:border-emerald-700"
-          >
-            <option value="">Add manual task slot</option>
-            {taskTypes.map((taskType) => (
-              <option key={taskType.id} value={taskType.id}>
-                {taskType.name}
-                {taskType.optional ? " (optional)" : ""}
-              </option>
-            ))}
-          </select>
-          <button className="inline-flex h-10 items-center justify-center gap-2 rounded-md border border-slate-300 px-3 text-sm font-semibold text-slate-700 hover:bg-slate-100">
-            <Plus size={16} aria-hidden="true" />
-            Add slot
-          </button>
-        </form>
         <div className="mt-4">
           <BulkGenerationForm date={date} />
         </div>
@@ -328,6 +270,17 @@ export function ScheduleBoard({
         </section>
       ) : null}
 
+      {publishIssues.length > 0 && scheduleDay?.status !== "PUBLISHED" ? (
+        <section className="rounded-md border border-amber-200 bg-amber-50 p-4 text-sm text-amber-950">
+          <h2 className="font-semibold">Not ready to publish</h2>
+          <ul className="mt-2 grid gap-1">
+            {publishIssues.slice(0, 8).map((issue, index) => (
+              <li key={`${issue.code}:${index}`}>{issue.message}</li>
+            ))}
+          </ul>
+        </section>
+      ) : null}
+
       {!scheduleDay ? (
         <section className="rounded-md border border-dashed border-slate-300 bg-white p-8 text-center">
           <div className="mx-auto flex max-w-md flex-col items-center gap-3">
@@ -336,7 +289,7 @@ export function ScheduleBoard({
               No staffing board for this date
             </h2>
             <p className="text-sm text-slate-500">
-              Create the default slots, then generate assignments or fill roles manually.
+              Generate the day to prepare shift blocks, task slots, and assignments.
             </p>
           </div>
         </section>
@@ -391,7 +344,8 @@ export function ScheduleBoard({
               </div>
             </details>
           ) : null}
-          {scheduleDay.taskSlots.length === 0 ? (
+          {scheduleDay.taskSlots.length === 0 &&
+          scheduleDay.shiftBlocks.length === 0 ? (
             <div className="rounded-md border border-dashed border-slate-300 bg-white p-8 text-center lg:col-span-3">
               {currentScenario === "CLINIC_CLOSED" ? (
                 <CalendarX2
@@ -414,7 +368,7 @@ export function ScheduleBoard({
               <p className="mx-auto mt-2 max-w-md text-sm text-slate-500">
                 {currentScenario === "CLINIC_CLOSED"
                   ? "This date will not create routine staffing slots."
-                  : "Use Add slot for optional or custom work, or switch back to a default scenario and prepare slots."}
+                  : "Generate the day to prepare configured shifts and staffing roles."}
               </p>
             </div>
           ) : null}
@@ -452,21 +406,70 @@ export function ScheduleBoard({
                   </span>
                 ) : null}
               </div>
+              <ShiftAddSlotForm
+                date={date}
+                shiftBlockId={group.shiftBlock.id}
+                taskTypes={taskTypes}
+              />
               <div className="divide-y divide-slate-200">
-                {group.slots.map((slot) => (
-                  <ScheduleSlotCard
-                    key={slot.id}
-                    slot={slot}
-                    employees={employees}
-                    warningsByEmployee={manualWarnings[slot.id]}
-                  />
-                ))}
+                {group.slots.length > 0 ? (
+                  group.slots.map((slot) => (
+                    <ScheduleSlotCard
+                      key={slot.id}
+                      slot={slot}
+                      employees={employees}
+                      warningsByEmployee={manualWarnings[slot.id]}
+                    />
+                  ))
+                ) : (
+                  <p className="bg-white px-4 py-5 text-sm text-slate-500">
+                    No roles configured for this shift.
+                  </p>
+                )}
               </div>
             </div>
           ))}
         </section>
       )}
     </div>
+  );
+}
+
+function ShiftAddSlotForm({
+  date,
+  shiftBlockId,
+  taskTypes,
+}: {
+  date: string;
+  shiftBlockId: string;
+  taskTypes: ScheduleBoardProps["taskTypes"];
+}) {
+  return (
+    <form
+      action={addTaskSlotAction}
+      className="flex flex-col gap-2 border-b border-slate-200 bg-white px-4 py-3 sm:flex-row"
+    >
+      <input type="hidden" name="date" value={date} />
+      <input type="hidden" name="shiftBlockId" value={shiftBlockId} />
+      <select
+        name="taskTypeId"
+        defaultValue=""
+        required
+        className="h-9 min-w-0 flex-1 rounded-md border border-slate-300 bg-white px-3 text-sm outline-none focus:border-emerald-700"
+      >
+        <option value="">Add a role to this shift</option>
+        {taskTypes.map((taskType) => (
+          <option key={taskType.id} value={taskType.id}>
+            {taskType.name}
+            {taskType.optional ? " (optional)" : ""}
+          </option>
+        ))}
+      </select>
+      <button className="inline-flex h-9 items-center justify-center gap-2 rounded-md border border-slate-300 px-3 text-sm font-semibold text-slate-700 hover:bg-slate-100">
+        <Plus size={16} aria-hidden="true" />
+        Add role
+      </button>
+    </form>
   );
 }
 

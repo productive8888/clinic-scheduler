@@ -69,6 +69,20 @@ export function selectStaffingSlotSpecs(input: {
     (left, right) =>
       left.startMinute - right.startMinute || left.id.localeCompare(right.id),
   );
+  const configuredDefaultIds = new Set(
+    sortedShiftBlocks
+      .filter((shiftBlock) => shiftBlock.defaultForSchedule)
+      .map((shiftBlock) => shiftBlock.id),
+  );
+  const fallbackDefaultId =
+    configuredDefaultIds.size === 0
+      ? selectSafeDefaultShiftBlockId(sortedShiftBlocks)
+      : null;
+  const effectiveShiftBlocks = sortedShiftBlocks.map((shiftBlock) => ({
+    ...shiftBlock,
+    defaultForSchedule:
+      configuredDefaultIds.has(shiftBlock.id) || shiftBlock.id === fallbackDefaultId,
+  }));
   const sortedTaskTypes = [...input.taskTypes]
     .filter((taskType) => taskType.active !== false)
     .sort(
@@ -78,7 +92,7 @@ export function selectStaffingSlotSpecs(input: {
     );
   const specs: StaffingSlotSpec[] = [];
 
-  for (const shiftBlock of sortedShiftBlocks) {
+  for (const shiftBlock of effectiveShiftBlocks) {
     for (const taskType of sortedTaskTypes) {
       const matchingRule = selectRuleForTaskType({
         date: input.date,
@@ -113,6 +127,21 @@ export function selectStaffingSlotSpecs(input: {
   }
 
   return specs;
+}
+
+export function selectSafeDefaultShiftBlockId(
+  shiftBlocks: StaffingShiftBlock[],
+) {
+  return [...shiftBlocks]
+    .sort(
+      (left, right) =>
+        fallbackCategoryPriority(left.shiftCategory) -
+          fallbackCategoryPriority(right.shiftCategory) ||
+        Math.abs(left.startMinute - 8 * 60) -
+          Math.abs(right.startMinute - 8 * 60) ||
+        left.startMinute - right.startMinute ||
+        left.id.localeCompare(right.id),
+    )[0]?.id ?? null;
 }
 
 function selectRuleForTaskType(input: {
@@ -273,4 +302,24 @@ function timestamp(value: Date | string | null | undefined) {
   }
 
   return value instanceof Date ? value.getTime() : new Date(value).getTime();
+}
+
+function fallbackCategoryPriority(category: ShiftCategory) {
+  if (category === "AM") {
+    return 0;
+  }
+
+  if (category === "SATURDAY") {
+    return 1;
+  }
+
+  if (category === "PM") {
+    return 2;
+  }
+
+  if (category === "ENDO") {
+    return 3;
+  }
+
+  return 4;
 }

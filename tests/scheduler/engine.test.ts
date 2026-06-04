@@ -42,6 +42,7 @@ import { buildAssignmentCalendarEvents } from "../../src/lib/calendar/events";
 import { buildIcsCalendar } from "../../src/lib/calendar/ics";
 import { selectDefaultTaskTypesForScenario } from "../../src/lib/schedule/scenarios";
 import { validateManualAssignment } from "../../src/lib/schedule/manual-validation";
+import { getSchedulePublishIssues } from "../../src/lib/schedule/publish-validation";
 import {
   clinicWeekRange,
   planScheduleRange,
@@ -52,11 +53,15 @@ import {
   buildWeekDayHealth,
   buildWholeDayShiftGroups,
 } from "../../src/lib/schedule/views";
+import { shouldPreserveSlotOutsideStaffingRequirements } from "../../src/lib/schedule/slot-reconciliation";
 import {
   isShortNoticeForDateRange,
   isShortNoticeScheduleChange,
 } from "../../src/lib/schedule/short-notice";
-import { selectStaffingSlotSpecs } from "../../src/lib/staffing/requirements";
+import {
+  selectSafeDefaultShiftBlockId,
+  selectStaffingSlotSpecs,
+} from "../../src/lib/staffing/requirements";
 import { selectShortageRecommendations } from "../../src/lib/shortage/recommendations";
 import { buildShiftBlockSnapshot } from "../../src/lib/shifts/templates";
 import { managerVisibleShiftBlocks } from "../../src/lib/shifts/legacy";
@@ -1540,6 +1545,25 @@ describe("staffing requirement rules", () => {
     );
   });
 
+  it("chooses the regular 0800 shift as a safe default when none is configured", () => {
+    const unconfiguredBlocks = [
+      { ...defaultShiftBlock, id: "early", startMinute: 420, defaultForSchedule: false },
+      { ...defaultShiftBlock, id: "regular", defaultForSchedule: false },
+      { ...pmShiftBlock, defaultForSchedule: false },
+    ];
+    const specs = selectStaffingSlotSpecs({
+      date: monday,
+      scenario: "ROUTINE",
+      taskTypes: staffingTaskTypes,
+      shiftBlocks: unconfiguredBlocks,
+      rules: [],
+    });
+
+    assert.equal(selectSafeDefaultShiftBlockId(unconfiguredBlocks), "regular");
+    assert.equal(specs.length, 2);
+    assert.equal(specs.every((spec) => spec.shiftBlockId === "regular"), true);
+  });
+
   it("varies staffing rules by day of week", () => {
     const rules = [
       {
@@ -2461,6 +2485,10 @@ describe("automated scheduling workflow foundations", () => {
       {
         status: "GENERATED",
         taskSlotCount: 2,
+        assignmentCount: 1,
+        filledClinicSlotCount: 1,
+        unfilledClinicSlotCount: 1,
+        backgroundSlotCount: 0,
         shortageCount: 1,
         unfilledRequiredCount: 1,
         ptoCount: 2,
@@ -2565,6 +2593,65 @@ describe("automated scheduling workflow foundations", () => {
         isBackground: true,
       }),
       "Research (Background)",
+    );
+  });
+
+  it("preserves generated background obligations during clinic slot reconciliation", () => {
+    assert.equal(
+      shouldPreserveSlotOutsideStaffingRequirements({
+        source: "BACKGROUND_DEFINITION",
+        taskTypeOptional: true,
+      }),
+      true,
+    );
+    assert.equal(
+      shouldPreserveSlotOutsideStaffingRequirements({
+        source: "STAFFING_RULE",
+        taskTypeOptional: false,
+      }),
+      false,
+    );
+  });
+
+  it("blocks publishing empty or required-unfilled schedules but allows clinic closed", () => {
+    const shiftBlock = {
+      name: "Monday 0800-1200",
+      startMinute: 480,
+      endMinute: 720,
+    };
+    const requiredSlot = {
+      requirementLevel: "REQUIRED",
+      requiredStaff: 1,
+      status: "SHORTAGE",
+      label: "Front Desk #1",
+      taskType: { name: "Front Desk" },
+      shiftBlock,
+      assignments: [],
+    };
+
+    assert.deepEqual(
+      getSchedulePublishIssues({
+        scenario: "ROUTINE",
+        status: "GENERATED",
+        taskSlots: [],
+      }).map((issue) => issue.code),
+      ["EMPTY_SCHEDULE"],
+    );
+    assert.deepEqual(
+      getSchedulePublishIssues({
+        scenario: "ROUTINE",
+        status: "GENERATED",
+        taskSlots: [requiredSlot],
+      }).map((issue) => issue.code),
+      ["NO_ASSIGNMENTS", "REQUIRED_UNFILLED"],
+    );
+    assert.deepEqual(
+      getSchedulePublishIssues({
+        scenario: "CLINIC_CLOSED",
+        status: "GENERATED",
+        taskSlots: [],
+      }),
+      [],
     );
   });
 

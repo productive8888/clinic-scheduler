@@ -368,7 +368,7 @@ const shiftTemplates = [
     endMinute: 12 * 60,
     paidHours: 4,
     shiftCategory: "AM" as const,
-    defaultForSchedule: false,
+    defaultForSchedule: true,
     notes: "Seed: Easton spreadsheet Monday 0800-1200 shift.",
   },
   {
@@ -409,7 +409,7 @@ const shiftTemplates = [
       endMinute: 12 * 60,
       paidHours: 4,
       shiftCategory: "AM" as const,
-      defaultForSchedule: false,
+      defaultForSchedule: true,
       notes: `Seed: Easton spreadsheet ${weekdayName(weekday)} 0800-1200 shift.`,
     },
     {
@@ -430,7 +430,7 @@ const shiftTemplates = [
     endMinute: 12 * 60,
     paidHours: 4,
     shiftCategory: "AM" as const,
-    defaultForSchedule: false,
+    defaultForSchedule: true,
     notes: "Seed: Easton spreadsheet Friday 0800-1200 shift.",
   },
   {
@@ -460,7 +460,7 @@ const shiftTemplates = [
     endMinute: 14 * 60,
     paidHours: 6,
     shiftCategory: "SATURDAY" as const,
-    defaultForSchedule: false,
+    defaultForSchedule: true,
     notes: "Seed: Easton spreadsheet Saturday 0800-1400 shift.",
   },
 ];

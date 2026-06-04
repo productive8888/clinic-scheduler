@@ -13,6 +13,8 @@ import {
   enumerateIsoDates,
   parseIsoDate,
 } from "@/lib/utils/date";
+import { selectSafeDefaultShiftBlockId } from "@/lib/staffing/requirements";
+import { LEGACY_SHIFT_TEMPLATE_ID } from "@/lib/shifts/legacy";
 
 export type BackgroundGenerationSummary = {
   startDate: string;
@@ -107,7 +109,20 @@ export async function generateBackgroundTaskSlotsForRange(input: {
         },
         include: {
           taskSlots: {
-            where: { status: { not: "CANCELLED" } },
+            where: {
+              status: { not: "CANCELLED" },
+              shiftBlock: {
+                AND: [
+                  { source: { notIn: ["MIGRATION", "FALLBACK"] } },
+                  {
+                    OR: [
+                      { shiftTemplateId: null },
+                      { shiftTemplateId: { not: LEGACY_SHIFT_TEMPLATE_ID } },
+                    ],
+                  },
+                ],
+              },
+            },
             orderBy: [{ createdAt: "asc" }, { id: "asc" }],
           },
         },
@@ -209,9 +224,10 @@ async function getPlacementOptions(input: {
       continue;
     }
 
+    const safeDefaultId = selectSafeDefaultShiftBlockId(board.shiftBlocks);
     const shiftBlock =
       board.shiftBlocks.find((block) => block.defaultForSchedule) ??
-      board.shiftBlocks[0];
+      board.shiftBlocks.find((block) => block.id === safeDefaultId);
 
     if (!shiftBlock) {
       continue;

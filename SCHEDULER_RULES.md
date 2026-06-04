@@ -110,6 +110,21 @@ not contain scheduling decisions.
   background slots, preserves locked/manual overrides, and skips published dates
   unless a manager explicitly confirms overwrite. Earlier generated days become
   deterministic fairness history for later days in the range.
+- Day/week/month/range generation is one operation: it prepares dated shift
+  blocks, reconciles clinic and period-linked background slots, invokes the
+  shared scheduler, persists assignments and conflict state, and returns an
+  aggregate review summary.
+- If no shift template is marked as the schedule default, preparation
+  deterministically uses the regular 8:00 AM block when available. This is a
+  safety fallback only; managers can select a different default in shift
+  configuration.
+- Generation-run diagnostics record active employee counts, availability
+  counts, visible and required slot counts, assignments, conflicts, and the
+  first conflict reasons. Required unfilled slots are persisted as visible
+  shortages.
+- Non-closed schedules with no visible slots or no assignments cannot be
+  published. Required unfilled slots also block publishing and identify their
+  affected shift and task.
 - Manual assignment validation previews skill, PTO/NPTO, availability, overlap,
   weekly assignment limit, expected-hours, fairness, configured pattern
   deviation, and required-slot warnings. A manager can proceed with a recorded

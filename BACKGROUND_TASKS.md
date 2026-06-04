@@ -38,6 +38,13 @@ background-slot preparation before the shared scheduler runs. Generation
 summaries separate clinic slots from background slots, and both appear on the
 daily shift-block board and weekly staff grid.
 
+Background-definition slots are preserved when clinic staffing requirements are
+reconciled. Existing background instances only count current visible
+shift-block slots toward their period obligation; archived legacy full-day
+slots do not suppress generation of current background work. The week view
+explains when no active definitions exist or when configured definitions have
+not yet produced visible slots.
+
 Generated background slots are labeled with `(Background)`, enforce the
 definition's required skills and eligible employee list, and sort after
 required/desired clinic coverage. Protected background assignments are

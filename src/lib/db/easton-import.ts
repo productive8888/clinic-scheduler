@@ -587,7 +587,7 @@ export async function applyEastonDefaultsFromWorkbook(input: {
         endMinute: shift.endMinute,
         paidHours: shift.paidHours,
         shiftCategory: shift.shiftCategory,
-        defaultForSchedule: false,
+        defaultForSchedule: shift.startMinute === 8 * 60,
         active: true,
         notes: `${EASTON_STAFFING_NOTE} source shift ${shift.dayLabel} ${shift.label}.`,
       };

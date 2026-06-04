@@ -25,6 +25,11 @@ exposure. Bulk generation prepares all applicable shift blocks and
 staffing-rule slots before running the same deterministic daily scheduler in
 ascending date order.
 
+The daily board always renders all configured shift blocks together. There is
+no normal shift-selection tab or dropdown. Manual roles are added from the
+specific shift section they belong to. Managers normally use `Generate day` or
+`Generate this week`; a separate manual preparation step is not required.
+
 Automatic generation and the multi-shift helper allow multiple non-overlapping
 same-day assignments. True interval overlaps, such as 0700-1200 and 0800-1200,
 remain invalid unless a manager explicitly overrides with a reason.
@@ -38,6 +43,11 @@ Safe defaults create routine task slots only on shift blocks marked
 `defaultForSchedule`. Easton spreadsheet defaults are instead applied primarily
 through editable staffing requirement rules by shift template, weekday, and role
 demand count.
+
+Spreadsheet-derived regular 8:00 AM blocks are seeded as safe defaults. If a
+database has no configured default for a date, generation deterministically
+chooses the closest regular AM block so incomplete configuration creates a
+reviewable schedule instead of an empty one.
 
 The app does not hardcode final clinic policy in scheduler branches. Easton
 defaults seed editable rules for week-to-week patterns, shortage order, Saturday
