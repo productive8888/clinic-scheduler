@@ -40,3 +40,117 @@ export function buildWeekDayHealth(input: {
     nptoCount: input.nptoCount,
   };
 }
+
+export type WeekStaffAssignmentInput = {
+  employeeId: string;
+  date: string;
+  shiftBlockId: string;
+  shiftName: string;
+  shiftCategory: string;
+  startMinute: number;
+  endMinute: number;
+  paidHours: number;
+  taskTypeCode: string;
+  taskTypeName: string;
+  isPatientFacing: boolean;
+  isBackground: boolean;
+  isEndoscopy: boolean;
+  locked: boolean;
+};
+
+export function buildWeekStaffSummary(input: {
+  employees: Array<{
+    id: string;
+    fullName: string;
+    targetHours: number;
+  }>;
+  assignments: WeekStaffAssignmentInput[];
+}) {
+  const assignmentsByEmployee = new Map<string, WeekStaffAssignmentInput[]>();
+
+  for (const assignment of input.assignments) {
+    const assignments = assignmentsByEmployee.get(assignment.employeeId) ?? [];
+    assignments.push(assignment);
+    assignmentsByEmployee.set(assignment.employeeId, assignments);
+  }
+
+  return input.employees.map((employee) => {
+    const assignments = (assignmentsByEmployee.get(employee.id) ?? []).sort(
+      (left, right) =>
+        left.date.localeCompare(right.date) ||
+        left.startMinute - right.startMinute ||
+        left.taskTypeName.localeCompare(right.taskTypeName),
+    );
+    const shifts = new Map<
+      string,
+      {
+        paidHours: number;
+        patientFacing: boolean;
+        background: boolean;
+        saturdayOrEndoscopy: boolean;
+      }
+    >();
+    const assignmentsByDate: Record<string, WeekStaffAssignmentInput[]> = {};
+    const exposure = { GI: 0, ALLERGY: 0, PCP: 0 };
+
+    for (const assignment of assignments) {
+      const dateAssignments = assignmentsByDate[assignment.date] ?? [];
+      dateAssignments.push(assignment);
+      assignmentsByDate[assignment.date] = dateAssignments;
+
+      const shiftKey = `${assignment.date}:${assignment.shiftBlockId}`;
+      const shift = shifts.get(shiftKey) ?? {
+        paidHours: assignment.paidHours,
+        patientFacing: false,
+        background: false,
+        saturdayOrEndoscopy: false,
+      };
+      shift.patientFacing ||= assignment.isPatientFacing;
+      shift.background ||= assignment.isBackground;
+      shift.saturdayOrEndoscopy ||=
+        assignment.isEndoscopy ||
+        assignment.shiftCategory === "ENDO" ||
+        assignment.shiftCategory === "SATURDAY" ||
+        new Date(`${assignment.date}T00:00:00.000Z`).getUTCDay() === 6;
+      shifts.set(shiftKey, shift);
+
+      const group = taskExposureGroup(assignment.taskTypeCode);
+      if (group) {
+        exposure[group] += 1;
+      }
+    }
+
+    const uniqueShifts = [...shifts.values()];
+
+    return {
+      employeeId: employee.id,
+      fullName: employee.fullName,
+      targetHours: employee.targetHours,
+      totalHours: uniqueShifts.reduce((total, shift) => total + shift.paidHours, 0),
+      patientFacingShiftCount: uniqueShifts.filter((shift) => shift.patientFacing)
+        .length,
+      backgroundShiftCount: uniqueShifts.filter((shift) => shift.background).length,
+      saturdayEndoscopyCount: uniqueShifts.filter(
+        (shift) => shift.saturdayOrEndoscopy,
+      ).length,
+      exposure,
+      assignmentsByDate,
+    };
+  });
+}
+
+export function taskExposureGroup(taskTypeCode: string) {
+  if (taskTypeCode.includes("GI")) {
+    return "GI" as const;
+  }
+
+  if (taskTypeCode.includes("ALLERGY")) {
+    return "ALLERGY" as const;
+  }
+
+  if (taskTypeCode === "FOLLOWUP" || taskTypeCode.includes("PCP")) {
+    return "PCP" as const;
+  }
+
+  return null;
+}

@@ -20,6 +20,7 @@ export type ManualAssignmentWarning = {
     | "WEEKLY_ASSIGNMENT_LIMIT"
     | "ABOVE_EXPECTED_HOURS"
     | "FAIRNESS_IMBALANCE"
+    | "PATTERN_DEVIATION"
     | "REQUIRED_SLOT_UNFILLED";
   message: string;
 };
@@ -109,6 +110,17 @@ export function validateManualAssignment(input: {
       code: "FAIRNESS_IMBALANCE",
       message:
         "This employee already has materially more assignments than the current weekly average.",
+    });
+  }
+
+  if (
+    input.slot.patternPreferredEmployeeIds?.length &&
+    !input.slot.patternPreferredEmployeeIds.includes(input.employee.id)
+  ) {
+    warnings.push({
+      code: "PATTERN_DEVIATION",
+      message:
+        "This differs from the configured week-to-week employee pattern for this role and shift.",
     });
   }
 

@@ -59,6 +59,8 @@ export type SchedulerTaskSlot = {
   patternPreferredEmployeeIds?: string[];
   requiredSkillIds?: string[];
   eligibleEmployeeIds?: string[];
+  canBePulledForClinic?: boolean;
+  protectedFromPull?: boolean;
 };
 
 export type AvailabilityWindow = {
@@ -91,7 +93,10 @@ export type ExistingAssignment = {
   isPatientFacing?: boolean;
   isClinical?: boolean;
   isBackground?: boolean;
+  isFloat?: boolean;
   isEndoscopy?: boolean;
+  canBePulledForClinic?: boolean;
+  protectedFromPull?: boolean;
   locked?: boolean;
 };
 
@@ -167,13 +172,23 @@ export type ScheduleConflict = {
   rejectedCandidates: CandidateRejection[];
 };
 
+export type ScheduleRepair = {
+  targetSlotId: string;
+  displacedSlotId: string;
+  strategy: "SWAP" | "PULL_FLOAT" | "PULL_BACKGROUND";
+  employeeId: string;
+  replacementEmployeeId?: string | null;
+};
+
 export type ScheduleResult = {
   assignments: ScheduleAssignment[];
   conflicts: ScheduleConflict[];
+  repairs: ScheduleRepair[];
   diagnostics: {
     seed: string;
     slotCount: number;
     assignmentCount: number;
     conflictCount: number;
+    repairCount: number;
   };
 };

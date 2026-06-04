@@ -45,6 +45,7 @@ export default async function SchedulePage({
       employees={data.employees}
       taskTypes={data.taskTypes}
       manualWarnings={data.manualWarnings}
+      legacySlotCount={data.legacySlotCount}
     />
   );
 }

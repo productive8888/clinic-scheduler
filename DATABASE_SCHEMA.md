@@ -48,14 +48,18 @@ versioned migrations in `prisma/migrations`.
   credits/debits, manual adjustments, and reversal adjustments. Entries keep
   employee, hours, source entity, optional period range, creator, metadata, and
   notes.
-- `ScheduleDay`: one operational staffing day, including draft/generated/
-  published status, clinic scenario, and publish metadata.
+- `ScheduleDay`: one operational staffing day, including draft, generated,
+  needs-regeneration, published, or locked status, clinic scenario, and publish
+  metadata. Employee deactivation/deletion marks affected future dates
+  `NEEDS_REGENERATION` and clears publish metadata without deleting history.
 - `ShiftTemplate`: editable manager-configured reusable shift definitions with
   weekday scope, start/end minute, paid hours, shift category, default schedule
   flag, active status, and effective dates.
 - `ShiftBlock`: concrete dated shift snapshot for a `ScheduleDay`. Task slots
   attach to shift blocks, preserving historical schedules when future shift
-  templates are edited.
+  templates are edited. The migration-only legacy full-day block remains
+  available for historical compatibility but is excluded from normal manager
+  preparation and review.
 - `TaskSlot`: concrete task opening on a schedule day, including `slotIndex`,
   `shiftBlockId`, requirement level (`REQUIRED`, `DESIRED`, `OPTIONAL`, or
   `CONDITIONAL`), source (`DEFAULT`, `STAFFING_RULE`, `MANUAL`, or

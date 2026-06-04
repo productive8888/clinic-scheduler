@@ -33,11 +33,18 @@ instances and links optional `TaskSlot` records back to the instance. Count-base
 definitions create that count. Hours-only definitions deterministically convert
 hours to slots using the selected shift block paid hours.
 
+Day/week/month/custom-range schedule generation automatically invokes this
+background-slot preparation before the shared scheduler runs. Generation
+summaries separate clinic slots from background slots, and both appear on the
+daily shift-block board and weekly staff grid.
+
 Generated background slots are labeled with `(Background)`, enforce the
 definition's required skills and eligible employee list, and sort after
 required/desired clinic coverage. Protected background assignments are
 preserved during regeneration. Pullable assignments may be displaced when the
 same schedule is regenerated because required clinic coverage is filled first.
+The bounded repair pass may also yield explicitly pullable background work to a
+required patient-facing clinic role before a shortage recommendation is shown.
 
 Easton `Shifts + Hours` background demand is imported as editable weekly
 background definitions. The June schedule remains a reference pattern rather

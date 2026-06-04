@@ -10,6 +10,8 @@ import {
   type ManualAssignmentWarning,
 } from "@/lib/schedule/manual-validation";
 import { clinicWeekRange } from "@/lib/schedule/range";
+import { patternPreferredEmployeeIdsForSlot } from "@/lib/schedule/pattern-preferences";
+import { LEGACY_SHIFT_TEMPLATE_ID } from "@/lib/shifts/legacy";
 import { parseIsoDate, toIsoDate } from "@/lib/utils/date";
 
 export type ManualAssignmentWarningMatrix = Record<
@@ -43,6 +45,7 @@ export async function getManualAssignmentWarnings(input: {
   });
   const date = toIsoDate(slot.scheduleDay.date);
   const week = clinicWeekRange(date);
+  const patternSlots = await getActivePatternSlotsForDate(slot.scheduleDay.date);
   const employee = input.employeeId
     ? await getDb().employee.findUniqueOrThrow({
         where: { id: input.employeeId },
@@ -95,7 +98,10 @@ export async function getManualAssignmentWarnings(input: {
   return validateManualAssignment({
     employee: employee ? toSchedulerEmployee(employee) : null,
     taskType: toSchedulerTaskType(slot.taskType),
-    slot: toSchedulerSlot(slot),
+    slot: toSchedulerSlot(
+      slot,
+      patternPreferredEmployeeIdsForSlot({ slot, patternSlots }),
+    ),
     assignments: assignments.map(toExistingAssignment),
     expectedWeeklyHours: employee ? Number(employee.expectedWeeklyHours) : null,
     clearingRequiredSlot: !employee && slot.requirementLevel === "REQUIRED",
@@ -105,11 +111,22 @@ export async function getManualAssignmentWarnings(input: {
 export async function getManualAssignmentWarningMatrix(date: string) {
   const dateValue = parseIsoDate(date);
   const week = clinicWeekRange(date);
-  const [slots, employees, assignments] = await Promise.all([
+  const [slots, employees, assignments, patternSlots] = await Promise.all([
     getDb().taskSlot.findMany({
       where: {
         scheduleDay: { date: dateValue },
         status: { not: "CANCELLED" },
+        shiftBlock: {
+          AND: [
+            { source: { notIn: ["MIGRATION", "FALLBACK"] } },
+            {
+              OR: [
+                { shiftTemplateId: null },
+                { shiftTemplateId: { not: LEGACY_SHIFT_TEMPLATE_ID } },
+              ],
+            },
+          ],
+        },
       },
       include: {
         scheduleDay: true,
@@ -171,11 +188,15 @@ export async function getManualAssignmentWarningMatrix(date: string) {
         },
       },
     }),
+    getActivePatternSlotsForDate(dateValue),
   ]);
   const matrix: ManualAssignmentWarningMatrix = {};
 
   for (const slot of slots) {
-    const schedulerSlot = toSchedulerSlot(slot);
+    const schedulerSlot = toSchedulerSlot(
+      slot,
+      patternPreferredEmployeeIdsForSlot({ slot, patternSlots }),
+    );
     const schedulerTaskType = toSchedulerTaskType(slot.taskType);
     matrix[slot.id] = {
       __CLEAR__: validateManualAssignment({
@@ -288,7 +309,8 @@ function toSchedulerTaskType(taskType: {
   };
 }
 
-function toSchedulerSlot(slot: {
+function toSchedulerSlot(
+  slot: {
   id: string;
   taskTypeId: string;
   slotIndex: number;
@@ -311,7 +333,9 @@ function toSchedulerSlot(slot: {
       eligibleEmployees: { employeeId: string }[];
     };
   } | null;
-}): SchedulerTaskSlot {
+  },
+  patternPreferredEmployeeIds: string[] = [],
+): SchedulerTaskSlot {
   return {
     id: slot.id,
     date: toIsoDate(slot.scheduleDay.date),
@@ -325,6 +349,7 @@ function toSchedulerSlot(slot: {
     startMinute: slot.startMinute ?? slot.shiftBlock.startMinute,
     endMinute: slot.endMinute ?? slot.shiftBlock.endMinute,
     requirementLevel: slot.requirementLevel,
+    patternPreferredEmployeeIds,
     requiredSkillIds:
       slot.backgroundTaskInstance?.definition.requiredSkills.map(
         (requirement) => requirement.skillId,
@@ -334,6 +359,39 @@ function toSchedulerSlot(slot: {
         (eligible) => eligible.employeeId,
       ) ?? [],
   };
+}
+
+function getActivePatternSlotsForDate(date: Date) {
+  return getDb().schedulePatternSlot.findMany({
+    where: {
+      weekday: date.getUTCDay(),
+      pattern: {
+        active: true,
+        AND: [
+          {
+            OR: [
+              { effectiveStartDate: null },
+              { effectiveStartDate: { lte: date } },
+            ],
+          },
+          {
+            OR: [
+              { effectiveEndDate: null },
+              { effectiveEndDate: { gte: date } },
+            ],
+          },
+        ],
+      },
+    },
+    select: {
+      taskTypeId: true,
+      slotIndex: true,
+      shiftTemplateId: true,
+      shiftCategory: true,
+      preferredEmployeeId: true,
+    },
+    orderBy: [{ slotIndex: "asc" }, { id: "asc" }],
+  });
 }
 
 function toExistingAssignment(assignment: {

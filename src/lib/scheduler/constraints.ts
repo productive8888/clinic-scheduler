@@ -115,7 +115,12 @@ export function wouldDoubleBook(
       return false;
     }
 
-    return true;
+    return overlaps(
+      slotStart(slot),
+      slotEnd(slot),
+      assignment.startMinute ?? FULL_DAY_START,
+      assignment.endMinute ?? FULL_DAY_END,
+    );
   });
 }
 

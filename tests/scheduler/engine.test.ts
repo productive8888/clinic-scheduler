@@ -4,6 +4,7 @@ import os from "node:os";
 import path from "node:path";
 import { describe, it } from "node:test";
 import ExcelJS from "exceljs";
+import { backgroundTaskDisplayName } from "../../src/lib/background/display";
 import { selectBackgroundPullCandidates } from "../../src/lib/background/pull-priority";
 import {
   backgroundSlotCount,
@@ -18,6 +19,10 @@ import {
   type SchedulerTaskType,
 } from "../../src/lib/scheduler";
 import { parseEastonWorkbook } from "../../src/lib/easton-import/parser";
+import {
+  invalidatedScheduleDayData,
+  invalidatedTaskSlotStatus,
+} from "../../src/lib/db/employee-schedule-invalidation";
 import {
   calculatePtoHours,
   deductsPtoBalance,
@@ -43,6 +48,7 @@ import {
   resolveScheduleRange,
 } from "../../src/lib/schedule/range";
 import {
+  buildWeekStaffSummary,
   buildWeekDayHealth,
   buildWholeDayShiftGroups,
 } from "../../src/lib/schedule/views";
@@ -53,6 +59,7 @@ import {
 import { selectStaffingSlotSpecs } from "../../src/lib/staffing/requirements";
 import { selectShortageRecommendations } from "../../src/lib/shortage/recommendations";
 import { buildShiftBlockSnapshot } from "../../src/lib/shifts/templates";
+import { managerVisibleShiftBlocks } from "../../src/lib/shifts/legacy";
 import { enumerateIsoDates } from "../../src/lib/utils/date";
 import {
   REQUIRED_CONFIGURABLE_SKILLS,
@@ -794,9 +801,9 @@ describe("generateSchedule", () => {
     assert.equal(result.conflicts[0].slotId, "desired-front");
   });
 
-  it("does not generate multiple same-day assignments for one employee", () => {
+  it("allows non-overlapping AM and PM assignments for one employee", () => {
     const result = generateSchedule({
-      seed: "same-day-single-assignment",
+      seed: "same-day-non-overlapping-shifts",
       employees: [
         {
           id: "solo",
@@ -826,6 +833,42 @@ describe("generateSchedule", () => {
       ],
     });
 
+    assert.equal(result.assignments.length, 2);
+    assert.equal(result.conflicts.length, 0);
+  });
+
+  it("rejects overlapping 0700-1200 and 0800-1200 shifts", () => {
+    const result = generateSchedule({
+      seed: "same-day-overlapping-shifts",
+      employees: [
+        {
+          id: "solo",
+          fullName: "Solo Staff",
+          skillIds: [],
+          availability: allDayMonday,
+        },
+      ],
+      taskTypes,
+      slots: [
+        {
+          id: "early-am",
+          date: monday,
+          taskTypeId: "front-desk",
+          slotIndex: 1,
+          startMinute: 420,
+          endMinute: 720,
+        },
+        {
+          id: "regular-am",
+          date: monday,
+          taskTypeId: "front-desk",
+          slotIndex: 2,
+          startMinute: 480,
+          endMinute: 720,
+        },
+      ],
+    });
+
     assert.equal(result.assignments.length, 1);
     assert.equal(result.conflicts.length, 1);
     assert.equal(
@@ -834,6 +877,172 @@ describe("generateSchedule", () => {
       ),
       true,
     );
+  });
+
+  it("tries another eligible employee when the preferred candidate overlaps", () => {
+    const result = generateSchedule({
+      seed: "alternate-after-overlap",
+      employees: baseEmployees,
+      taskTypes,
+      slots: [slots[1]],
+      existingAssignments: [
+        {
+          slotId: "existing-slot",
+          employeeId: "alice",
+          taskTypeId: "front-desk",
+          date: monday,
+          startMinute: 540,
+          endMinute: 720,
+        },
+      ],
+      rules: [
+        {
+          id: "prefer-alice",
+          type: "PREFER_EMPLOYEE_FOR_TASK",
+          employeeId: "alice",
+          taskTypeId: "front-desk",
+          weight: 1000,
+        },
+      ],
+    });
+
+    assert.equal(result.conflicts.length, 0);
+    assert.equal(result.assignments[0].employeeId, "blake");
+  });
+
+  it("repairs a required clinic shortage with a deterministic assignment swap", () => {
+    const result = generateSchedule({
+      seed: "required-swap-repair",
+      employees: [
+        {
+          id: "flexible",
+          fullName: "Flexible",
+          skillIds: [],
+          availability: allDayMonday,
+        },
+        {
+          id: "backup",
+          fullName: "Backup",
+          skillIds: [],
+          availability: allDayMonday,
+        },
+      ],
+      taskTypes: [
+        {
+          id: "general-clinic",
+          code: "GENERAL_CLINIC",
+          name: "General Clinic",
+          requiredSkillIds: [],
+          isPatientFacing: true,
+          isClinical: true,
+        },
+        {
+          id: "restricted-clinic",
+          code: "RESTRICTED_CLINIC",
+          name: "Restricted Clinic",
+          requiredSkillIds: [],
+          isPatientFacing: true,
+          isClinical: true,
+        },
+      ],
+      slots: [
+        {
+          id: "a-general-clinic",
+          date: monday,
+          taskTypeId: "general-clinic",
+          slotIndex: 1,
+          startMinute: 480,
+          endMinute: 720,
+          requirementLevel: "REQUIRED",
+        },
+        {
+          id: "b-restricted-clinic",
+          date: monday,
+          taskTypeId: "restricted-clinic",
+          slotIndex: 1,
+          startMinute: 480,
+          endMinute: 720,
+          requirementLevel: "REQUIRED",
+          eligibleEmployeeIds: ["flexible"],
+        },
+      ],
+      rules: [
+        {
+          id: "prefer-flexible-general",
+          type: "PREFER_EMPLOYEE_FOR_TASK",
+          employeeId: "flexible",
+          taskTypeId: "general-clinic",
+          weight: 1000,
+        },
+      ],
+    });
+
+    assert.equal(result.conflicts.length, 0);
+    assert.equal(result.repairs[0]?.strategy, "SWAP");
+    assert.deepEqual(
+      result.assignments.map((assignment) => [
+        assignment.slotId,
+        assignment.employeeId,
+      ]),
+      [
+        ["a-general-clinic", "backup"],
+        ["b-restricted-clinic", "flexible"],
+      ],
+    );
+  });
+
+  it("keeps required clinic coverage ahead of Float work", () => {
+    const result = generateSchedule({
+      seed: "clinic-before-float",
+      employees: [
+        {
+          id: "one-person",
+          fullName: "One Person",
+          skillIds: [],
+          availability: allDayMonday,
+        },
+      ],
+      taskTypes: [
+        {
+          id: "clinic",
+          code: "CLINIC",
+          name: "Clinic",
+          requiredSkillIds: [],
+          isPatientFacing: true,
+          isClinical: true,
+        },
+        {
+          id: "float",
+          code: "FLOAT",
+          name: "Float",
+          requiredSkillIds: [],
+          isFloat: true,
+        },
+      ],
+      slots: [
+        {
+          id: "float-slot",
+          date: monday,
+          taskTypeId: "float",
+          slotIndex: 1,
+          startMinute: 480,
+          endMinute: 720,
+          requirementLevel: "REQUIRED",
+        },
+        {
+          id: "clinic-slot",
+          date: monday,
+          taskTypeId: "clinic",
+          slotIndex: 1,
+          startMinute: 480,
+          endMinute: 720,
+          requirementLevel: "REQUIRED",
+        },
+      ],
+    });
+
+    assert.equal(result.assignments[0].slotId, "clinic-slot");
+    assert.equal(result.conflicts[0].slotId, "float-slot");
   });
 });
 
@@ -890,6 +1099,53 @@ describe("PTO workflow helpers", () => {
       ),
       true,
     );
+  });
+
+  it("partial PTO blocks only the overlapping shift", () => {
+    const result = generateSchedule({
+      seed: "partial-pto-shifts",
+      employees: [
+        {
+          id: "partial-pto",
+          fullName: "Partial PTO",
+          skillIds: [],
+          availability: allDayMonday,
+          unavailable: [
+            {
+              startDate: monday,
+              endDate: monday,
+              startMinute: 480,
+              endMinute: 720,
+            },
+          ],
+        },
+      ],
+      taskTypes,
+      slots: [
+        {
+          id: "am-pto-overlap",
+          date: monday,
+          taskTypeId: "front-desk",
+          slotIndex: 1,
+          startMinute: 480,
+          endMinute: 720,
+        },
+        {
+          id: "pm-after-pto",
+          date: monday,
+          taskTypeId: "front-desk",
+          slotIndex: 2,
+          startMinute: 780,
+          endMinute: 1020,
+        },
+      ],
+    });
+
+    assert.deepEqual(
+      result.assignments.map((assignment) => assignment.slotId),
+      ["pm-after-pto"],
+    );
+    assert.equal(result.conflicts[0].slotId, "am-pto-overlap");
   });
 
   it("auto-approves sick and emergency requests", () => {
@@ -2017,6 +2273,67 @@ describe("automated scheduling workflow foundations", () => {
     );
   });
 
+  it("assigns generated background work after clinic coverage when staff remain", () => {
+    const result = generateSchedule({
+      seed: "clinic-then-background",
+      employees: [
+        {
+          id: "clinic-person",
+          fullName: "Clinic Person",
+          skillIds: [],
+          availability: allDayMonday,
+        },
+        {
+          id: "background-person",
+          fullName: "Background Person",
+          skillIds: [],
+          availability: allDayMonday,
+        },
+      ],
+      taskTypes: [
+        {
+          id: "clinic",
+          code: "CLINIC",
+          name: "Clinic",
+          requiredSkillIds: [],
+          isPatientFacing: true,
+          isClinical: true,
+        },
+        {
+          id: "background",
+          code: "BACKGROUND",
+          name: "Background",
+          requiredSkillIds: [],
+          isBackground: true,
+        },
+      ],
+      slots: [
+        {
+          id: "background-slot",
+          date: monday,
+          taskTypeId: "background",
+          slotIndex: 1,
+          requirementLevel: "OPTIONAL",
+          startMinute: 480,
+          endMinute: 720,
+        },
+        {
+          id: "clinic-slot",
+          date: monday,
+          taskTypeId: "clinic",
+          slotIndex: 1,
+          requirementLevel: "REQUIRED",
+          startMinute: 480,
+          endMinute: 720,
+        },
+      ],
+    });
+
+    assert.equal(result.conflicts.length, 0);
+    assert.equal(result.assignments.length, 2);
+    assert.equal(result.assignments.some((item) => item.slotId === "background-slot"), true);
+  });
+
   it("preloads protected background assignments before filling clinic coverage", () => {
     const result = generateSchedule({
       seed: "protected-background",
@@ -2149,6 +2466,105 @@ describe("automated scheduling workflow foundations", () => {
         ptoCount: 2,
         nptoCount: 1,
       },
+    );
+  });
+
+  it("builds a weekly employee grid with AM and PM roles and exposure totals", () => {
+    const rows = buildWeekStaffSummary({
+      employees: [{ id: "employee", fullName: "Employee", targetHours: 40 }],
+      assignments: [
+        {
+          employeeId: "employee",
+          date: monday,
+          shiftBlockId: "am",
+          shiftName: "AM",
+          shiftCategory: "AM",
+          startMinute: 480,
+          endMinute: 720,
+          paidHours: 4,
+          taskTypeCode: "NEW_GI",
+          taskTypeName: "New GI",
+          isPatientFacing: true,
+          isBackground: false,
+          isEndoscopy: false,
+          locked: false,
+        },
+        {
+          employeeId: "employee",
+          date: monday,
+          shiftBlockId: "pm",
+          shiftName: "PM",
+          shiftCategory: "PM",
+          startMinute: 780,
+          endMinute: 1020,
+          paidHours: 4,
+          taskTypeCode: "RESEARCH",
+          taskTypeName: "Research",
+          isPatientFacing: false,
+          isBackground: true,
+          isEndoscopy: false,
+          locked: false,
+        },
+      ],
+    });
+
+    assert.equal(rows[0].assignmentsByDate[monday].length, 2);
+    assert.equal(rows[0].totalHours, 8);
+    assert.equal(rows[0].patientFacingShiftCount, 1);
+    assert.equal(rows[0].backgroundShiftCount, 1);
+    assert.equal(rows[0].exposure.GI, 1);
+  });
+
+  it("hides migration-only legacy full-day blocks from manager workflow", () => {
+    assert.deepEqual(
+      managerVisibleShiftBlocks([
+        {
+          id: "legacy",
+          shiftTemplateId: "legacy-default-shift-template",
+          source: "MIGRATION",
+        },
+        { id: "am", shiftTemplateId: "am-template", source: "TEMPLATE" },
+      ]).map((block) => block.id),
+      ["am"],
+    );
+  });
+
+  it("marks future schedules for regeneration when an employee is invalidated", () => {
+    assert.equal(
+      invalidatedTaskSlotStatus({
+        remainingAssignments: 0,
+        requiredStaff: 1,
+        requirementLevel: "REQUIRED",
+      }),
+      "SHORTAGE",
+    );
+    assert.deepEqual(
+      invalidatedScheduleDayData({
+        employeeName: "Employee",
+        reason: "deactivated",
+        invalidatedAt: new Date("2026-06-01T12:00:00.000Z"),
+      }),
+      {
+        status: "NEEDS_REGENERATION",
+        publishedAt: null,
+        publishedByEmployeeId: null,
+        notes:
+          "Needs regeneration: Employee was deactivated on 2026-06-01T12:00:00.000Z.",
+      },
+    );
+  });
+
+  it("formats background task labels without changing stored names", () => {
+    assert.equal(
+      backgroundTaskDisplayName({ name: "Research", isBackground: true }),
+      "Research (Background)",
+    );
+    assert.equal(
+      backgroundTaskDisplayName({
+        name: "Research (Background)",
+        isBackground: true,
+      }),
+      "Research (Background)",
     );
   });
 

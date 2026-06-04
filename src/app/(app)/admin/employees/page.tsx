@@ -2,10 +2,16 @@ import { EmployeeDirectory } from "@/components/admin/employee-directory";
 import { EmployeeForm } from "@/components/admin/employee-form";
 import { SetupRequired } from "@/components/layout/setup-required";
 import { getEmployeeAdminData } from "@/lib/db/employees";
+import { AlertTriangle } from "lucide-react";
 
 export const dynamic = "force-dynamic";
 
-export default async function EmployeesPage() {
+export default async function EmployeesPage({
+  searchParams,
+}: {
+  searchParams: Promise<Record<string, string | string[] | undefined>>;
+}) {
+  const params = await searchParams;
   let data: Awaited<ReturnType<typeof getEmployeeAdminData>>;
 
   try {
@@ -36,6 +42,25 @@ export default async function EmployeesPage() {
           and set staffing limits used by the scheduler.
         </p>
       </section>
+
+      {typeof params.employeeAction === "string" ? (
+        <section className="rounded-md border border-amber-200 bg-amber-50 p-4 text-sm text-amber-950">
+          <div className="flex items-start gap-3">
+            <AlertTriangle size={18} className="mt-0.5 shrink-0" aria-hidden="true" />
+            <div>
+              <h2 className="font-semibold">
+                Employee {params.employeeAction}; future schedules invalidated
+              </h2>
+              <p className="mt-1">
+                {params.affectedCount ?? "0"} schedule dates now need regeneration
+                {typeof params.affectedDates === "string" && params.affectedDates
+                  ? `: ${params.affectedDates}`
+                  : "."}
+              </p>
+            </div>
+          </div>
+        </section>
+      ) : null}
 
       <section className="rounded-md border border-slate-200 bg-white p-5 shadow-sm">
         <h2 className="text-lg font-semibold text-slate-950">Create employee</h2>

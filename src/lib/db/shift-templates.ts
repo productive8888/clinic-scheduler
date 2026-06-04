@@ -1,11 +1,13 @@
 import { writeAuditLog } from "@/lib/audit";
 import { getDb } from "@/lib/db";
+import { LEGACY_SHIFT_TEMPLATE_ID } from "@/lib/shifts/legacy";
 import type { ShiftTemplateFormValues } from "@/lib/validation/shift-template";
 import { parseIsoDate } from "@/lib/utils/date";
 import { timeStringToMinute } from "@/lib/utils/time";
 
 export function getShiftTemplatesPageData() {
   return getDb().shiftTemplate.findMany({
+    where: { id: { not: LEGACY_SHIFT_TEMPLATE_ID } },
     orderBy: [
       { active: "desc" },
       { dayOfWeek: "asc" },

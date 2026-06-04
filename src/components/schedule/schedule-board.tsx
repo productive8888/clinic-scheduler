@@ -36,7 +36,7 @@ import {
   formatDisplayDate,
   todayIsoDate,
 } from "@/lib/utils/date";
-import { formatMinuteOfDay } from "@/lib/utils/time";
+import { formatCompactMinuteRange, formatMinuteOfDay } from "@/lib/utils/time";
 
 type ScheduleDayWithSlots = Prisma.ScheduleDayGetPayload<{
   include: {
@@ -62,6 +62,7 @@ type ScheduleBoardProps = {
     }
   >;
   manualWarnings: ManualAssignmentWarningMatrix;
+  legacySlotCount: number;
 };
 
 export function ScheduleBoard({
@@ -70,6 +71,7 @@ export function ScheduleBoard({
   employees,
   taskTypes,
   manualWarnings,
+  legacySlotCount,
 }: ScheduleBoardProps) {
   const currentScenario = scheduleDay?.scenario ?? "ROUTINE";
   const unfilledCount =
@@ -91,6 +93,7 @@ export function ScheduleBoard({
   const canPublish = Boolean(
       scheduleDay &&
       scheduleDay.status !== "PUBLISHED" &&
+      scheduleDay.status !== "NEEDS_REGENERATION" &&
       requiredShortageCount === 0 &&
       assignedCount > 0,
   );
@@ -282,28 +285,33 @@ export function ScheduleBoard({
             Add slot
           </button>
         </form>
-        <div className="mt-4 grid gap-3 border-t border-slate-200 pt-4 text-sm text-slate-600 md:grid-cols-4">
-          <div>
-            <span className="font-semibold text-slate-900">Prepare slots</span> creates
-            dated openings for the selected clinic scenario.
-          </div>
-          <div>
-            <span className="font-semibold text-slate-900">Generate draft</span> fills
-            unlocked slots from skills, availability, PTO, rules, and fairness.
-          </div>
-          <div>
-            <span className="font-semibold text-slate-900">Publish</span> finalizes the
-            reviewed schedule once shortages are resolved.
-          </div>
-          <div>
-            <span className="font-semibold text-slate-900">Export Calendar</span> downloads
-            an ICS file containing published assignments only.
-          </div>
-        </div>
         <div className="mt-4">
           <BulkGenerationForm date={date} />
         </div>
       </section>
+
+      {scheduleDay?.status === "NEEDS_REGENERATION" ? (
+        <section className="rounded-md border border-rose-200 bg-rose-50 p-4 text-sm text-rose-950">
+          <div className="flex items-start gap-3">
+            <RefreshCw size={18} aria-hidden="true" className="mt-0.5 shrink-0" />
+            <div>
+              <h2 className="font-semibold">Schedule needs regeneration</h2>
+              <p className="mt-1">
+                A future employee assignment was removed or invalidated. Generate a
+                draft before publishing this date.
+              </p>
+            </div>
+          </div>
+        </section>
+      ) : null}
+
+      {legacySlotCount > 0 ? (
+        <section className="rounded-md border border-slate-200 bg-slate-50 p-4 text-sm text-slate-700">
+          {legacySlotCount} archived legacy full-day slot
+          {legacySlotCount === 1 ? " is" : "s are"} hidden from this shift-block
+          board. Preparing or generating the date uses configured ShiftTemplates.
+        </section>
+      ) : null}
 
       {shortageCount > 0 ? (
         <section className="rounded-md border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900">
@@ -411,17 +419,31 @@ export function ScheduleBoard({
             </div>
           ) : null}
           {shiftGroups.map((group) => (
-            <div key={group.shiftBlock.id} className="grid gap-3">
-              <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-200 pb-2">
+            <div
+              key={group.shiftBlock.id}
+              className="overflow-hidden rounded-md border border-slate-200 bg-white shadow-sm"
+            >
+              <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-200 bg-slate-50 px-4 py-3">
                 <div>
-                  <h2 className="text-lg font-semibold text-slate-950">
-                    {group.shiftBlock.name}
-                  </h2>
-                  <p className="text-sm text-slate-500">
-                    {formatMinuteOfDay(group.shiftBlock.startMinute)}-
+                  <div className="flex flex-wrap items-baseline gap-3">
+                    <h2 className="font-mono text-xl font-semibold text-slate-950">
+                      {formatCompactMinuteRange(
+                        group.shiftBlock.startMinute,
+                        group.shiftBlock.endMinute,
+                      )}
+                    </h2>
+                    <span className="text-sm font-semibold text-slate-700">
+                      {group.shiftBlock.name}
+                    </span>
+                    <span className="rounded-md bg-white px-2 py-1 text-xs font-semibold text-slate-600">
+                      {formatEnumLabel(group.shiftBlock.shiftCategory)}
+                    </span>
+                  </div>
+                  <p className="mt-1 text-xs text-slate-500">
+                    {formatMinuteOfDay(group.shiftBlock.startMinute)} to{" "}
                     {formatMinuteOfDay(group.shiftBlock.endMinute)} /{" "}
                     {Number(group.shiftBlock.paidHours)} paid hours /{" "}
-                    {formatEnumLabel(group.shiftBlock.shiftCategory)}
+                    {group.slots.length} roles
                   </p>
                 </div>
                 {group.shiftBlock.defaultForSchedule ? (
@@ -430,7 +452,7 @@ export function ScheduleBoard({
                   </span>
                 ) : null}
               </div>
-              <div className="grid gap-4 lg:grid-cols-3">
+              <div className="divide-y divide-slate-200">
                 {group.slots.map((slot) => (
                   <ScheduleSlotCard
                     key={slot.id}
@@ -466,14 +488,14 @@ function ScheduleSlotCard({
     <article
       className={
         slot.status === "SHORTAGE"
-          ? "rounded-md border border-amber-300 bg-white p-4 shadow-sm ring-2 ring-amber-100"
-          : "rounded-md border border-slate-200 bg-white p-4 shadow-sm"
+          ? "grid gap-4 bg-amber-50/50 p-4 lg:grid-cols-[minmax(190px,1.1fr)_minmax(180px,1fr)_minmax(180px,1fr)_minmax(220px,1.2fr)]"
+          : "grid gap-4 bg-white p-4 lg:grid-cols-[minmax(190px,1.1fr)_minmax(180px,1fr)_minmax(180px,1fr)_minmax(220px,1.2fr)]"
       }
     >
-      <div className="flex items-start justify-between gap-3">
+      <div>
         <div>
           <div className="flex flex-wrap items-center gap-2">
-            <h3 className="text-lg font-semibold text-slate-950">
+            <h3 className="font-semibold text-slate-950">
               {backgroundTaskDisplayName({
                 name: slot.label ?? slot.taskType.name,
                 isBackground: slot.taskType.isBackground,
@@ -483,35 +505,30 @@ function ScheduleSlotCard({
             <span className={requirementLevelClassName(slot.requirementLevel)}>
               {formatEnumLabel(slot.requirementLevel)}
             </span>
+            <span className={taskClassName(slot.taskType)}>
+              {taskClassLabel(slot.taskType)}
+            </span>
           </div>
-          <p className="mt-1 text-sm text-slate-500">
+          <p className="mt-1 text-xs text-slate-500">
             Slot #{slot.slotIndex} / {formatEnumLabel(slot.source)}
           </p>
         </div>
-        <span
-          className={
-            slot.status === "FILLED"
-              ? "rounded-md bg-emerald-50 px-2 py-1 text-xs font-semibold text-emerald-800"
-              : "rounded-md bg-amber-50 px-2 py-1 text-xs font-semibold text-amber-800"
-          }
-        >
-          {slot.status}
-        </span>
       </div>
 
-      <div className="mt-4 rounded-md bg-slate-50 p-3">
+      <div>
+        <div className="text-xs font-semibold uppercase text-slate-500">Assigned</div>
         {slot.assignments.length ? (
-          <div className="grid gap-2">
+          <div className="mt-2 grid gap-2">
             {slot.assignments.map((assignment) => (
               <div
                 key={assignment.id}
-                className="flex items-center justify-between gap-2 text-sm font-semibold text-slate-900"
+                className="grid gap-1 text-sm font-semibold text-slate-900"
               >
                 <span className="inline-flex items-center gap-2">
                   <UserCheck size={16} aria-hidden="true" />
                   {assignment.employee.fullName}
                 </span>
-                <span className="rounded-md bg-white px-2 py-1 text-xs font-medium text-slate-600">
+                <span className="w-fit rounded-md bg-slate-100 px-2 py-1 text-xs font-medium text-slate-600">
                   {assignment.locked ? "Locked" : assignment.source}
                 </span>
                 {assignment.shortNotice ? (
@@ -521,7 +538,7 @@ function ScheduleSlotCard({
             ))}
           </div>
         ) : (
-          <div className="flex items-center gap-2 text-sm font-semibold text-amber-800">
+          <div className="mt-2 flex items-center gap-2 text-sm font-semibold text-amber-800">
             <AlertTriangle size={16} aria-hidden="true" />
             Unfilled
           </div>
@@ -533,41 +550,53 @@ function ScheduleSlotCard({
         </p>
       </div>
 
-      {slot.notes ? (
-        <div
-          className={
-            slot.status === "SHORTAGE"
-              ? "mt-3 rounded-md border border-amber-200 bg-amber-50 p-3 text-xs text-amber-900"
-              : "mt-3 rounded-md border border-slate-200 bg-slate-50 p-3 text-xs text-slate-600"
-          }
-        >
-          {slot.notes}
-        </div>
-      ) : null}
-
-      <div className="mt-4 flex flex-wrap gap-2">
-        {requiredSkills.length ? (
-          requiredSkills.map((skill) => (
-            <span
-              key={skill}
-              className="rounded-md border border-slate-200 px-2 py-1 text-xs text-slate-600"
-            >
-              {skill}
-            </span>
-          ))
-        ) : (
-          <span className="rounded-md border border-slate-200 px-2 py-1 text-xs text-slate-600">
-            General access
+      <div>
+        <div className="flex flex-wrap items-center gap-2">
+          <span
+            className={
+              slot.status === "FILLED"
+                ? "rounded-md bg-emerald-50 px-2 py-1 text-xs font-semibold text-emerald-800"
+                : "rounded-md bg-amber-100 px-2 py-1 text-xs font-semibold text-amber-900"
+            }
+          >
+            {slot.status}
           </span>
-        )}
+          {requiredSkills.length ? (
+            requiredSkills.map((skill) => (
+              <span
+                key={skill}
+                className="rounded-md border border-slate-200 bg-white px-2 py-1 text-xs text-slate-600"
+              >
+                {skill}
+              </span>
+            ))
+          ) : (
+            <span className="rounded-md border border-slate-200 bg-white px-2 py-1 text-xs text-slate-600">
+              General access
+            </span>
+          )}
+        </div>
+        {slot.notes ? (
+          <div
+            className={
+              slot.status === "SHORTAGE"
+                ? "mt-3 border-l-2 border-amber-400 pl-3 text-xs text-amber-900"
+                : "mt-3 border-l-2 border-slate-300 pl-3 text-xs text-slate-600"
+            }
+          >
+            {slot.notes}
+          </div>
+        ) : null}
       </div>
 
-      <ManualAssignmentForm
-        slotId={slot.id}
-        currentEmployeeId={currentAssignment?.employeeId}
-        employees={employees}
-        warningsByEmployee={warningsByEmployee}
-      />
+      <div>
+        <ManualAssignmentForm
+          slotId={slot.id}
+          currentEmployeeId={currentAssignment?.employeeId}
+          employees={employees}
+          warningsByEmployee={warningsByEmployee}
+        />
+      </div>
     </article>
   );
 }
@@ -598,4 +627,40 @@ function requirementLevelClassName(value: string) {
     default:
       return "rounded-md bg-slate-100 px-2 py-1 text-xs font-semibold text-slate-600";
   }
+}
+
+function taskClassLabel(taskType: {
+  isPatientFacing: boolean;
+  isBackground: boolean;
+  isFloat: boolean;
+  isEndoscopy: boolean;
+}) {
+  if (taskType.isBackground) return "Background";
+  if (taskType.isFloat) return "Float";
+  if (taskType.isEndoscopy) return "Endoscopy";
+  if (taskType.isPatientFacing) return "Clinic";
+  return "Support";
+}
+
+function taskClassName(taskType: {
+  isPatientFacing: boolean;
+  isBackground: boolean;
+  isFloat: boolean;
+  isEndoscopy: boolean;
+}) {
+  const label = taskClassLabel(taskType);
+
+  if (label === "Clinic") {
+    return "rounded-md bg-emerald-50 px-2 py-1 text-xs font-semibold text-emerald-800";
+  }
+
+  if (label === "Background") {
+    return "rounded-md bg-sky-50 px-2 py-1 text-xs font-semibold text-sky-800";
+  }
+
+  if (label === "Float") {
+    return "rounded-md bg-violet-50 px-2 py-1 text-xs font-semibold text-violet-800";
+  }
+
+  return "rounded-md bg-slate-100 px-2 py-1 text-xs font-semibold text-slate-700";
 }

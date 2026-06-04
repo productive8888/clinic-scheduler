@@ -1,19 +1,23 @@
 import { selectAssignment, toExistingAssignment } from "./assignment";
+import { tryRepairRequiredAssignment } from "./repair";
 import type {
   ExistingAssignment,
   GenerateScheduleInput,
   ScheduleAssignment,
   ScheduleConflict,
+  ScheduleRepair,
   SchedulerTaskSlot,
   SchedulerTaskType,
 } from "./types";
 
-export const SCHEDULER_ENGINE_VERSION = "1.0.0";
+export const SCHEDULER_ENGINE_VERSION = "1.1.0";
 
 export function generateSchedule(input: GenerateScheduleInput) {
   const taskTypesById = new Map(input.taskTypes.map((taskType) => [taskType.id, taskType]));
+  const slotsById = new Map(input.slots.map((slot) => [slot.id, slot]));
   const assignments: ScheduleAssignment[] = [];
   const conflicts: ScheduleConflict[] = [];
+  const repairs: ScheduleRepair[] = [];
   const occupiedAssignments: ExistingAssignment[] = [
     ...(input.existingAssignments ?? []),
   ];
@@ -78,6 +82,52 @@ export function generateSchedule(input: GenerateScheduleInput) {
       });
 
       if (!selection.assignment) {
+        const repair = tryRepairRequiredAssignment({
+          seed: `${input.seed}:${staffIndex}`,
+          targetSlot: slot,
+          targetTaskType: taskType,
+          employees: input.employees,
+          rules: input.rules ?? [],
+          fairness: input.fairness,
+          assignments,
+          occupiedAssignments,
+          slotsById,
+          taskTypesById,
+        });
+
+        if (repair) {
+          removeAssignment(
+            assignments,
+            occupiedAssignments,
+            repair.displacedAssignment,
+          );
+          assignments.push(repair.targetAssignment);
+          occupiedAssignments.push(
+            toExistingAssignment(repair.targetAssignment, slot, taskType),
+          );
+
+          if (repair.replacementAssignment) {
+            const displacedSlot = slotsById.get(repair.displacedAssignment.slotId);
+            const displacedTaskType = taskTypesById.get(
+              repair.displacedAssignment.taskTypeId,
+            );
+
+            if (displacedSlot && displacedTaskType) {
+              assignments.push(repair.replacementAssignment);
+              occupiedAssignments.push(
+                toExistingAssignment(
+                  repair.replacementAssignment,
+                  displacedSlot,
+                  displacedTaskType,
+                ),
+              );
+            }
+          }
+
+          repairs.push(repair.repair);
+          continue;
+        }
+
         conflicts.push({
           slotId: slot.id,
           taskTypeId: taskType.id,
@@ -99,11 +149,13 @@ export function generateSchedule(input: GenerateScheduleInput) {
   return {
     assignments: sortAssignments(assignments),
     conflicts,
+    repairs,
     diagnostics: {
       seed: input.seed,
       slotCount: input.slots.length,
       assignmentCount: assignments.length,
       conflictCount: conflicts.length,
+      repairCount: repairs.length,
     },
   };
 }
@@ -124,6 +176,7 @@ function sortSlots(
 
     return (
       requirementPriority(left) - requirementPriority(right) ||
+      objectivePriority(leftTask) - objectivePriority(rightTask) ||
       rightSkillCount - leftSkillCount ||
       rightDifficulty - leftDifficulty ||
       left.date.localeCompare(right.date) ||
@@ -132,6 +185,26 @@ function sortSlots(
       left.id.localeCompare(right.id)
     );
   });
+}
+
+function objectivePriority(taskType: SchedulerTaskType | undefined) {
+  if (taskType?.isPatientFacing) {
+    return 0;
+  }
+
+  if (taskType?.isClinical) {
+    return 1;
+  }
+
+  if (taskType?.isFloat) {
+    return 2;
+  }
+
+  if (taskType?.isBackground) {
+    return 3;
+  }
+
+  return 2;
 }
 
 function requirementPriority(slot: SchedulerTaskSlot) {
@@ -156,4 +229,26 @@ function sortAssignments(assignments: ScheduleAssignment[]) {
       left.taskTypeId.localeCompare(right.taskTypeId) ||
       left.slotId.localeCompare(right.slotId),
   );
+}
+
+function removeAssignment(
+  assignments: ScheduleAssignment[],
+  occupiedAssignments: ExistingAssignment[],
+  assignment: ScheduleAssignment,
+) {
+  const assignmentIndex = assignments.findIndex(
+    (item) =>
+      item.slotId === assignment.slotId && item.employeeId === assignment.employeeId,
+  );
+  if (assignmentIndex >= 0) {
+    assignments.splice(assignmentIndex, 1);
+  }
+
+  const occupiedIndex = occupiedAssignments.findIndex(
+    (item) =>
+      item.slotId === assignment.slotId && item.employeeId === assignment.employeeId,
+  );
+  if (occupiedIndex >= 0) {
+    occupiedAssignments.splice(occupiedIndex, 1);
+  }
 }

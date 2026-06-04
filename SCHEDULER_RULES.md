@@ -33,13 +33,20 @@ not contain scheduling decisions.
   schedule days and return them to generated draft review.
 - NPTO approval, override, and approval reversal regenerate existing affected
   schedule days and return them to generated draft review.
-- Employees cannot receive more than one generated assignment on the same date.
-  Managers can still explicitly create multiple locked manual overrides when
-  clinic operations require it.
+- Employees can receive multiple assignments on the same date when the dated
+  shift intervals do not overlap. `0800-1200` plus `1300-1700` is valid;
+  `0700-1200` plus `0800-1200` is rejected. Weekly assignment limits continue
+  to count actual assignments.
 - Weekly assignment limits are honored when configured.
 - Required slots are filled before desired, conditional, and optional slots.
-  Within the same requirement level, skilled and difficult slots are filled
-  before easier general slots.
+  Within the same requirement level, patient-facing clinic roles are filled
+  before other clinical work, Float, and background work. Skilled and difficult
+  clinic slots are then filled before easier general slots.
+- If greedy selection leaves a required patient-facing clinic slot unfilled,
+  the engine performs a deterministic bounded repair pass. It first tries a
+  direct assignment swap, then allows lower-priority Float or explicitly
+  pullable background work to yield to clinic coverage. Manager-facing shortage
+  recommendations are attached only after these attempts fail.
 - Manual locked assignments are preserved during regeneration.
 - Protected background assignments are preloaded with locked/manual assignments
   before clinic slot selection, so generation cannot silently pull them.
@@ -104,8 +111,12 @@ not contain scheduling decisions.
   unless a manager explicitly confirms overwrite. Earlier generated days become
   deterministic fairness history for later days in the range.
 - Manual assignment validation previews skill, PTO/NPTO, availability, overlap,
-  weekly assignment limit, expected-hours, and required-slot warnings. A manager
-  can proceed with a recorded override reason.
+  weekly assignment limit, expected-hours, fairness, configured pattern
+  deviation, and required-slot warnings. A manager can proceed with a recorded
+  override reason.
+- Employee deactivation/deletion removes future active assignments, marks
+  affected required slots as shortages, unpublishes affected dates, and marks
+  each date `NEEDS_REGENERATION`. Past assignment history is preserved.
 - Manual task-slot additions, scenario changes, and manual assignment overrides
   made within 7 days of the affected shift are marked short notice in audit and
   schedule views.

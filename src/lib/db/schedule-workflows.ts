@@ -7,7 +7,11 @@ import {
   publishScheduleForDate,
 } from "@/lib/db/schedule";
 import { clinicWeekRange, planScheduleRange } from "@/lib/schedule/range";
-import { buildWeekDayHealth } from "@/lib/schedule/views";
+import {
+  buildWeekDayHealth,
+  buildWeekStaffSummary,
+} from "@/lib/schedule/views";
+import { LEGACY_SHIFT_TEMPLATE_ID } from "@/lib/shifts/legacy";
 import { parseIsoDate, toIsoDate } from "@/lib/utils/date";
 
 export type BulkGenerationSummary = {
@@ -16,9 +20,13 @@ export type BulkGenerationSummary = {
   datesGenerated: number;
   shiftBlocks: number;
   taskSlots: number;
+  clinicSlots: number;
+  backgroundSlots: number;
   assignmentsFilled: number;
   unfilledSlots: number;
   shortages: number;
+  unresolvedShortages: number;
+  schedulesRequiringRegeneration: number;
   conflicts: number;
   skippedClosedDates: string[];
   skippedSundays: string[];
@@ -58,9 +66,13 @@ export async function generateScheduleRange(input: {
     datesGenerated: 0,
     shiftBlocks: 0,
     taskSlots: 0,
+    clinicSlots: 0,
+    backgroundSlots: 0,
     assignmentsFilled: 0,
     unfilledSlots: 0,
     shortages: 0,
+    unresolvedShortages: 0,
+    schedulesRequiringRegeneration: 0,
     conflicts: 0,
     skippedClosedDates: [],
     skippedSundays: [],
@@ -113,6 +125,12 @@ export async function generateScheduleRange(input: {
     summary.datesGenerated += 1;
     summary.shiftBlocks += board.shiftBlocks.length;
     summary.taskSlots += board.taskSlots.length;
+    summary.clinicSlots += board.taskSlots.filter(
+      (slot) => !slot.taskType.isBackground,
+    ).length;
+    summary.backgroundSlots += board.taskSlots.filter(
+      (slot) => slot.taskType.isBackground,
+    ).length;
     summary.assignmentsFilled += board.taskSlots.reduce(
       (count, slot) => count + slot.assignments.length,
       0,
@@ -123,6 +141,14 @@ export async function generateScheduleRange(input: {
     summary.shortages += board.taskSlots.filter(
       (slot) => slot.status === "SHORTAGE",
     ).length;
+    summary.unresolvedShortages += board.taskSlots.filter(
+      (slot) =>
+        slot.requirementLevel === "REQUIRED" &&
+        (slot.status === "SHORTAGE" ||
+          slot.assignments.length < slot.requiredStaff),
+    ).length;
+    summary.schedulesRequiringRegeneration +=
+      board.status === "NEEDS_REGENERATION" ? 1 : 0;
     summary.conflicts += result.diagnostics.conflictCount;
 
     if (board.scenario === "CLINIC_CLOSED") {
@@ -210,11 +236,31 @@ export async function getScheduleWeekData(anchorDate: string) {
       orderBy: { date: "asc" },
       include: {
         shiftBlocks: {
-          where: { active: true },
+          where: {
+            active: true,
+            source: { notIn: ["MIGRATION", "FALLBACK"] },
+            OR: [
+              { shiftTemplateId: null },
+              { shiftTemplateId: { not: LEGACY_SHIFT_TEMPLATE_ID } },
+            ],
+          },
           orderBy: [{ startMinute: "asc" }, { name: "asc" }],
         },
         taskSlots: {
-          where: { status: { not: "CANCELLED" } },
+          where: {
+            status: { not: "CANCELLED" },
+            shiftBlock: {
+              AND: [
+                { source: { notIn: ["MIGRATION", "FALLBACK"] } },
+                {
+                  OR: [
+                    { shiftTemplateId: null },
+                    { shiftTemplateId: { not: LEGACY_SHIFT_TEMPLATE_ID } },
+                  ],
+                },
+              ],
+            },
+          },
           orderBy: [
             { shiftBlock: { startMinute: "asc" } },
             { taskType: { sortOrder: "asc" } },
@@ -258,38 +304,51 @@ export async function getScheduleWeekData(anchorDate: string) {
       },
     }),
   ]);
-  const scheduledHoursByEmployee = new Map<string, number>();
-
-  for (const day of scheduleDays) {
-    for (const slot of day.taskSlots) {
-      for (const assignment of slot.assignments) {
-        scheduledHoursByEmployee.set(
-          assignment.employeeId,
-          (scheduledHoursByEmployee.get(assignment.employeeId) ?? 0) +
-            Number(slot.shiftBlock.paidHours),
-        );
-      }
-    }
-  }
+  const staffRows = buildWeekStaffSummary({
+    employees: employees.map((employee) => ({
+      id: employee.id,
+      fullName: employee.fullName,
+      targetHours: Number(
+        employee.workPattern?.targetWeeklyHours ?? employee.expectedWeeklyHours,
+      ),
+    })),
+    assignments: scheduleDays.flatMap((day) =>
+      day.taskSlots.flatMap((slot) =>
+        slot.assignments.map((assignment) => ({
+          employeeId: assignment.employeeId,
+          date: toIsoDate(day.date),
+          shiftBlockId: slot.shiftBlock.id,
+          shiftName: slot.shiftBlock.name,
+          shiftCategory: slot.shiftBlock.shiftCategory,
+          startMinute: slot.shiftBlock.startMinute,
+          endMinute: slot.shiftBlock.endMinute,
+          paidHours: Number(slot.shiftBlock.paidHours),
+          taskTypeCode: slot.taskType.code,
+          taskTypeName: slot.taskType.name,
+          isPatientFacing: slot.taskType.isPatientFacing,
+          isBackground: slot.taskType.isBackground,
+          isEndoscopy: slot.taskType.isEndoscopy,
+          locked: assignment.locked,
+        })),
+      ),
+    ),
+  });
 
   return {
     range,
-    weeklyHourWarnings: employees
+    staffRows,
+    weeklyHourWarnings: staffRows
       .map((employee) => {
-        const scheduledHours = scheduledHoursByEmployee.get(employee.id) ?? 0;
-        const targetHours = Number(
-          employee.workPattern?.targetWeeklyHours ?? employee.expectedWeeklyHours,
-        );
-
         return {
-          employeeId: employee.id,
+          employeeId: employee.employeeId,
           fullName: employee.fullName,
-          scheduledHours,
-          targetHours,
+          scheduledHours: employee.totalHours,
+          targetHours: employee.targetHours,
           status:
-            scheduledHours > targetHours
+            employee.totalHours > employee.targetHours
               ? ("ABOVE_TARGET" as const)
-              : scheduledHours > 0 && scheduledHours < targetHours
+              : employee.totalHours > 0 &&
+                  employee.totalHours < employee.targetHours
                 ? ("BELOW_TARGET" as const)
                 : ("ON_TARGET" as const),
         };

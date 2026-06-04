@@ -19,14 +19,20 @@ belong to shift blocks, which lets the same task type appear in multiple shifts
 on the same date without duplicate task types.
 
 The manager whole-day view displays every shift block for one date. The week
-view summarizes Monday-Saturday and links back to each whole-day board. Bulk
-generation prepares all applicable shift blocks and staffing-rule slots before
-running the same deterministic daily scheduler in ascending date order.
+view includes an employee-row staff summary with AM/PM roles, unique-shift paid
+hours, patient/background counts, Saturday/endoscopy counts, and GI/Allergy/PCP
+exposure. Bulk generation prepares all applicable shift blocks and
+staffing-rule slots before running the same deterministic daily scheduler in
+ascending date order.
 
-Automatic generation continues to limit employees to one generated assignment
-per day. Managers can use the multi-shift helper for non-overlapping AM/PM
-assignments; true overlaps and other rule violations require an explicit
-override reason.
+Automatic generation and the multi-shift helper allow multiple non-overlapping
+same-day assignments. True interval overlaps, such as 0700-1200 and 0800-1200,
+remain invalid unless a manager explicitly overrides with a reason.
+
+The migration-only legacy full-day shift remains stored for old schedule
+history, but it is inactive and hidden from normal generation, staffing-rule,
+shortage-rule, and manager schedule views. New preparation uses configured
+ShiftTemplates only; the app no longer creates an implicit 8-5 fallback block.
 
 Safe defaults create routine task slots only on shift blocks marked
 `defaultForSchedule`. Easton spreadsheet defaults are instead applied primarily

@@ -7,7 +7,6 @@ import {
   addTaskSlotToScheduleDay,
   copyScheduleDayAssignments,
   ensureScheduleDayWithDefaultSlots,
-  generateScheduleForDate,
   manuallyAssignSlot,
   manuallyAssignSlots,
   publishScheduleForDate,
@@ -42,12 +41,14 @@ export async function generateScheduleAction(formData: FormData) {
   const date = getDateFromForm(formData);
   const seed = String(formData.get("seed") || `clinic-${date}`);
 
-  await generateScheduleForDate({
-    date,
-    seed,
+  await generateScheduleRange({
+    startDate: date,
+    endDate: date,
+    seedPrefix: seed,
     actorEmployeeId: auditActorId(actor),
   });
   revalidatePath("/schedule");
+  revalidatePath("/schedule/week");
 }
 
 export async function publishScheduleAction(formData: FormData) {
@@ -142,7 +143,7 @@ export async function bulkGenerateScheduleAction(formData: FormData) {
   revalidatePath("/schedule");
   revalidatePath("/schedule/week");
   redirect(
-    `/schedule/week?date=${range.startDate}&generated=${summary.datesGenerated}&slots=${summary.taskSlots}&filled=${summary.assignmentsFilled}&shortages=${summary.shortages}&publishedSkipped=${summary.publishedDatesSkipped.length}`,
+    `/schedule/week?date=${range.startDate}&generated=${summary.datesGenerated}&shifts=${summary.shiftBlocks}&clinicSlots=${summary.clinicSlots}&backgroundSlots=${summary.backgroundSlots}&filled=${summary.assignmentsFilled}&shortages=${summary.unresolvedShortages}&publishedSkipped=${summary.publishedDatesSkipped.length}`,
   );
 }
 

@@ -20,7 +20,7 @@ import {
   formatDisplayDate,
   todayIsoDate,
 } from "@/lib/utils/date";
-import { formatMinuteOfDay } from "@/lib/utils/time";
+import { formatCompactMinuteRange, formatMinuteOfDay } from "@/lib/utils/time";
 
 type WeekData = Awaited<ReturnType<typeof getScheduleWeekData>>;
 
@@ -142,6 +142,8 @@ export function ScheduleWeekBoard({
         </section>
       ) : null}
 
+      <StaffSummaryTable data={data} weekDates={weekDates} />
+
       <section className="grid gap-4">
         {weekDates.map((date) => {
           const day = daysByDate.get(date);
@@ -150,6 +152,120 @@ export function ScheduleWeekBoard({
         })}
       </section>
     </div>
+  );
+}
+
+function StaffSummaryTable({
+  data,
+  weekDates,
+}: {
+  data: WeekData;
+  weekDates: string[];
+}) {
+  return (
+    <section className="overflow-hidden rounded-md border border-slate-200 bg-white shadow-sm">
+      <div className="border-b border-slate-200 px-4 py-3">
+        <h2 className="font-semibold text-slate-950">Weekly staff summary</h2>
+        <p className="mt-1 text-xs text-slate-500">
+          Employee assignments by shift block, with workload and exposure totals.
+        </p>
+      </div>
+      <div className="overflow-x-auto">
+        <table className="min-w-[1500px] border-collapse text-left text-xs">
+          <thead className="bg-slate-50 text-slate-600">
+            <tr>
+              <th className="sticky left-0 z-10 border-b border-r border-slate-200 bg-slate-50 px-3 py-2 font-semibold">
+                Employee
+              </th>
+              {weekDates.map((date) => (
+                <th
+                  key={date}
+                  className="min-w-44 border-b border-r border-slate-200 px-3 py-2 font-semibold"
+                >
+                  {shortDateLabel(date)}
+                </th>
+              ))}
+              <th className="min-w-56 border-b border-slate-200 px-3 py-2 font-semibold">
+                Week totals
+              </th>
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-slate-200">
+            {data.staffRows.map((row) => (
+              <tr key={row.employeeId} className="align-top">
+                <th className="sticky left-0 z-10 border-r border-slate-200 bg-white px-3 py-3">
+                  <div className="font-semibold text-slate-950">{row.fullName}</div>
+                  <div
+                    className={
+                      row.totalHours > row.targetHours
+                        ? "mt-1 text-amber-700"
+                        : "mt-1 text-slate-500"
+                    }
+                  >
+                    {row.totalHours}/{row.targetHours} hours
+                  </div>
+                </th>
+                {weekDates.map((date) => {
+                  const assignments = row.assignmentsByDate[date] ?? [];
+
+                  return (
+                    <td
+                      key={date}
+                      className="border-r border-slate-200 px-3 py-3 text-slate-700"
+                    >
+                      {assignments.length > 0 ? (
+                        <div className="grid gap-2">
+                          {assignments.map((assignment, index) => (
+                            <div
+                              key={`${assignment.shiftBlockId}:${assignment.taskTypeCode}:${index}`}
+                              className={
+                                assignment.isBackground
+                                  ? "border-l-2 border-sky-400 pl-2"
+                                  : "border-l-2 border-emerald-500 pl-2"
+                              }
+                            >
+                              <div className="font-mono font-semibold text-slate-900">
+                                {formatCompactMinuteRange(
+                                  assignment.startMinute,
+                                  assignment.endMinute,
+                                )}
+                              </div>
+                              <div className="mt-0.5 font-semibold">
+                                {backgroundTaskDisplayName({
+                                  name: assignment.taskTypeName,
+                                  isBackground: assignment.isBackground,
+                                })}
+                                {assignment.locked ? " / Locked" : ""}
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      ) : (
+                        <span className="text-slate-400">No assignment</span>
+                      )}
+                    </td>
+                  );
+                })}
+                <td className="px-3 py-3 text-slate-700">
+                  <div className="grid grid-cols-2 gap-x-3 gap-y-1">
+                    <span>Patient shifts</span>
+                    <strong>{row.patientFacingShiftCount}</strong>
+                    <span>Background shifts</span>
+                    <strong>{row.backgroundShiftCount}</strong>
+                    <span>Sat/Endo</span>
+                    <strong>{row.saturdayEndoscopyCount}</strong>
+                    <span>GI / Allergy / PCP</span>
+                    <strong>
+                      {row.exposure.GI} / {row.exposure.ALLERGY} / {row.exposure.PCP}
+                    </strong>
+                  </div>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </section>
   );
 }
 
@@ -256,6 +372,8 @@ function StatusBadge({ status }: { status: string }) {
       className={
         status === "PUBLISHED"
           ? "rounded-md bg-emerald-50 px-2 py-1 text-xs font-semibold text-emerald-800"
+          : status === "NEEDS_REGENERATION"
+            ? "rounded-md bg-rose-50 px-2 py-1 text-xs font-semibold text-rose-800"
           : "rounded-md bg-slate-100 px-2 py-1 text-xs font-semibold text-slate-700"
       }
     >
@@ -266,4 +384,13 @@ function StatusBadge({ status }: { status: string }) {
 
 function formatLabel(value: string) {
   return value.replace(/([A-Z])/g, " $1").trim();
+}
+
+function shortDateLabel(date: string) {
+  return new Intl.DateTimeFormat("en-US", {
+    weekday: "short",
+    month: "short",
+    day: "numeric",
+    timeZone: "UTC",
+  }).format(new Date(`${date}T00:00:00.000Z`));
 }

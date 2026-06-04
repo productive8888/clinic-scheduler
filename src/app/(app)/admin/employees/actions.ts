@@ -1,11 +1,13 @@
 "use server";
 
-import { AssignmentStatus, TaskSlotStatus, type Prisma } from "@prisma/client";
+import type { Prisma } from "@prisma/client";
 import { revalidatePath } from "next/cache";
+import { redirect } from "next/navigation";
 import { auditActorId, requireManager } from "@/lib/auth";
 import { ensureAuthUserForEmployeeInTransaction } from "@/lib/auth/accounts";
 import { writeAuditLog } from "@/lib/audit";
 import { getDb } from "@/lib/db";
+import { invalidateFutureEmployeeAssignments } from "@/lib/db/employee-schedule-invalidation";
 import {
   employeeFormValuesFromFormData,
   type EmployeeFormValues,
@@ -142,22 +144,39 @@ async function replaceEmployeeAvailability(
 
 export async function deactivateEmployeeAction(employeeId: string) {
   const actor = await requireManager();
-  const before = await getDb().employee.findUnique({ where: { id: employeeId } });
-  const employee = await getDb().employee.update({
-    where: { id: employeeId },
-    data: { status: "INACTIVE" },
+  const result = await getDb().$transaction(async (tx) => {
+    const before = await tx.employee.findUniqueOrThrow({ where: { id: employeeId } });
+    const invalidation = await invalidateFutureEmployeeAssignments(tx, {
+      employeeId,
+      employeeName: before.fullName,
+      reason: "deactivated",
+    });
+    const employee = await tx.employee.update({
+      where: { id: employeeId },
+      data: { status: "INACTIVE" },
+    });
+
+    return { before, employee, ...invalidation };
   });
 
   await writeAuditLog({
     actorEmployeeId: auditActorId(actor),
     action: "employee.deactivate",
     entityType: "Employee",
-    entityId: employee.id,
-    before,
-    after: { status: employee.status },
+    entityId: result.employee.id,
+    before: result.before,
+    after: {
+      status: result.employee.status,
+      affectedDates: result.affectedDates,
+      affectedSlotCount: result.affectedSlotCount,
+    },
   });
 
   revalidatePath("/admin/employees");
+  revalidatePath("/schedule");
+  revalidatePath("/schedule/week");
+  revalidatePath("/admin/audit");
+  redirect(invalidationNoticeUrl("deactivated", result.affectedDates));
 }
 
 export async function deleteEmployeeAction(employeeId: string) {
@@ -178,88 +197,12 @@ export async function deleteEmployeeAction(employeeId: string) {
   }
 
   const result = await db.$transaction(async (tx) => {
-    const activeAssignedSlots = await tx.taskSlot.findMany({
-      where: {
-        assignments: {
-          some: {
-            employeeId,
-            status: AssignmentStatus.ACTIVE,
-          },
-        },
-        status: { not: TaskSlotStatus.CANCELLED },
-      },
-      select: {
-        id: true,
-        requiredStaff: true,
-        requirementLevel: true,
-        scheduleDay: {
-          select: {
-            id: true,
-            date: true,
-            status: true,
-            notes: true,
-          },
-        },
-        assignments: {
-          where: {
-            status: AssignmentStatus.ACTIVE,
-            employeeId: { not: employeeId },
-          },
-          select: { id: true },
-        },
-      },
+    const invalidation = await invalidateFutureEmployeeAssignments(tx, {
+      employeeId,
+      employeeName: before.fullName,
+      reason: "deleted",
+      invalidatedAt: deletedAt,
     });
-    const affectedScheduleDays = new Map(
-      activeAssignedSlots.map((slot) => [slot.scheduleDay.id, slot.scheduleDay]),
-    );
-
-    await tx.assignment.updateMany({
-      where: {
-        employeeId,
-        status: AssignmentStatus.ACTIVE,
-      },
-      data: {
-        status: AssignmentStatus.REMOVED,
-        removedAt: deletedAt,
-        notes: "Removed because the employee was deleted.",
-      },
-    });
-
-    for (const slot of activeAssignedSlots) {
-      const remainingAssignments = slot.assignments.length;
-      const status =
-        remainingAssignments > 0
-          ? TaskSlotStatus.FILLED
-          : slot.requiredStaff > 0 && slot.requirementLevel === "REQUIRED"
-            ? TaskSlotStatus.SHORTAGE
-            : TaskSlotStatus.OPEN;
-
-      await tx.taskSlot.update({
-        where: { id: slot.id },
-        data: {
-          status,
-          notes:
-            status === TaskSlotStatus.SHORTAGE
-              ? "Employee was deleted; regenerate or manually assign coverage."
-              : null,
-        },
-      });
-    }
-
-    for (const scheduleDay of affectedScheduleDays.values()) {
-      await tx.scheduleDay.update({
-        where: { id: scheduleDay.id },
-        data: {
-          status: "GENERATED",
-          publishedAt: null,
-          publishedByEmployeeId: null,
-          notes: appendNote(
-            scheduleDay.notes,
-            `Invalidated ${deletedAt.toISOString()} because ${before.fullName} was deleted.`,
-          ),
-        },
-      });
-    }
 
     await tx.schedulingRule.updateMany({
       where: { employeeId },
@@ -304,8 +247,7 @@ export async function deleteEmployeeAction(employeeId: string) {
 
     return {
       employee,
-      affectedScheduleDayIds: [...affectedScheduleDays.keys()],
-      affectedSlotCount: activeAssignedSlots.length,
+      ...invalidation,
     };
   });
 
@@ -325,7 +267,9 @@ export async function deleteEmployeeAction(employeeId: string) {
 
   revalidatePath("/admin/employees");
   revalidatePath("/schedule");
+  revalidatePath("/schedule/week");
   revalidatePath("/admin/audit");
+  redirect(invalidationNoticeUrl("deleted", result.affectedDates));
 }
 
 function deletedEmployeeEmail(employeeId: string) {
@@ -334,4 +278,17 @@ function deletedEmployeeEmail(employeeId: string) {
 
 function appendNote(existing: string | null | undefined, next: string) {
   return [existing?.trim(), next].filter(Boolean).join("\n");
+}
+
+function invalidationNoticeUrl(action: string, affectedDates: string[]) {
+  const params = new URLSearchParams({
+    employeeAction: action,
+    affectedCount: String(affectedDates.length),
+  });
+
+  if (affectedDates.length > 0) {
+    params.set("affectedDates", affectedDates.slice(0, 12).join(","));
+  }
+
+  return `/admin/employees?${params.toString()}`;
 }

@@ -1,5 +1,6 @@
 import { writeAuditLog } from "@/lib/audit";
 import { getDb } from "@/lib/db";
+import { LEGACY_SHIFT_TEMPLATE_ID } from "@/lib/shifts/legacy";
 import type { ShortageRuleFormValues } from "@/lib/validation/shortage-rule";
 import { parseIsoDate } from "@/lib/utils/date";
 
@@ -23,7 +24,7 @@ export function getShortageRulesPageData() {
       select: { id: true, name: true, code: true },
     }),
     getDb().shiftTemplate.findMany({
-      where: { active: true },
+      where: { active: true, id: { not: LEGACY_SHIFT_TEMPLATE_ID } },
       orderBy: [{ dayOfWeek: "asc" }, { startMinute: "asc" }, { name: "asc" }],
       select: {
         id: true,

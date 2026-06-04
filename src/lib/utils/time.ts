@@ -46,3 +46,16 @@ export function formatMinuteOfDay(value: number | null | undefined) {
 
   return `${displayHour}:${minute.toString().padStart(2, "0")} ${suffix}`;
 }
+
+export function formatCompactMinuteRange(startMinute: number, endMinute: number) {
+  return `${compactMinute(startMinute)}-${compactMinute(endMinute)}`;
+}
+
+function compactMinute(value: number) {
+  const hour = Math.floor(value / 60);
+  const minute = value % 60;
+
+  return `${hour.toString().padStart(2, "0")}${minute
+    .toString()
+    .padStart(2, "0")}`;
+}

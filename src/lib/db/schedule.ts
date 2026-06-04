@@ -23,8 +23,11 @@ import {
   type SchedulerTaskSlot,
   type SchedulerTaskType,
 } from "@/lib/scheduler";
+import { overlaps } from "@/lib/scheduler/constraints";
 import { isShortNoticeScheduleChange } from "@/lib/schedule/short-notice";
+import { patternPreferredEmployeeIdsForSlot } from "@/lib/schedule/pattern-preferences";
 import { buildShiftBlockSnapshot } from "@/lib/shifts/templates";
+import { LEGACY_SHIFT_TEMPLATE_ID } from "@/lib/shifts/legacy";
 import {
   selectStaffingSlotSpecs,
   type StaffingSlotSpec,
@@ -32,16 +35,25 @@ import {
 import { selectShortageRecommendations } from "@/lib/shortage/recommendations";
 import { parseIsoDate, toIsoDate } from "@/lib/utils/date";
 
-const FALLBACK_SHIFT_START_MINUTE = 8 * 60;
-const FALLBACK_SHIFT_END_MINUTE = 17 * 60;
-const FALLBACK_SHIFT_PAID_HOURS = 9;
-
 export async function getScheduleBoard(date: string) {
   return getDb().scheduleDay.findUnique({
     where: { date: parseIsoDate(date) },
     include: {
       taskSlots: {
-        where: { status: { not: "CANCELLED" } },
+        where: {
+          status: { not: "CANCELLED" },
+          shiftBlock: {
+            AND: [
+              { source: { notIn: ["MIGRATION", "FALLBACK"] } },
+              {
+                OR: [
+                  { shiftTemplateId: null },
+                  { shiftTemplateId: { not: LEGACY_SHIFT_TEMPLATE_ID } },
+                ],
+              },
+            ],
+          },
+        },
         orderBy: [
           { shiftBlock: { startMinute: "asc" } },
           { taskType: { sortOrder: "asc" } },
@@ -74,7 +86,14 @@ export async function getScheduleBoard(date: string) {
         },
       },
       shiftBlocks: {
-        where: { active: true },
+        where: {
+          active: true,
+          source: { notIn: ["MIGRATION", "FALLBACK"] },
+          OR: [
+            { shiftTemplateId: null },
+            { shiftTemplateId: { not: LEGACY_SHIFT_TEMPLATE_ID } },
+          ],
+        },
         orderBy: [{ startMinute: "asc" }, { name: "asc" }],
       },
       publishedBy: true,
@@ -83,7 +102,8 @@ export async function getScheduleBoard(date: string) {
 }
 
 export async function getSchedulePageData(date: string) {
-  const [scheduleDay, employees, taskTypes, manualWarnings] = await Promise.all([
+  const [scheduleDay, employees, taskTypes, manualWarnings, legacySlotCount] =
+    await Promise.all([
     getScheduleBoard(date),
     getDb().employee.findMany({
       where: { status: "ACTIVE" },
@@ -96,9 +116,21 @@ export async function getSchedulePageData(date: string) {
       include: { skillRequirements: { include: { skill: true } } },
     }),
     getManualAssignmentWarningMatrix(date),
+    getDb().taskSlot.count({
+      where: {
+        scheduleDay: { date: parseIsoDate(date) },
+        status: { not: "CANCELLED" },
+        shiftBlock: {
+          OR: [
+            { source: { in: ["MIGRATION", "FALLBACK"] } },
+            { shiftTemplateId: LEGACY_SHIFT_TEMPLATE_ID },
+          ],
+        },
+      },
+    }),
   ]);
 
-  return { scheduleDay, employees, taskTypes, manualWarnings };
+  return { scheduleDay, employees, taskTypes, manualWarnings, legacySlotCount };
 }
 
 export async function ensureScheduleDayWithDefaultSlots(
@@ -405,6 +437,39 @@ export async function manuallyAssignSlots(input: {
 }) {
   const slotIds = [...new Set(input.slotIds)].sort();
   const warningsBySlot = new Map<string, Awaited<ReturnType<typeof getManualAssignmentWarnings>>>();
+  const selectedSlots = await getDb().taskSlot.findMany({
+    where: { id: { in: slotIds } },
+    select: {
+      id: true,
+      startMinute: true,
+      endMinute: true,
+      scheduleDay: { select: { date: true } },
+      shiftBlock: { select: { startMinute: true, endMinute: true } },
+    },
+    orderBy: { id: "asc" },
+  });
+  const selectedOverlapWarnings: string[] = [];
+
+  for (let left = 0; left < selectedSlots.length; left += 1) {
+    for (let right = left + 1; right < selectedSlots.length; right += 1) {
+      const leftSlot = selectedSlots[left];
+      const rightSlot = selectedSlots[right];
+
+      if (
+        leftSlot.scheduleDay.date.getTime() === rightSlot.scheduleDay.date.getTime() &&
+        overlaps(
+          leftSlot.startMinute ?? leftSlot.shiftBlock.startMinute,
+          leftSlot.endMinute ?? leftSlot.shiftBlock.endMinute,
+          rightSlot.startMinute ?? rightSlot.shiftBlock.startMinute,
+          rightSlot.endMinute ?? rightSlot.shiftBlock.endMinute,
+        )
+      ) {
+        selectedOverlapWarnings.push(
+          `Selected slots ${leftSlot.id} and ${rightSlot.id} overlap.`,
+        );
+      }
+    }
+  }
 
   for (const slotId of slotIds) {
     warningsBySlot.set(
@@ -416,10 +481,12 @@ export async function manuallyAssignSlots(input: {
     );
   }
 
-  const warningCount = [...warningsBySlot.values()].reduce(
-    (count, warnings) => count + warnings.length,
-    0,
-  );
+  const warningCount =
+    selectedOverlapWarnings.length +
+    [...warningsBySlot.values()].reduce(
+      (count, warnings) => count + warnings.length,
+      0,
+    );
 
   if (warningCount > 0 && !input.overrideReason?.trim()) {
     throw new Error("Review the multi-shift warnings and provide an override reason.");
@@ -443,6 +510,7 @@ export async function manuallyAssignSlots(input: {
       employeeId: input.employeeId,
       slotIds,
       warningCount,
+      selectedOverlapWarnings,
       overrideReason: input.overrideReason?.trim() || null,
     },
   });
@@ -864,6 +932,10 @@ export async function generateScheduleForDate(input: {
       slot.backgroundTaskInstance?.definition.eligibleEmployees.map(
         (eligible) => eligible.employeeId,
       ) ?? [],
+    canBePulledForClinic:
+      slot.backgroundTaskInstance?.definition.canBePulledForClinic ?? false,
+    protectedFromPull:
+      slot.backgroundTaskInstance?.definition.protectedFromPull ?? false,
     lockedEmployeeIds: slot.assignments
       .filter(
         (assignment) =>
@@ -1118,6 +1190,10 @@ export async function publishScheduleForDate(input: {
     throw new Error("Prepare and generate a schedule before publishing.");
   }
 
+  if (scheduleDay.status === "NEEDS_REGENERATION") {
+    throw new Error("Generate a new draft before publishing this invalidated schedule.");
+  }
+
   const shortageCount = scheduleDay.taskSlots.filter(
     (slot) =>
       slot.requirementLevel === "REQUIRED" &&
@@ -1204,53 +1280,6 @@ function formatConflictNote(conflict: {
   return recommendations.length > 0
     ? `${baseNote}. Recommendations: ${recommendations.join(" ")}`
     : baseNote;
-}
-
-function patternPreferredEmployeeIdsForSlot(input: {
-  slot: {
-    taskTypeId: string;
-    slotIndex: number;
-    shiftBlock: {
-      shiftTemplateId: string | null;
-      shiftCategory: string;
-    };
-  };
-  patternSlots: {
-    taskTypeId: string;
-    slotIndex: number;
-    shiftTemplateId: string | null;
-    shiftCategory: string | null;
-    preferredEmployeeId: string | null;
-  }[];
-}) {
-  return input.patternSlots
-    .filter((patternSlot) => {
-      if (patternSlot.taskTypeId !== input.slot.taskTypeId) {
-        return false;
-      }
-
-      if (patternSlot.slotIndex !== input.slot.slotIndex) {
-        return false;
-      }
-
-      if (
-        patternSlot.shiftTemplateId &&
-        patternSlot.shiftTemplateId !== input.slot.shiftBlock.shiftTemplateId
-      ) {
-        return false;
-      }
-
-      if (
-        patternSlot.shiftCategory &&
-        patternSlot.shiftCategory !== input.slot.shiftBlock.shiftCategory
-      ) {
-        return false;
-      }
-
-      return Boolean(patternSlot.preferredEmployeeId);
-    })
-    .map((patternSlot) => patternSlot.preferredEmployeeId!)
-    .sort();
 }
 
 function targetInputsForEmployee(input: {
@@ -1490,6 +1519,7 @@ async function ensureShiftBlocksForScheduleDay(input: {
       : { dayOfWeek: weekday };
   const templates = await db.shiftTemplate.findMany({
     where: {
+      id: { not: LEGACY_SHIFT_TEMPLATE_ID },
       active: true,
       ...weekdayTemplateWhere,
       AND: [
@@ -1533,10 +1563,11 @@ async function ensureShiftBlocksForScheduleDay(input: {
 
   const matchingTemplateIds = templates.map((template) => template.id);
 
-  let shiftBlocks = await db.shiftBlock.findMany({
+  const shiftBlocks = await db.shiftBlock.findMany({
     where: {
       scheduleDayId: input.scheduleDayId,
       active: true,
+      source: { notIn: ["MIGRATION", "FALLBACK"] },
       OR: [
         { shiftTemplateId: null },
         { shiftTemplateId: { in: matchingTemplateIds } },
@@ -1544,25 +1575,6 @@ async function ensureShiftBlocksForScheduleDay(input: {
     },
     orderBy: [{ startMinute: "asc" }, { name: "asc" }, { id: "asc" }],
   });
-
-  if (shiftBlocks.length === 0) {
-    const fallback = await db.shiftBlock.create({
-      data: {
-        scheduleDayId: input.scheduleDayId,
-        name: "Default clinic shift",
-        startMinute: FALLBACK_SHIFT_START_MINUTE,
-        endMinute: FALLBACK_SHIFT_END_MINUTE,
-        paidHours: FALLBACK_SHIFT_PAID_HOURS,
-        shiftCategory: "OTHER",
-        defaultForSchedule: true,
-        source: "FALLBACK",
-        active: true,
-        notes: "Fallback shift block used because no active shift template matched this date.",
-      },
-    });
-
-    shiftBlocks = [fallback];
-  }
 
   return shiftBlocks;
 }

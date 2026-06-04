@@ -43,7 +43,9 @@ export default async function ScheduleWeekPage({
       data={data}
       resultSummary={{
         generated: stringParam(params.generated),
-        slots: stringParam(params.slots),
+        shifts: stringParam(params.shifts),
+        clinicSlots: stringParam(params.clinicSlots),
+        backgroundSlots: stringParam(params.backgroundSlots),
         filled: stringParam(params.filled),
         shortages: stringParam(params.shortages),
         publishedSkipped: stringParam(params.publishedSkipped),

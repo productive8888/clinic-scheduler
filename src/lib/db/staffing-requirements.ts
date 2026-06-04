@@ -1,5 +1,6 @@
 import { writeAuditLog } from "@/lib/audit";
 import { getDb } from "@/lib/db";
+import { LEGACY_SHIFT_TEMPLATE_ID } from "@/lib/shifts/legacy";
 import type { StaffingRequirementFormValues } from "@/lib/validation/staffing-requirement";
 import { parseIsoDate } from "@/lib/utils/date";
 
@@ -37,7 +38,7 @@ export function getStaffingRequirementsPageData() {
       },
     }),
     getDb().shiftTemplate.findMany({
-      where: { active: true },
+      where: { active: true, id: { not: LEGACY_SHIFT_TEMPLATE_ID } },
       orderBy: [
         { dayOfWeek: "asc" },
         { startMinute: "asc" },

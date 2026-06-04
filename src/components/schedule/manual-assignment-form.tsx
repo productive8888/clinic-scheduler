@@ -23,7 +23,7 @@ export function ManualAssignmentForm({
       : warningsByEmployee?.[employeeId || "__CLEAR__"] ?? [];
 
   return (
-    <form action={manualAssignAction.bind(null, slotId)} className="mt-4 grid gap-2">
+    <form action={manualAssignAction.bind(null, slotId)} className="grid gap-2">
       <div className="flex gap-2">
         <select
           name="employeeId"

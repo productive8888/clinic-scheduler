@@ -12,6 +12,12 @@
   and locked manual overrides.
 - Whole-day schedule review with every shift block visible, plus a manager week
   view with Monday-Saturday status, shortage, PTO, and NPTO summaries.
+- Dense shift-block daily board with compact configured time labels, clear
+  clinic/background/Float classification, assignment warnings, and no normal
+  legacy full-day workflow.
+- Weekly employee-row staff summary for AM/PM roles, unique-shift paid hours,
+  patient/background workload, Saturday/endoscopy counts, and GI/Allergy/PCP
+  exposure review.
 - Day/week/month/custom-range generation with published-date protection,
   deterministic per-date seeds, background-slot preparation, aggregate result
   summaries, and bulk audit logs.
@@ -93,6 +99,12 @@
   Tuesday-Saturday recurring availability for generated schedules.
 - Pure scheduler modules for constraints, scoring, fairness, assignment, and
   coverage replacement.
+- Shift-aware same-day assignment support, partial-day PTO/NPTO overlap
+  enforcement, patient-facing-first ordering, alternate candidate selection,
+  and deterministic bounded assignment-swap repair.
+- Future schedule invalidation when an employee is deactivated or deleted,
+  including assignment removal, unpublish, shortage visibility,
+  `NEEDS_REGENERATION` status, and audit metadata.
 - Scheduler unit tests for skill enforcement, PTO blocking, double-booking,
   deterministic generation, override preservation, direct coverage replacement,
   priority rule scoring, PTO/NPTO policy behavior, clinic scenario defaults,

@@ -42,6 +42,7 @@ enum RequestStatus {
 enum ScheduleDayStatus {
   DRAFT
   GENERATED
+  NEEDS_REGENERATION
   PUBLISHED
   LOCKED
 }

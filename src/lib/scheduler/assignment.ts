@@ -101,7 +101,10 @@ export function toExistingAssignment(
     isPatientFacing: taskType?.isPatientFacing,
     isClinical: taskType?.isClinical,
     isBackground: taskType?.isBackground,
+    isFloat: taskType?.isFloat,
     isEndoscopy: taskType?.isEndoscopy,
+    canBePulledForClinic: slot.canBePulledForClinic,
+    protectedFromPull: slot.protectedFromPull,
     locked: assignment.source === "LOCKED",
   };
 }
