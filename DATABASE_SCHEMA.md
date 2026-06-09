@@ -56,7 +56,10 @@ versioned migrations in `prisma/migrations`.
   `NEEDS_REGENERATION` and clears publish metadata without deleting history.
 - `ShiftTemplate`: editable manager-configured reusable shift definitions with
   weekday scope, start/end minute, paid hours, shift category, default schedule
-  flag, active status, and effective dates.
+  flag, active status, and effective dates. Active July Easton templates
+  imported from `Shifts + Hours` are all marked `defaultForSchedule` so every
+  spreadsheet shift column is generated as a schedulable block; exact task
+  demand remains controlled by `StaffingRequirementRule`.
 - `ShiftBlock`: concrete dated shift snapshot for a `ScheduleDay`. Task slots
   attach to shift blocks, preserving historical schedules when future shift
   templates are edited. The migration-only legacy full-day block remains

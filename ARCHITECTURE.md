@@ -484,6 +484,11 @@ target source for July work-pattern groups, required BG minimums, and 40-hour
 weekly targets. June sheets are ignored by active generation, avoiding both
 missing PM demand and duplicated or historical staffing counts.
 
+All active July shift templates from `Shifts + Hours` are treated as generated
+schedulable blocks, not only the 8:00 AM shifts. The `defaultForSchedule` flag
+is true for these imported templates so generic preparation and review paths do
+not hide 7:00 AM, Monday 1:00-6:00 PM, Friday PM, or Saturday endoscopy blocks.
+
 July work-pattern math is a hard week-level validation layer. Non-endoscopy
 groups must receive the exact two configured 5-hour weekday shifts before BG
 filler can be used for remaining hour gaps. Monday can satisfy its extra hour

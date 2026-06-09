@@ -77,6 +77,12 @@ not contain scheduling decisions.
   schedule default when no more specific staffing rule exists. Applied Easton
   workbook demand creates editable, shift-template-specific rules for every
   applicable AM, PM, Saturday, clinic, Float, and background role.
+- Every active Easton `Shifts + Hours` shift template is marked
+  `defaultForSchedule` because every spreadsheet shift column is schedulable in
+  the July model. Generation still creates shift blocks from all active matching
+  templates, but this prevents 7:00 AM, Monday 1:00-6:00 PM, Friday PM, and
+  Saturday endoscopy blocks from being treated as non-generated in broad
+  preparation or review paths.
 - Default seeded shift templates use Easton's spreadsheet times:
   weekday early AM 7:00 AM-12:00 PM where configured, weekday regular AM
   8:00 AM-12:00 PM, Monday long PM 1:00 PM-6:00 PM where configured,
@@ -154,10 +160,12 @@ not contain scheduling decisions.
   still enforces skills, recurring availability, PTO/NPTO, no overlapping
   shifts, work-pattern Saturday rules, published-date skip rules, and
   locked/manual overrides. Infeasible gaps remain visible as hard weekly issues.
-- Generation summaries report total, AM, PM, and Saturday shift blocks,
-  clinic/background slots, top-off slots and assignments, fills, required
-  shortages, conflicts, published skips, regenerated dates, and employees
-  under/over their weekly target.
+- Generation summaries report total, AM, PM, Saturday, 7:00 AM early,
+  8:00 AM regular, 1:00-5:00 PM regular, Monday 1:00-6:00 PM long, Saturday
+  endoscopy, and Saturday regular shift blocks, plus clinic/background slots,
+  top-off slots and assignments, fills, required shortages, conflicts,
+  published skips, regenerated dates, and employees under/over their weekly
+  target.
 - Weekly target hours influence scoring and top-off, while imported July
   work-pattern groups and employee-required BG/background minimums are hard
   publish checks. The scheduler strongly

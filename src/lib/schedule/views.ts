@@ -18,10 +18,16 @@ export function buildWholeDayShiftGroups<
 
 export function summarizeShiftBlocks(input: {
   date: string;
-  shiftBlocks: Array<{ shiftCategory: string }>;
+  shiftBlocks: Array<{
+    shiftCategory: string;
+    startMinute: number;
+    endMinute: number;
+    paidHours: unknown;
+  }>;
 }) {
   const isSaturday =
     new Date(`${input.date}T00:00:00.000Z`).getUTCDay() === 6;
+  const weekday = new Date(`${input.date}T00:00:00.000Z`).getUTCDay();
 
   return {
     total: input.shiftBlocks.length,
@@ -32,6 +38,49 @@ export function summarizeShiftBlocks(input: {
         isSaturday ||
         block.shiftCategory === "SATURDAY" ||
         block.shiftCategory === "ENDO",
+    ).length,
+    amEarly: input.shiftBlocks.filter(
+      (block) =>
+        block.shiftCategory === "AM" &&
+        block.startMinute === 7 * 60 &&
+        block.endMinute === 12 * 60 &&
+        Number(block.paidHours) === 5,
+    ).length,
+    amRegular: input.shiftBlocks.filter(
+      (block) =>
+        block.shiftCategory === "AM" &&
+        block.startMinute === 8 * 60 &&
+        block.endMinute === 12 * 60 &&
+        Number(block.paidHours) === 4,
+    ).length,
+    pmRegular: input.shiftBlocks.filter(
+      (block) =>
+        block.shiftCategory === "PM" &&
+        block.startMinute === 13 * 60 &&
+        block.endMinute === 17 * 60 &&
+        Number(block.paidHours) === 4,
+    ).length,
+    mondayPmLong: input.shiftBlocks.filter(
+      (block) =>
+        weekday === 1 &&
+        block.shiftCategory === "PM" &&
+        block.startMinute === 13 * 60 &&
+        block.endMinute === 18 * 60 &&
+        Number(block.paidHours) === 5,
+    ).length,
+    saturdayEndoscopy: input.shiftBlocks.filter(
+      (block) =>
+        block.shiftCategory === "ENDO" &&
+        block.startMinute === 6 * 60 &&
+        block.endMinute === 14 * 60 &&
+        Number(block.paidHours) === 8,
+    ).length,
+    saturdayRegular: input.shiftBlocks.filter(
+      (block) =>
+        block.shiftCategory === "SATURDAY" &&
+        block.startMinute === 8 * 60 &&
+        block.endMinute === 14 * 60 &&
+        Number(block.paidHours) === 6,
     ).length,
   };
 }

@@ -19,12 +19,16 @@ import {
   type SchedulerTaskType,
 } from "../../src/lib/scheduler";
 import { parseEastonWorkbook } from "../../src/lib/easton-import/parser";
-import { eastonEmployeeProfileUpdateFromTarget } from "../../src/lib/db/easton-import";
+import {
+  eastonEmployeeProfileUpdateFromTarget,
+  eastonShiftTemplateDataFromShift,
+} from "../../src/lib/db/easton-import";
 import { evaluateWeeklyHardRequirements } from "../../src/lib/schedule/hard-requirements";
 import {
   isExtraHourShiftForWeekday,
   validateEmployeeWeekPattern,
 } from "../../src/lib/schedule/work-pattern-requirements";
+import { weekdayShortName } from "../../src/lib/easton-import/work-patterns";
 import {
   invalidatedScheduleDayData,
   invalidatedTaskSlotStatus,
@@ -1080,6 +1084,29 @@ describe("generateSchedule", () => {
 });
 
 describe("Easton full-week generation foundations", () => {
+  it("imports every Shifts + Hours shift as a generated/default-active template", () => {
+    const shifts = [
+      { weekday: 1, label: "0700~1200 (5)", startMinute: 420, endMinute: 720, paidHours: 5, shiftCategory: "AM" },
+      { weekday: 1, label: "0800~1200 (4)", startMinute: 480, endMinute: 720, paidHours: 4, shiftCategory: "AM" },
+      { weekday: 1, label: "1300~1800 (5)", startMinute: 780, endMinute: 1080, paidHours: 5, shiftCategory: "PM" },
+      { weekday: 2, label: "0700~1200 (5)", startMinute: 420, endMinute: 720, paidHours: 5, shiftCategory: "AM" },
+      { weekday: 6, label: "0600~1400 (8)", startMinute: 360, endMinute: 840, paidHours: 8, shiftCategory: "ENDO" },
+      { weekday: 6, label: "0800~1400 (6)", startMinute: 480, endMinute: 840, paidHours: 6, shiftCategory: "SATURDAY" },
+    ] as const;
+
+    for (const shift of shifts) {
+      const data = eastonShiftTemplateDataFromShift({
+        sheetName: "Shifts + Hours",
+        column: 1,
+        dayLabel: `${weekdayShortName(shift.weekday)} test`,
+        ...shift,
+      });
+
+      assert.equal(data.active, true);
+      assert.equal(data.defaultForSchedule, true);
+    }
+  });
+
   it("creates clinic and background demand on the exact AM and PM shift blocks", () => {
     const specs = selectStaffingSlotSpecs({
       date: "2026-06-02",
@@ -1289,22 +1316,83 @@ describe("Easton full-week generation foundations", () => {
       summarizeShiftBlocks({
         date: "2026-06-02",
         shiftBlocks: [
-          { shiftCategory: "AM" },
-          { shiftCategory: "AM" },
-          { shiftCategory: "PM" },
+          {
+            shiftCategory: "AM",
+            startMinute: 7 * 60,
+            endMinute: 12 * 60,
+            paidHours: 5,
+          },
+          {
+            shiftCategory: "AM",
+            startMinute: 8 * 60,
+            endMinute: 12 * 60,
+            paidHours: 4,
+          },
+          {
+            shiftCategory: "PM",
+            startMinute: 13 * 60,
+            endMinute: 17 * 60,
+            paidHours: 4,
+          },
         ],
       }),
-      { total: 3, am: 2, pm: 1, saturday: 0 },
+      {
+        total: 3,
+        am: 2,
+        pm: 1,
+        saturday: 0,
+        amEarly: 1,
+        amRegular: 1,
+        pmRegular: 1,
+        mondayPmLong: 0,
+        saturdayEndoscopy: 0,
+        saturdayRegular: 0,
+      },
+    );
+    assert.deepEqual(
+      summarizeShiftBlocks({
+        date: monday,
+        shiftBlocks: [
+          {
+            shiftCategory: "PM",
+            startMinute: 13 * 60,
+            endMinute: 18 * 60,
+            paidHours: 5,
+          },
+        ],
+      }).mondayPmLong,
+      1,
     );
     assert.deepEqual(
       summarizeShiftBlocks({
         date: saturday,
         shiftBlocks: [
-          { shiftCategory: "ENDO" },
-          { shiftCategory: "SATURDAY" },
+          {
+            shiftCategory: "ENDO",
+            startMinute: 6 * 60,
+            endMinute: 14 * 60,
+            paidHours: 8,
+          },
+          {
+            shiftCategory: "SATURDAY",
+            startMinute: 8 * 60,
+            endMinute: 14 * 60,
+            paidHours: 6,
+          },
         ],
       }),
-      { total: 2, am: 0, pm: 0, saturday: 2 },
+      {
+        total: 2,
+        am: 0,
+        pm: 0,
+        saturday: 2,
+        amEarly: 0,
+        amRegular: 0,
+        pmRegular: 0,
+        mondayPmLong: 0,
+        saturdayEndoscopy: 1,
+        saturdayRegular: 1,
+      },
     );
   });
 

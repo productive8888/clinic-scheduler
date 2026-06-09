@@ -158,9 +158,44 @@ export async function bulkGenerateScheduleAction(formData: FormData) {
   revalidatePath("/schedule");
   revalidatePath("/schedule/week");
   revalidatePath("/schedule/calendar");
-  redirect(
-    `/schedule/week?date=${range.startDate}&processed=${summary.datesProcessed}&daysCreated=${summary.scheduleDaysCreated}&daysRegenerated=${summary.datesRegenerated}&blocks=${summary.shiftBlocks}&amBlocks=${summary.amShiftBlocks}&pmBlocks=${summary.pmShiftBlocks}&saturdayBlocks=${summary.saturdayShiftBlocks}&slotsCreated=${summary.taskSlotsCreated}&clinicSlots=${summary.clinicSlots}&backgroundSlots=${summary.backgroundSlots}&workPatternSlots=${summary.workPatternTopOffSlotsCreated}&workPatternAssignments=${summary.workPatternAssignmentsCreated}&workPatternSwaps=${summary.workPatternSwapsMade}&workPatternUnresolved=${summary.workPatternUnresolved}&topOffSlots=${summary.backgroundTopOffSlotsCreated}&topOffAssignments=${summary.backgroundTopOffAssignmentsCreated}&topOffIncomplete=${summary.backgroundTopOffIncompleteEmployees}&filled=${summary.assignmentsFilled}&requiredUnfilled=${summary.requiredSlotsUnfilled}&shortages=${summary.shortages}&conflicts=${summary.conflicts}&underTarget=${summary.employeesUnderTarget}&overTarget=${summary.employeesOverTarget}&hardRequirements=${summary.hardRequirementIssues}&bgMinimum=${summary.bgMinimumIssues}&workPatterns=${summary.workPatternIssues}&review=${summary.datesNeedingManualReview.length}&publishedSkipped=${summary.publishedDatesSkipped.length}`,
-  );
+  const params = new URLSearchParams({
+    date: range.startDate,
+    processed: String(summary.datesProcessed),
+    daysCreated: String(summary.scheduleDaysCreated),
+    daysRegenerated: String(summary.datesRegenerated),
+    blocks: String(summary.shiftBlocks),
+    amBlocks: String(summary.amShiftBlocks),
+    pmBlocks: String(summary.pmShiftBlocks),
+    saturdayBlocks: String(summary.saturdayShiftBlocks),
+    amEarlyBlocks: String(summary.amEarlyShiftBlocks),
+    amRegularBlocks: String(summary.amRegularShiftBlocks),
+    pmRegularBlocks: String(summary.pmRegularShiftBlocks),
+    mondayLongPmBlocks: String(summary.mondayLongPmShiftBlocks),
+    saturdayEndoscopyBlocks: String(summary.saturdayEndoscopyShiftBlocks),
+    saturdayRegularBlocks: String(summary.saturdayRegularShiftBlocks),
+    slotsCreated: String(summary.taskSlotsCreated),
+    clinicSlots: String(summary.clinicSlots),
+    backgroundSlots: String(summary.backgroundSlots),
+    workPatternSlots: String(summary.workPatternTopOffSlotsCreated),
+    workPatternAssignments: String(summary.workPatternAssignmentsCreated),
+    workPatternSwaps: String(summary.workPatternSwapsMade),
+    workPatternUnresolved: String(summary.workPatternUnresolved),
+    topOffSlots: String(summary.backgroundTopOffSlotsCreated),
+    topOffAssignments: String(summary.backgroundTopOffAssignmentsCreated),
+    topOffIncomplete: String(summary.backgroundTopOffIncompleteEmployees),
+    filled: String(summary.assignmentsFilled),
+    requiredUnfilled: String(summary.requiredSlotsUnfilled),
+    shortages: String(summary.shortages),
+    conflicts: String(summary.conflicts),
+    underTarget: String(summary.employeesUnderTarget),
+    overTarget: String(summary.employeesOverTarget),
+    hardRequirements: String(summary.hardRequirementIssues),
+    bgMinimum: String(summary.bgMinimumIssues),
+    workPatterns: String(summary.workPatternIssues),
+    review: String(summary.datesNeedingManualReview.length),
+    publishedSkipped: String(summary.publishedDatesSkipped.length),
+  });
+  redirect(`/schedule/week?${params.toString()}`);
 }
 
 export async function publishScheduleRangeAction(formData: FormData) {

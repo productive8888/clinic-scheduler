@@ -45,6 +45,12 @@ export type BulkGenerationSummary = {
   amShiftBlocks: number;
   pmShiftBlocks: number;
   saturdayShiftBlocks: number;
+  amEarlyShiftBlocks: number;
+  amRegularShiftBlocks: number;
+  pmRegularShiftBlocks: number;
+  mondayLongPmShiftBlocks: number;
+  saturdayEndoscopyShiftBlocks: number;
+  saturdayRegularShiftBlocks: number;
   taskSlots: number;
   taskSlotsCreated: number;
   clinicSlots: number;
@@ -131,6 +137,12 @@ export async function generateScheduleRange(input: {
     amShiftBlocks: 0,
     pmShiftBlocks: 0,
     saturdayShiftBlocks: 0,
+    amEarlyShiftBlocks: 0,
+    amRegularShiftBlocks: 0,
+    pmRegularShiftBlocks: 0,
+    mondayLongPmShiftBlocks: 0,
+    saturdayEndoscopyShiftBlocks: 0,
+    saturdayRegularShiftBlocks: 0,
     taskSlots: 0,
     taskSlotsCreated: 0,
     clinicSlots: 0,
@@ -287,6 +299,12 @@ export async function generateScheduleRange(input: {
     summary.amShiftBlocks += shiftSummary.am;
     summary.pmShiftBlocks += shiftSummary.pm;
     summary.saturdayShiftBlocks += shiftSummary.saturday;
+    summary.amEarlyShiftBlocks += shiftSummary.amEarly;
+    summary.amRegularShiftBlocks += shiftSummary.amRegular;
+    summary.pmRegularShiftBlocks += shiftSummary.pmRegular;
+    summary.mondayLongPmShiftBlocks += shiftSummary.mondayPmLong;
+    summary.saturdayEndoscopyShiftBlocks += shiftSummary.saturdayEndoscopy;
+    summary.saturdayRegularShiftBlocks += shiftSummary.saturdayRegular;
     summary.shiftBlocksCreated += Math.max(
       0,
       board.shiftBlocks.length - (beforeBoard?.shiftBlocks.length ?? 0),

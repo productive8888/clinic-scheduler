@@ -358,7 +358,7 @@ const shiftTemplates = [
     endMinute: 12 * 60,
     paidHours: 5,
     shiftCategory: "AM" as const,
-    defaultForSchedule: false,
+    defaultForSchedule: true,
     notes: "Seed: Easton spreadsheet Monday 0700-1200 shift.",
   },
   {
@@ -378,7 +378,7 @@ const shiftTemplates = [
     endMinute: 18 * 60,
     paidHours: 5,
     shiftCategory: "PM" as const,
-    defaultForSchedule: false,
+    defaultForSchedule: true,
     notes: "Seed: Easton spreadsheet Monday 1300-1800 shift.",
   },
   {
@@ -388,7 +388,7 @@ const shiftTemplates = [
     endMinute: 17 * 60,
     paidHours: 4,
     shiftCategory: "PM" as const,
-    defaultForSchedule: false,
+    defaultForSchedule: true,
     notes: "Seed: Easton spreadsheet Monday 1300-1700 shift.",
   },
   ...[2, 3, 4].flatMap((weekday) => [
@@ -399,7 +399,7 @@ const shiftTemplates = [
       endMinute: 12 * 60,
       paidHours: 5,
       shiftCategory: "AM" as const,
-      defaultForSchedule: false,
+      defaultForSchedule: true,
       notes: `Seed: Easton spreadsheet ${weekdayName(weekday)} 0700-1200 shift.`,
     },
     {
@@ -419,7 +419,7 @@ const shiftTemplates = [
       endMinute: 17 * 60,
       paidHours: 4,
       shiftCategory: "PM" as const,
-      defaultForSchedule: false,
+      defaultForSchedule: true,
       notes: `Seed: Easton spreadsheet ${weekdayName(weekday)} 1300-1700 shift.`,
     },
   ]),
@@ -440,7 +440,7 @@ const shiftTemplates = [
     endMinute: 17 * 60,
     paidHours: 4,
     shiftCategory: "PM" as const,
-    defaultForSchedule: false,
+    defaultForSchedule: true,
     notes: "Seed: Easton spreadsheet Friday 1300-1700 shift.",
   },
   {
@@ -450,7 +450,7 @@ const shiftTemplates = [
     endMinute: 14 * 60,
     paidHours: 8,
     shiftCategory: "ENDO" as const,
-    defaultForSchedule: false,
+    defaultForSchedule: true,
     notes: "Seed: Easton spreadsheet Saturday 0600-1400 endoscopy shift.",
   },
   {

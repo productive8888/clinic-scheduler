@@ -537,17 +537,7 @@ export async function applyEastonDefaultsFromWorkbook(input: {
     )) {
       const name = eastonShiftTemplateName(shift);
       const existing = await tx.shiftTemplate.findFirst({ where: { name } });
-      const data = {
-        name,
-        dayOfWeek: shift.weekday,
-        startMinute: shift.startMinute,
-        endMinute: shift.endMinute,
-        paidHours: shift.paidHours,
-        shiftCategory: shift.shiftCategory,
-        defaultForSchedule: shift.startMinute === 8 * 60,
-        active: true,
-        notes: `${EASTON_STAFFING_NOTE} source shift ${shift.dayLabel} ${shift.label}.`,
-      };
+      const data = eastonShiftTemplateDataFromShift(shift);
       const record = existing
         ? await tx.shiftTemplate.update({ where: { id: existing.id }, data })
         : await tx.shiftTemplate.create({ data });
@@ -925,5 +915,19 @@ export function eastonEmployeeProfileUpdateFromTarget(
     expectedWeeklyHours: 40,
     requiredWeeklyBackgroundShifts: target.requiredBackgroundAssignments,
     ...(workPatternId ? { workPatternId } : {}),
+  };
+}
+
+export function eastonShiftTemplateDataFromShift(shift: EastonParsedShift) {
+  return {
+    name: eastonShiftTemplateName(shift),
+    dayOfWeek: shift.weekday,
+    startMinute: shift.startMinute,
+    endMinute: shift.endMinute,
+    paidHours: shift.paidHours,
+    shiftCategory: shift.shiftCategory,
+    defaultForSchedule: true,
+    active: true,
+    notes: `${EASTON_STAFFING_NOTE} source shift ${shift.dayLabel} ${shift.label}.`,
   };
 }

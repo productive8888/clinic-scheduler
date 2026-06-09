@@ -18,6 +18,13 @@ by day. A blank weekday is still supported for future broad templates.
 belong to shift blocks, which lets the same task type appear in multiple shifts
 on the same date without duplicate task types.
 
+For the active July Easton model, every shift template imported from
+`Shifts + Hours` is marked `defaultForSchedule`. This does not mean every role
+appears on every shift; staffing requirement rules still decide slot counts.
+It means every spreadsheet shift column is treated as generated and schedulable,
+including 0700-1200, Monday 1300-1800, Friday 1300-1700, Saturday 0600-1400,
+and Saturday 0800-1400.
+
 The manager whole-day view displays every shift block for one date. The week
 view includes an employee-row staff summary with AM/PM roles, unique-shift paid
 hours, patient/background counts, Saturday/endoscopy counts, and GI/Allergy/PCP
@@ -42,9 +49,10 @@ shortage-rule, and manager schedule views. New preparation uses configured
 ShiftTemplates only; the app no longer creates an implicit 8-5 fallback block.
 
 Safe defaults create routine task slots only on shift blocks marked
-`defaultForSchedule`. Easton spreadsheet defaults are instead applied primarily
-through editable staffing requirement rules by shift template, weekday, and role
-demand count.
+`defaultForSchedule`. Easton spreadsheet demand is applied primarily through
+editable staffing requirement rules by shift template, weekday, and role demand
+count, so marking every July shift as default/generated-active does not hardcode
+whole-day task demand.
 
 `Shifts + Hours` is the active reusable Easton demand source. Every nonzero
 clinic and background count is stored against its exact shift template, so PM
@@ -67,12 +75,14 @@ the 7:00 AM-12:00 PM shift. For Monday, either 7:00 AM-12:00 PM or
 requirements before any general BG/hour filler runs, so a normal non-endoscopy
 employee should not remain at 38 hours when a group-compliant week is feasible.
 
-Generation summaries explicitly report total, AM, PM, and Saturday block
-counts plus generated BG/hour top-off slots. The schedule status calendar
-provides day/month review, while day, week, month, and custom-range unpublish
-actions preserve assignments and make dates eligible for regeneration. Published
-prior-week assignments are used only as soft consistency preferences when the
-same weekday/shift/task is generated again.
+Generation summaries explicitly report total, AM, PM, Saturday, 0700 early AM,
+0800 regular AM, 1300-1700 PM, Monday 1300-1800 PM, Saturday endoscopy, and
+Saturday regular block counts plus generated work-pattern and BG/hour top-off
+slots. The schedule status calendar provides day/month review, while day, week,
+month, and custom-range unpublish actions preserve assignments and make dates
+eligible for regeneration. Published prior-week assignments are used only as
+soft consistency preferences when the same weekday/shift/task is generated
+again.
 
 The app does not hardcode final clinic policy in scheduler branches. Easton
 defaults seed editable rules for week-to-week patterns, shortage order, exact

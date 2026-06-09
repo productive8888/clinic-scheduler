@@ -97,6 +97,9 @@
 - Easton spreadsheet shift times seeded as editable shift templates, including
   7:00 AM-12:00 PM early AM, 1:00 PM-6:00 PM Monday long PM, regular weekday
   AM/PM, and Saturday endoscopy/short shifts.
+- All July `Shifts + Hours` shift templates are generated/default-active,
+  preventing the old 8:00 AM-only default assumption from hiding required
+  7:00 AM, Monday long PM, Friday PM, or Saturday endoscopy blocks.
 - Schedule pattern and employee target foundations for week-to-week consistency,
   patient-facing fairness, per-role/skill targets, and GI/Allergy/PCP exposure
   goals.
