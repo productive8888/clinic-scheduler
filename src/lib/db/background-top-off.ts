@@ -17,6 +17,7 @@ import {
   getEffectiveWorkPattern,
   type EmployeeScheduleTargetSource,
 } from "@/lib/schedule/easton-work-pattern-resolution";
+import { withEastonDerivedAvailability } from "@/lib/schedule/easton-derived-availability";
 import { parseIsoDate, toIsoDate } from "@/lib/utils/date";
 
 export const GENERATED_BACKGROUND_TOP_OFF_SOURCE =
@@ -529,7 +530,7 @@ function toTopOffEmployee(
     expectedWeeklyHours: employee.expectedWeeklyHours,
   });
 
-  return {
+  return withEastonDerivedAvailability({
     id: employee.id,
     fullName: employee.fullName,
     active: employee.status === "ACTIVE",
@@ -575,7 +576,7 @@ function toTopOffEmployee(
     }),
     expectedHours: targetWeeklyHours,
     workPattern,
-  };
+  });
 }
 
 function employeesNeedingTopOff(

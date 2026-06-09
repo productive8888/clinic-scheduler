@@ -23,6 +23,7 @@ import {
   getEffectiveWorkPattern,
   type EmployeeScheduleTargetSource,
 } from "@/lib/schedule/easton-work-pattern-resolution";
+import { withEastonDerivedAvailability } from "@/lib/schedule/easton-derived-availability";
 import { parseIsoDate, toIsoDate } from "@/lib/utils/date";
 
 export const GENERATED_WORK_PATTERN_TOP_OFF_SOURCE =
@@ -354,7 +355,9 @@ export async function enforceWorkPatternRequirementsForRange(input: {
         summary.unresolved.push({
           employeeId: employee.id,
           employeeName: employee.fullName,
-          reason: "Could not assign required Saturday work-pattern shift.",
+          reason:
+            repaired.reason ??
+            "Could not assign required Saturday work-pattern shift.",
         });
       }
     }
@@ -384,9 +387,10 @@ export async function enforceWorkPatternRequirementsForRange(input: {
           employeeId: employee.id,
           employeeName: employee.fullName,
           reason:
-            weekday === 1
+            repaired.reason ??
+            (weekday === 1
               ? "Could not assign Monday 0700-1200 or 1300-1800 extra-hour shift."
-              : `Could not assign ${weekdayName(weekday)} 0700-1200 extra-hour shift.`,
+              : `Could not assign ${weekdayName(weekday)} 0700-1200 extra-hour shift.`),
         });
       }
     }
@@ -426,7 +430,7 @@ function toRepairEmployee(
     expectedWeeklyHours: employee.expectedWeeklyHours,
   });
 
-  return {
+  return withEastonDerivedAvailability({
     id: employee.id,
     fullName: employee.fullName,
     active: employee.status === "ACTIVE",
@@ -472,7 +476,7 @@ function toRepairEmployee(
       scheduleTarget,
     }),
     workPattern,
-  };
+  });
 }
 
 async function satisfyExtraHourWeekday(input: {
@@ -514,6 +518,19 @@ async function satisfyExtraHourWeekday(input: {
     return { type: "ASSIGN" as const };
   }
 
+  const moved = await tryMoveIntoOpenCandidate({
+    employee: input.employee,
+    candidates,
+    employeeById: input.employeeById,
+    slots: input.slots,
+    allAssignments: input.allAssignments,
+    notes: "Generated move to satisfy required work-pattern extra-hour weekday.",
+  });
+
+  if (moved) {
+    return { type: "SWAP" as const };
+  }
+
   const swapped = await trySwapIntoCandidate({
     employee: input.employee,
     candidates,
@@ -549,7 +566,30 @@ async function satisfyExtraHourWeekday(input: {
     .sort(compareShiftBlocks)[0];
 
   if (!block) {
-    return { type: "NONE" as const };
+    return {
+      type: "NONE" as const,
+      reason: explainRepairBlockers({
+        employee: input.employee,
+        label:
+          input.weekday === 1
+            ? "Monday 0700-1200 or 1300-1800 extra-hour shift"
+            : `${weekdayName(input.weekday)} 0700-1200 extra-hour shift`,
+        candidates,
+        matchingShiftBlocks: input.shiftBlocks.filter((shiftBlock) =>
+          isExtraHourShiftForWeekday(
+            {
+              date: shiftBlock.date,
+              startMinute: shiftBlock.startMinute,
+              endMinute: shiftBlock.endMinute,
+              paidHours: shiftBlock.paidHours,
+            },
+            input.weekday,
+          ),
+        ),
+        backgroundTask: input.backgroundTask,
+        allAssignments: input.allAssignments,
+      }),
+    };
   }
 
   const slot = await createWorkPatternTopOffSlot({
@@ -603,6 +643,19 @@ async function satisfySaturdayRequirement(input: {
     return { type: "ASSIGN" as const };
   }
 
+  const moved = await tryMoveIntoOpenCandidate({
+    employee: input.employee,
+    candidates,
+    employeeById: input.employeeById,
+    slots: input.slots,
+    allAssignments: input.allAssignments,
+    notes: "Generated move to satisfy required Saturday work-pattern shift.",
+  });
+
+  if (moved) {
+    return { type: "SWAP" as const };
+  }
+
   const swapped = await trySwapIntoCandidate({
     employee: input.employee,
     candidates,
@@ -633,7 +686,22 @@ async function satisfySaturdayRequirement(input: {
     .sort(compareShiftBlocks)[0];
 
   if (!block) {
-    return { type: "NONE" as const };
+    return {
+      type: "NONE" as const,
+      reason: explainRepairBlockers({
+        employee: input.employee,
+        label: `Saturday ${input.requirement.requiredSaturdayShiftCategory} ${input.requirement.requiredSaturdayPaidHours}h work-pattern shift`,
+        candidates,
+        matchingShiftBlocks: input.shiftBlocks.filter(
+          (shiftBlock) =>
+            new Date(`${shiftBlock.date}T00:00:00.000Z`).getUTCDay() === 6 &&
+            shiftBlock.shiftCategory === input.requirement.requiredSaturdayShiftCategory &&
+            shiftBlock.paidHours === input.requirement.requiredSaturdayPaidHours,
+        ),
+        backgroundTask: input.backgroundTask,
+        allAssignments: input.allAssignments,
+      }),
+    };
   }
 
   const slot = await createWorkPatternTopOffSlot({
@@ -651,6 +719,139 @@ async function satisfySaturdayRequirement(input: {
   });
 
   return { type: "CREATE_ASSIGN" as const };
+}
+
+async function tryMoveIntoOpenCandidate(input: {
+  employee: RepairEmployee;
+  candidates: RepairSlot[];
+  employeeById: Map<string, RepairEmployee>;
+  slots: RepairSlot[];
+  allAssignments: ExistingAssignment[];
+  notes: string;
+}) {
+  for (const targetSlot of input.candidates) {
+    if (targetSlot.assignments.length >= (targetSlot.requiredStaff ?? 1)) {
+      continue;
+    }
+
+    const overlappingAssignment = findMovableOverlappingAssignment({
+      employeeId: input.employee.id,
+      targetSlot,
+      slots: input.slots,
+    });
+
+    if (!overlappingAssignment) {
+      continue;
+    }
+
+    const oldSlot = input.slots.find(
+      (slot) => slot.id === overlappingAssignment.slotId,
+    );
+
+    if (!oldSlot) {
+      continue;
+    }
+
+    const baseAssignments = input.allAssignments.filter(
+      (assignment) =>
+        !(
+          assignment.employeeId === input.employee.id &&
+          assignment.slotId === oldSlot.id
+        ),
+    );
+
+    if (
+      getConstraintRejections(
+        input.employee,
+        targetSlot.taskType,
+        targetSlot,
+        baseAssignments,
+      ).length > 0 ||
+      wouldExceedExpectedHours(input.employee, targetSlot, baseAssignments)
+    ) {
+      continue;
+    }
+
+    const replacement = canVacateSlotWithoutRequiredShortage(oldSlot)
+      ? null
+      : findReplacementForVacatedSlot({
+          oldSlot,
+          movingEmployeeId: input.employee.id,
+          employeeById: input.employeeById,
+          assignmentsWithMovedEmployee: [
+            ...baseAssignments,
+            toExistingAssignment(targetSlot, input.employee.id, false),
+          ],
+        });
+
+    if (!canVacateSlotWithoutRequiredShortage(oldSlot) && !replacement) {
+      continue;
+    }
+
+    await getDb().$transaction(async (tx) => {
+      await tx.assignment.update({
+        where: { id: overlappingAssignment.assignmentId },
+        data: { status: "REMOVED", removedAt: new Date() },
+      });
+      await tx.assignment.create({
+        data: {
+          taskSlotId: targetSlot.id,
+          employeeId: input.employee.id,
+          source: "GENERATED",
+          notes: input.notes,
+        },
+      });
+
+      if (replacement) {
+        await tx.assignment.create({
+          data: {
+            taskSlotId: oldSlot.id,
+            employeeId: replacement.employee.id,
+            source: "GENERATED",
+            notes: `${input.notes} Backfilled vacated slot.`,
+          },
+        });
+      }
+
+      await tx.taskSlot.update({
+        where: { id: targetSlot.id },
+        data: { status: "FILLED", notes: null },
+      });
+      await tx.taskSlot.update({
+        where: { id: oldSlot.id },
+        data: {
+          status: statusAfterMovingFromSlot(oldSlot, Boolean(replacement)),
+          notes: null,
+        },
+      });
+    });
+
+    removeAssignmentFromMemory(input.allAssignments, input.employee.id, oldSlot.id);
+    oldSlot.assignments = oldSlot.assignments.filter(
+      (assignment) => assignment.id !== overlappingAssignment.assignmentId,
+    );
+    targetSlot.assignments.push({
+      id: `generated:${targetSlot.id}:${input.employee.id}`,
+      employeeId: input.employee.id,
+      source: "GENERATED",
+      locked: false,
+    });
+    input.allAssignments.push(toExistingAssignment(targetSlot, input.employee.id, false));
+
+    if (replacement) {
+      oldSlot.assignments.push({
+        id: `generated:${oldSlot.id}:${replacement.employee.id}`,
+        employeeId: replacement.employee.id,
+        source: "GENERATED",
+        locked: false,
+      });
+      input.allAssignments.push(toExistingAssignment(oldSlot, replacement.employee.id, false));
+    }
+
+    return true;
+  }
+
+  return false;
 }
 
 async function trySwapIntoCandidate(input: {
@@ -796,6 +997,67 @@ function canDirectAssign(
   }
 
   return getConstraintRejections(employee, slot.taskType, slot, allAssignments).length === 0;
+}
+
+function explainRepairBlockers(input: {
+  employee: RepairEmployee;
+  label: string;
+  candidates: RepairSlot[];
+  matchingShiftBlocks: RepairShiftBlock[];
+  backgroundTask: RepairTaskType;
+  allAssignments: ExistingAssignment[];
+}) {
+  const reasons = new Set<string>();
+
+  if (input.candidates.length === 0 && input.matchingShiftBlocks.length === 0) {
+    reasons.add("no matching shift block exists");
+  }
+
+  for (const slot of input.candidates) {
+    if (slot.assignments.length >= (slot.requiredStaff ?? 1)) {
+      reasons.add(
+        slot.assignments.some((assignment) => assignment.locked)
+          ? "matching task slot is full with a locked assignment"
+          : "matching task slot is already full",
+      );
+    }
+
+    for (const reason of getConstraintRejections(
+      input.employee,
+      slot.taskType,
+      slot,
+      input.allAssignments,
+    )) {
+      reasons.add(reason);
+    }
+
+    if (wouldExceedExpectedHours(input.employee, slot, input.allAssignments)) {
+      reasons.add("would exceed expected weekly hours");
+    }
+  }
+
+  for (const shiftBlock of input.matchingShiftBlocks) {
+    const slot = slotForNewBackground(input.backgroundTask, shiftBlock);
+
+    for (const reason of getConstraintRejections(
+      input.employee,
+      slot.taskType,
+      slot,
+      input.allAssignments,
+    )) {
+      reasons.add(reason);
+    }
+
+    if (wouldExceedExpectedHours(input.employee, slot, input.allAssignments)) {
+      reasons.add("would exceed expected weekly hours");
+    }
+  }
+
+  const detail = [...reasons].slice(0, 5).join("; ");
+
+  return detail
+    ? `Could not assign ${input.label}: ${detail}.`
+    : `Could not assign ${input.label}.`;
 }
 
 async function assignSlot(input: {
@@ -966,6 +1228,51 @@ function findMovableOverlappingAssignment(input: {
   }
 
   return null;
+}
+
+function canVacateSlotWithoutRequiredShortage(slot: RepairSlot) {
+  const remainingAssignments = slot.assignments.length - 1;
+
+  if (slot.taskType.isBackground || slot.requirementLevel !== "REQUIRED") {
+    return true;
+  }
+
+  return remainingAssignments >= Math.max(slot.minStaff ?? 0, slot.requiredStaff ?? 1);
+}
+
+function statusAfterMovingFromSlot(slot: RepairSlot, hasReplacement: boolean) {
+  const remainingAssignments = slot.assignments.length - 1 + (hasReplacement ? 1 : 0);
+
+  return remainingAssignments >= (slot.requiredStaff ?? 1) ? "FILLED" : "OPEN";
+}
+
+function findReplacementForVacatedSlot(input: {
+  oldSlot: RepairSlot;
+  movingEmployeeId: string;
+  employeeById: Map<string, RepairEmployee>;
+  assignmentsWithMovedEmployee: ExistingAssignment[];
+}) {
+  return [...input.employeeById.values()]
+    .filter((employee) => employee.id !== input.movingEmployeeId)
+    .filter(
+      (employee) =>
+        getConstraintRejections(
+          employee,
+          input.oldSlot.taskType,
+          input.oldSlot,
+          input.assignmentsWithMovedEmployee,
+        ).length === 0,
+    )
+    .filter(
+      (employee) =>
+        !wouldExceedExpectedHours(
+          employee,
+          input.oldSlot,
+          input.assignmentsWithMovedEmployee,
+        ),
+    )
+    .sort((left, right) => left.fullName.localeCompare(right.fullName) || left.id.localeCompare(right.id))
+    .map((employee) => ({ employee }))[0] ?? null;
 }
 
 function isMovableAssignment(assignment: RepairAssignment) {

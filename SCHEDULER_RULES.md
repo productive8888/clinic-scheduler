@@ -152,11 +152,18 @@ not contain scheduling decisions.
   7:00 AM-12:00 PM or 1:00 PM-6:00 PM. Saturday endoscopy employees must use
   the 6:00 AM-2:00 PM Saturday block and have no weekday extra-hour requirement.
   Non-endoscopy Saturday employees must use the 8:00 AM-2:00 PM Saturday block.
+- Active July work-pattern groups derive generation-time availability for their
+  required group shifts so stale 8:00 AM-5:00 PM recurring availability does
+  not make 7:00 AM, Monday 6:00 PM, or Saturday 6:00 AM blocks impossible.
+  This derived layer does not edit saved employee availability, and PTO/NPTO or
+  explicit unavailability still blocks the affected shift.
 - If a valid generated week misses a group extra-hour day, generation first
-  tries deterministic swaps among generated nonlocked assignments, then creates
-  optional `GENERATED_WORK_PATTERN_TOP_OFF` Background slots on the exact
-  required shift when that is the only safe way to expose the missing hour.
-  These slots are separate from ordinary BG minimum filler.
+  tries a direct legal assignment, then moves a generated nonlocked overlapping
+  regular assignment into the required 5-hour block when safe, then tries
+  deterministic swaps among generated nonlocked assignments. If needed, it
+  creates optional `GENERATED_WORK_PATTERN_TOP_OFF` Background slots on the
+  exact required shift when that is the only safe way to expose the missing
+  hour. These slots are separate from ordinary BG minimum filler.
 - The BG/hour top-off pass fills existing open background-class slots first,
   then creates optional `GENERATED_BACKGROUND_TOP_OFF` Background slots when
   needed. It tries to meet required weekly BG/background minimums and move

@@ -326,9 +326,19 @@ function StaffSummaryTable({
                     </div>
                   ) : null}
                   {row.hardRequirementIssues.length > 0 ? (
-                    <div className="mt-1 text-rose-700">
-                      {row.hardRequirementIssues.length} hard issue
-                      {row.hardRequirementIssues.length === 1 ? "" : "s"}
+                    <div className="mt-2 grid gap-1 text-rose-700">
+                      <div>
+                        {row.hardRequirementIssues.length} hard issue
+                        {row.hardRequirementIssues.length === 1 ? "" : "s"}
+                      </div>
+                      {row.hardRequirementIssues.slice(0, 3).map((issue) => (
+                        <div
+                          key={`${issue.code}:${issue.message}`}
+                          className="rounded-sm bg-rose-50 px-1.5 py-1 text-[11px] leading-snug"
+                        >
+                          {issue.message}
+                        </div>
+                      ))}
                     </div>
                   ) : null}
                 </th>

@@ -28,6 +28,10 @@ import {
   eastonShiftTemplateDataFromShift,
 } from "../../src/lib/db/easton-import";
 import { getEffectiveWorkPattern } from "../../src/lib/schedule/easton-work-pattern-resolution";
+import {
+  eastonDerivedAvailabilityWindows,
+  withEastonDerivedAvailability,
+} from "../../src/lib/schedule/easton-derived-availability";
 import { evaluateWeeklyHardRequirements } from "../../src/lib/schedule/hard-requirements";
 import {
   isExtraHourShiftForWeekday,
@@ -2339,6 +2343,178 @@ describe("Easton July hard requirements", () => {
     assert.equal(workPattern?.kind, "NON_ENDOSCOPY_SATURDAY");
     assert.deepEqual(workPattern?.extraHourWeekdays, [2, 4]);
     assert.equal(workPattern?.saturdayPaidHours, 6);
+  });
+
+  it("derives July availability for exact non-endoscopy extra-hour days", () => {
+    const employee = withEastonDerivedAvailability({
+      id: "alice",
+      fullName: "Alice Huang",
+      skillIds: [],
+      availability: [
+        { weekday: 2, startMinute: 480, endMinute: 1020 },
+        { weekday: 4, startMinute: 480, endMinute: 1020 },
+      ],
+      workPattern: {
+        kind: "NON_ENDOSCOPY_SATURDAY",
+        requiredSaturdayShiftCategory: "SATURDAY",
+        saturdayPaidHours: 6,
+        extraHourWeekdays: [2, 4],
+      },
+    });
+
+    assert.equal(
+      employee.availability.some(
+        (window) =>
+          window.weekday === 2 &&
+          window.startMinute === 420 &&
+          window.endMinute === 720,
+      ),
+      true,
+    );
+    assert.equal(
+      employee.availability.some(
+        (window) =>
+          window.weekday === 6 &&
+          window.startMinute === 480 &&
+          window.endMinute === 840,
+      ),
+      true,
+    );
+  });
+
+  it("derives July availability for Monday early or Monday long PM", () => {
+    const windows = eastonDerivedAvailabilityWindows({
+      workPattern: {
+        kind: "NON_ENDOSCOPY_SATURDAY",
+        requiredSaturdayShiftCategory: "SATURDAY",
+        saturdayPaidHours: 6,
+        extraHourWeekdays: [1, 3],
+      },
+    });
+
+    assert.equal(
+      windows.some(
+        (window) =>
+          window.weekday === 1 &&
+          window.startMinute === 420 &&
+          window.endMinute === 720,
+      ),
+      true,
+    );
+    assert.equal(
+      windows.some(
+        (window) =>
+          window.weekday === 1 &&
+          window.startMinute === 780 &&
+          window.endMinute === 1080,
+      ),
+      true,
+    );
+  });
+
+  it("assigns T + Th 0700-1200 even when base availability is 0800-1700", () => {
+    const taskType = {
+      id: "background",
+      code: "BACKGROUND",
+      name: "Background",
+      requiredSkillIds: [],
+      isBackground: true,
+    };
+    const result = generateSchedule({
+      seed: "derived-availability-t-th",
+      employees: [
+        withEastonDerivedAvailability({
+          id: "alice",
+          fullName: "Alice Huang",
+          skillIds: [],
+          availability: [
+            { weekday: 2, startMinute: 480, endMinute: 1020 },
+            { weekday: 4, startMinute: 480, endMinute: 1020 },
+          ],
+          workPattern: {
+            kind: "NON_ENDOSCOPY_SATURDAY",
+            requiredSaturdayShiftCategory: "SATURDAY",
+            saturdayPaidHours: 6,
+            extraHourWeekdays: [2, 4],
+          },
+        }),
+      ],
+      taskTypes: [taskType],
+      slots: [
+        {
+          id: "tue-early",
+          date: "2026-07-07",
+          taskTypeId: "background",
+          slotIndex: 1,
+          startMinute: 420,
+          endMinute: 720,
+          paidHours: 5,
+          requirementLevel: "REQUIRED",
+        },
+        {
+          id: "thu-early",
+          date: "2026-07-09",
+          taskTypeId: "background",
+          slotIndex: 1,
+          startMinute: 420,
+          endMinute: 720,
+          paidHours: 5,
+          requirementLevel: "REQUIRED",
+        },
+      ],
+    });
+
+    assert.deepEqual(
+      result.assignments.map((assignment) => assignment.slotId).sort(),
+      ["thu-early", "tue-early"],
+    );
+  });
+
+  it("assigns Saturday/endoscopy 0600-1400 even when base availability is 0800-1700", () => {
+    const result = generateSchedule({
+      seed: "derived-availability-endo-saturday",
+      employees: [
+        withEastonDerivedAvailability({
+          id: "endo",
+          fullName: "Endoscopy Worker",
+          skillIds: [],
+          availability: [{ weekday: 6, startMinute: 480, endMinute: 1020 }],
+          workPattern: {
+            kind: "ENDOSCOPY_SATURDAY",
+            requiredSaturdayShiftCategory: "ENDO",
+            saturdayPaidHours: 8,
+            extraHourWeekdays: [],
+          },
+        }),
+      ],
+      taskTypes: [
+        {
+          id: "endoscopy",
+          code: "ENDOSCOPY",
+          name: "Endoscopy",
+          requiredSkillIds: [],
+          isPatientFacing: true,
+          isClinical: true,
+          isEndoscopy: true,
+        },
+      ],
+      slots: [
+        {
+          id: "sat-endo",
+          date: "2026-07-11",
+          taskTypeId: "endoscopy",
+          slotIndex: 1,
+          startMinute: 360,
+          endMinute: 840,
+          paidHours: 8,
+          shiftCategory: "ENDO",
+          requirementLevel: "REQUIRED",
+        },
+      ],
+    });
+
+    assert.equal(result.assignments[0]?.slotId, "sat-endo");
+    assert.equal(result.conflicts.length, 0);
   });
 
   it("treats old generic Easton patterns as non-authoritative without an exact July target", () => {

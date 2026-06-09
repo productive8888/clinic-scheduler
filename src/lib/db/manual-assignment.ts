@@ -17,6 +17,7 @@ import {
   getEffectiveWorkPattern,
   type EmployeeScheduleTargetSource,
 } from "@/lib/schedule/easton-work-pattern-resolution";
+import { withEastonDerivedAvailability } from "@/lib/schedule/easton-derived-availability";
 import { LEGACY_SHIFT_TEMPLATE_ID } from "@/lib/shifts/legacy";
 import { parseIsoDate, toIsoDate } from "@/lib/utils/date";
 
@@ -336,7 +337,7 @@ function toSchedulerEmployee(
     expectedWeeklyHours: employee.expectedWeeklyHours,
   });
 
-  return {
+  return withEastonDerivedAvailability({
     id: employee.id,
     fullName: employee.fullName,
     active: employee.status === "ACTIVE",
@@ -362,7 +363,7 @@ function toSchedulerEmployee(
       }),
     ),
     workPattern,
-  };
+  });
 }
 
 function toSchedulerTaskType(taskType: {

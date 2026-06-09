@@ -35,6 +35,7 @@ import {
   getEffectiveWeeklyTargetHours,
   getEffectiveWorkPattern,
 } from "@/lib/schedule/easton-work-pattern-resolution";
+import { withEastonDerivedAvailability } from "@/lib/schedule/easton-derived-availability";
 import { shouldPreserveSlotOutsideStaffingRequirements } from "@/lib/schedule/slot-reconciliation";
 import { buildShiftBlockSnapshot } from "@/lib/shifts/templates";
 import { LEGACY_SHIFT_TEMPLATE_ID } from "@/lib/shifts/legacy";
@@ -897,7 +898,7 @@ export async function generateScheduleForDate(input: {
         expectedWeeklyHours: employee.expectedWeeklyHours,
       });
 
-      return {
+      return withEastonDerivedAvailability({
         id: employee.id,
         fullName: employee.fullName,
         active: employee.status === "ACTIVE",
@@ -969,7 +970,7 @@ export async function generateScheduleForDate(input: {
           scheduleTargets,
           taskTypeIdByCode,
         }),
-      } satisfies SchedulerEmployee;
+      } satisfies SchedulerEmployee);
     })
     .sort((left, right) => left.id.localeCompare(right.id));
 
