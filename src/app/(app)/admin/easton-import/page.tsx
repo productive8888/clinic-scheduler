@@ -4,6 +4,7 @@ import {
   saveEastonImportReviewAction,
 } from "@/app/(app)/admin/easton-import/actions";
 import { getEastonImportPageData } from "@/lib/db/easton-import";
+import { weekdayShortName } from "@/lib/easton-import/work-patterns";
 
 export default async function EastonImportPage() {
   const { preview, reviews } = await getEastonImportPageData();
@@ -23,8 +24,9 @@ export default async function EastonImportPage() {
               Import and review scheduling defaults
             </h1>
             <p className="mt-2 max-w-3xl text-sm text-slate-500">
-              Parse the private spreadsheet, review the extracted shift grid and
-              demand counts, then apply them as editable database rules.
+              Parse the private spreadsheet, review the July shift grid and
+              demand counts, then apply them as editable database rules. June
+              sheets are ignored for active generation.
             </p>
           </div>
           <div className="flex flex-wrap gap-2">
@@ -154,24 +156,21 @@ export default async function EastonImportPage() {
             item.roleLabel ?? "",
             item.groupLabel ?? "",
             item.targetPatientShifts?.toString() ?? "",
+            String(item.requiredBackgroundAssignments),
+            item.extraHourWeekdays.map(weekdayShortName).join(", "),
             item.exposureGoals.join(", "),
           ])}
-          headers={["Employee", "Role", "Group", "Patient shifts", "Exposure"]}
+          headers={[
+            "Employee",
+            "Role",
+            "Group",
+            "Patient shifts",
+            "BG min",
+            "Extra days",
+            "Exposure",
+          ]}
         />
       </section>
-
-      <PreviewTable
-        title="June reference assignment preview"
-        emptyText="No June sample assignments parsed."
-        rows={preview.sampleAssignments.slice(0, 100).map((item) => [
-          item.employeeName,
-          weekdayName(item.weekday),
-          item.shiftLabel,
-          item.roleName,
-          item.roleCode,
-        ])}
-        headers={["Employee", "Day", "Shift", "Role", "Code"]}
-      />
 
       <section className="rounded-md border border-slate-200 bg-white p-5 shadow-sm">
         <h2 className="text-lg font-semibold text-slate-950">Recent reviews</h2>

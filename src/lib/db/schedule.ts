@@ -28,6 +28,7 @@ import { isShortNoticeScheduleChange } from "@/lib/schedule/short-notice";
 import { patternPreferredEmployeeIdsForSlot } from "@/lib/schedule/pattern-preferences";
 import { getSchedulePublishIssues } from "@/lib/schedule/publish-validation";
 import { clinicWeekRange } from "@/lib/schedule/range";
+import { getWeeklyHardRequirementSummary } from "@/lib/db/weekly-hard-requirements";
 import { shouldPreserveSlotOutsideStaffingRequirements } from "@/lib/schedule/slot-reconciliation";
 import { buildShiftBlockSnapshot } from "@/lib/shifts/templates";
 import { LEGACY_SHIFT_TEMPLATE_ID } from "@/lib/shifts/legacy";
@@ -942,6 +943,11 @@ export async function generateScheduleForDate(input: {
             saturdayPaidHours: employee.workPattern.saturdayPaidHours
               ? Number(employee.workPattern.saturdayPaidHours)
               : null,
+            requiredSaturdayShiftCategory:
+              employee.workPattern.requiredSaturdayShiftCategory,
+            extraHourWeekdays: jsonNumberArray(
+              employee.workPattern.extraHourWeekdays,
+            ),
             mondayOffAllowed: employee.workPattern.mondayOffAllowed,
             fridayOffAllowed: employee.workPattern.fridayOffAllowed,
             earlyStartDaysPerWeek: employee.workPattern.earlyStartDaysPerWeek,
@@ -1256,6 +1262,7 @@ export async function generateScheduleForDate(input: {
 export async function publishScheduleForDate(input: {
   date: string;
   actorEmployeeId?: string | null;
+  overrideReason?: string | null;
 }) {
   const scheduleDay = await getScheduleBoard(input.date);
 
@@ -1264,13 +1271,17 @@ export async function publishScheduleForDate(input: {
   }
 
   const publishIssues = getSchedulePublishIssues(scheduleDay);
+  const week = clinicWeekRange(input.date);
+  const hardRequirements = await getWeeklyHardRequirementSummary(week);
 
-  if (publishIssues.length > 0) {
+  const blockingMessages = [
+    ...publishIssues.map((issue) => issue.message),
+    ...hardRequirements.issues.map((issue) => issue.message),
+  ];
+
+  if (blockingMessages.length > 0 && !input.overrideReason?.trim()) {
     throw new Error(
-      `Schedule cannot be published. ${publishIssues
-        .slice(0, 6)
-        .map((issue) => issue.message)
-        .join(" ")}`,
+      `Schedule cannot be published. ${blockingMessages.slice(0, 6).join(" ")}`,
     );
   }
 
@@ -1290,6 +1301,11 @@ export async function publishScheduleForDate(input: {
     entityId: published.id,
     before: { status: scheduleDay.status },
     after: { status: published.status, publishedAt: published.publishedAt },
+    metadata: {
+      overrideReason: input.overrideReason?.trim() || null,
+      publishIssues,
+      hardRequirementIssues: hardRequirements.issues,
+    },
   });
 
   return published;
@@ -1361,6 +1377,7 @@ function targetInputsForEmployee(input: {
     targetPatientShifts: Prisma.Decimal | null;
     targetTaskCounts: Prisma.JsonValue;
     exposureGoals: Prisma.JsonValue;
+    requiredBackgroundAssignments: number;
   }[];
   taskTypeIdByCode: Map<string, string>;
 }) {
@@ -1391,6 +1408,7 @@ function targetInputsForEmployee(input: {
     targetPatientFacingAssignments: target.targetPatientShifts
       ? Number(target.targetPatientShifts)
       : null,
+    requiredBackgroundAssignments: target.requiredBackgroundAssignments,
     targetTaskAssignments,
     exposureGoals: jsonStringArray(target.exposureGoals),
   };
@@ -1434,6 +1452,14 @@ function jsonStringArray(value: Prisma.JsonValue) {
   }
 
   return value.filter((item): item is string => typeof item === "string");
+}
+
+function jsonNumberArray(value: Prisma.JsonValue) {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+
+  return value.map(Number).filter((item) => Number.isFinite(item));
 }
 
 function jsonRecord(value: Prisma.JsonValue) {

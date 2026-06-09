@@ -7,6 +7,7 @@ import {
   type EastonParsedShift,
   type EastonWorkbookPreview,
 } from "@/lib/easton-import/parser";
+import { eastonWorkPatternGroups } from "@/lib/easton-import/work-patterns";
 import {
   REQUIRED_CONFIGURABLE_SKILLS,
   REQUIRED_TASK_SKILL_CODES,
@@ -613,65 +614,61 @@ export async function applyEastonDefaultsFromWorkbook(input: {
       });
     }
 
-    await tx.workPattern.upsert({
-      where: { code: "EASTON_ENDOSCOPY_SATURDAY" },
-      update: {
-        name: "Endoscopy Saturday pattern",
-        kind: "ENDOSCOPY_SATURDAY",
-        targetWeeklyHours: 40,
-        worksTuesdayThroughSaturday: true,
-        saturdayPaidHours: 8,
-        mondayOffAllowed: true,
-        fridayOffAllowed: false,
-        earlyStartDaysPerWeek: 0,
-        active: true,
-        notes: "Easton default: endoscopy team works Tuesday-Saturday with 8-hour Saturday and banks extra time.",
+    const workPatternIdByCode = new Map<string, string>();
+
+    await tx.workPattern.updateMany({
+      where: {
+        code: {
+          in: [
+            "EASTON_ENDOSCOPY_SATURDAY",
+            "EASTON_NON_ENDOSCOPY_SATURDAY",
+          ],
+        },
       },
-      create: {
-        code: "EASTON_ENDOSCOPY_SATURDAY",
-        name: "Endoscopy Saturday pattern",
-        kind: "ENDOSCOPY_SATURDAY",
-        targetWeeklyHours: 40,
-        worksTuesdayThroughSaturday: true,
-        saturdayPaidHours: 8,
-        mondayOffAllowed: true,
-        fridayOffAllowed: false,
-        earlyStartDaysPerWeek: 0,
-        active: true,
-        notes: "Easton default: endoscopy team works Tuesday-Saturday with 8-hour Saturday and banks extra time.",
-        createdByEmployeeId: input.actorEmployeeId ?? null,
+      data: {
+        active: false,
+        notes:
+          "Archived by July Easton import. Use the exact July group patterns imported from Shifts by GY.",
       },
     });
 
-    await tx.workPattern.upsert({
-      where: { code: "EASTON_NON_ENDOSCOPY_SATURDAY" },
-      update: {
-        name: "Non-endoscopy Saturday pattern",
-        kind: "NON_ENDOSCOPY_SATURDAY",
-        targetWeeklyHours: 40,
-        worksTuesdayThroughSaturday: false,
-        saturdayPaidHours: 6,
-        mondayOffAllowed: true,
-        fridayOffAllowed: true,
-        earlyStartDaysPerWeek: 2,
-        active: true,
-        notes: "Easton default: non-endoscopy Saturday workers have a 6-hour Saturday, Monday or Friday off, and two early-start days.",
-      },
-      create: {
-        code: "EASTON_NON_ENDOSCOPY_SATURDAY",
-        name: "Non-endoscopy Saturday pattern",
-        kind: "NON_ENDOSCOPY_SATURDAY",
-        targetWeeklyHours: 40,
-        worksTuesdayThroughSaturday: false,
-        saturdayPaidHours: 6,
-        mondayOffAllowed: true,
-        fridayOffAllowed: true,
-        earlyStartDaysPerWeek: 2,
-        active: true,
-        notes: "Easton default: non-endoscopy Saturday workers have a 6-hour Saturday, Monday or Friday off, and two early-start days.",
-        createdByEmployeeId: input.actorEmployeeId ?? null,
-      },
-    });
+    for (const group of eastonWorkPatternGroups()) {
+      const record = await tx.workPattern.upsert({
+        where: { code: group.code },
+        update: {
+          name: group.name,
+          kind: group.kind,
+          targetWeeklyHours: 40,
+          worksTuesdayThroughSaturday: group.requiredSaturdayShiftCategory === "ENDO",
+          saturdayPaidHours: group.saturdayPaidHours,
+          requiredSaturdayShiftCategory: group.requiredSaturdayShiftCategory,
+          extraHourWeekdays: group.extraHourWeekdays as Prisma.InputJsonArray,
+          mondayOffAllowed: group.requiredSaturdayShiftCategory === "SATURDAY",
+          fridayOffAllowed: group.requiredSaturdayShiftCategory === "SATURDAY",
+          earlyStartDaysPerWeek: group.extraHourWeekdays.length,
+          active: true,
+          notes: `${EASTON_STAFFING_NOTE} ${group.notes}`,
+        },
+        create: {
+          code: group.code,
+          name: group.name,
+          kind: group.kind,
+          targetWeeklyHours: 40,
+          worksTuesdayThroughSaturday: group.requiredSaturdayShiftCategory === "ENDO",
+          saturdayPaidHours: group.saturdayPaidHours,
+          requiredSaturdayShiftCategory: group.requiredSaturdayShiftCategory,
+          extraHourWeekdays: group.extraHourWeekdays as Prisma.InputJsonArray,
+          mondayOffAllowed: group.requiredSaturdayShiftCategory === "SATURDAY",
+          fridayOffAllowed: group.requiredSaturdayShiftCategory === "SATURDAY",
+          earlyStartDaysPerWeek: group.extraHourWeekdays.length,
+          active: true,
+          notes: `${EASTON_STAFFING_NOTE} ${group.notes}`,
+          createdByEmployeeId: input.actorEmployeeId ?? null,
+        },
+      });
+
+      workPatternIdByCode.set(group.code, record.id);
+    }
 
     const skippedPullNames: string[] = [];
 
@@ -707,20 +704,39 @@ export async function applyEastonDefaultsFromWorkbook(input: {
       });
     }
 
-    const pattern = await tx.schedulePattern.upsert({
+    const legacyJunePattern = await tx.schedulePattern.findUnique({
       where: { code: "EASTON_JUNE_REFERENCE" },
+      select: { id: true },
+    });
+
+    if (legacyJunePattern) {
+      await tx.schedulePatternSlot.deleteMany({
+        where: { patternId: legacyJunePattern.id },
+      });
+      await tx.schedulePattern.update({
+        where: { id: legacyJunePattern.id },
+        data: {
+          active: false,
+          description:
+            "Legacy June reference pattern archived. July generation uses Shifts + Hours and Shifts by GY only.",
+        },
+      });
+    }
+
+    const pattern = await tx.schedulePattern.upsert({
+      where: { code: "EASTON_JULY_ACTIVE_TARGETS" },
       update: {
-        name: "Easton June reference pattern",
+        name: "Easton July active targets",
         description:
-          "Reference weekly pattern parsed from the private Easton June schedule workbook.",
+          "Active July scheduling model parsed from Shifts + Hours and Shifts by GY. Contains employee targets only; it does not hardcode sample assignments.",
         source: "EASTON_SPREADSHEET",
         active: true,
       },
       create: {
-        code: "EASTON_JUNE_REFERENCE",
-        name: "Easton June reference pattern",
+        code: "EASTON_JULY_ACTIVE_TARGETS",
+        name: "Easton July active targets",
         description:
-          "Reference weekly pattern parsed from the private Easton June schedule workbook.",
+          "Active July scheduling model parsed from Shifts + Hours and Shifts by GY. Contains employee targets only; it does not hardcode sample assignments.",
         source: "EASTON_SPREADSHEET",
         active: true,
         createdByEmployeeId: input.actorEmployeeId ?? null,
@@ -737,63 +753,45 @@ export async function applyEastonDefaultsFromWorkbook(input: {
     const employeeIdByName = new Map(
       employees.map((employee) => [normalizeName(employee.fullName), employee.id]),
     );
-    const slotIndexes = new Map<string, number>();
+    for (const target of preview.employeeTargets) {
+      const employeeId =
+        employeeIdByName.get(normalizeName(target.employeeName)) ?? null;
+      const workPatternId = target.workPatternCode
+        ? workPatternIdByCode.get(target.workPatternCode) ?? null
+        : null;
 
-    for (const assignment of preview.sampleAssignments) {
-      const taskTypeId = taskTypeByCode.get(assignment.roleCode);
-      const shift = preview.shifts.find(
-        (item) =>
-          item.weekday === assignment.weekday &&
-          item.label === assignment.shiftLabel &&
-          item.sheetName === "June Shifts + Hours",
-      ) ?? preview.shifts.find(
-        (item) =>
-          item.weekday === assignment.weekday && item.label === assignment.shiftLabel,
-      );
-      const shiftTemplateId = shift
-        ? shiftTemplateIdByKey.get(shiftKey(shift))
-        : undefined;
-
-      if (!taskTypeId) {
-        continue;
+      if (employeeId && workPatternId) {
+        await tx.employee.update({
+          where: { id: employeeId },
+          data: {
+            expectedWeeklyHours: 40,
+            workPatternId,
+          },
+        });
       }
 
-      const slotIndexKey = `${assignment.weekday}:${shiftTemplateId ?? assignment.shiftLabel}:${taskTypeId}`;
-      const slotIndex = (slotIndexes.get(slotIndexKey) ?? 0) + 1;
-      slotIndexes.set(slotIndexKey, slotIndex);
-
-      await tx.schedulePatternSlot.create({
-        data: {
-          patternId: pattern.id,
-          weekday: assignment.weekday,
-          shiftTemplateId,
-          shiftCategory: shift?.shiftCategory ?? null,
-          taskTypeId,
-          slotIndex,
-          preferredEmployeeId:
-            employeeIdByName.get(normalizeName(assignment.employeeName)) ?? null,
-          requirementLevel: REQUIRED_ROLE_CODES.has(assignment.roleCode)
-            ? "REQUIRED"
-            : "DESIRED",
-          sourceLabel: assignment.shiftLabel,
-          notes: `Easton June reference assignment for ${assignment.employeeName}.`,
-        },
-      });
-    }
-
-    for (const target of preview.employeeTargets) {
       await tx.employeeScheduleTarget.create({
         data: {
           patternId: pattern.id,
-          employeeId: employeeIdByName.get(normalizeName(target.employeeName)) ?? null,
+          employeeId,
           employeeName: target.employeeName,
-          periodLabel: "Easton model",
+          periodLabel: "Easton July active model",
+          workPatternCode: target.workPatternCode,
+          requiredBackgroundAssignments: target.requiredBackgroundAssignments,
+          extraHourWeekdays: target.extraHourWeekdays as Prisma.InputJsonArray,
           targetPatientShifts: target.targetPatientShifts,
           targetTotalHours: target.targetTotalHours,
           targetTaskCounts: target.targetTaskCounts as Prisma.InputJsonObject,
           exposureGoals: target.exposureGoals as Prisma.InputJsonArray,
           source: "EASTON_SPREADSHEET",
-          notes: [target.roleLabel, target.groupLabel].filter(Boolean).join(" | ") || null,
+          notes:
+            [
+              target.roleLabel,
+              target.groupLabel,
+              `Required BG ${target.requiredBackgroundAssignments}`,
+            ]
+              .filter(Boolean)
+              .join(" | ") || null,
         },
       });
     }
@@ -824,8 +822,9 @@ export async function applyEastonDefaultsFromWorkbook(input: {
       backgroundStaffingRuleCount,
       deactivatedBackgroundDefinitionCount: deactivatedBackgroundDefinitions.count,
       shortageRuleCount: SHORTAGE_DEFAULTS.length,
+      workPatternCount: workPatternIdByCode.size,
       skippedPullNames,
-      patternSlotCount: preview.sampleAssignments.length,
+      patternSlotCount: 0,
       employeeTargetCount: preview.employeeTargets.length,
     };
   }, {

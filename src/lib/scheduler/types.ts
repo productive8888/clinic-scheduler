@@ -19,10 +19,13 @@ export type SchedulerEmployee = {
   targetWeeklyHours?: number | null;
   scheduledHoursThisWeek?: number;
   scheduledEarlyStartShiftsThisWeek?: number;
+  requiredBackgroundAssignments?: number;
   workPattern?: {
     kind?: "CUSTOM" | "ENDOSCOPY_SATURDAY" | "NON_ENDOSCOPY_SATURDAY";
     worksTuesdayThroughSaturday?: boolean;
     saturdayPaidHours?: number | null;
+    requiredSaturdayShiftCategory?: "AM" | "PM" | "SATURDAY" | "ENDO" | "FLOAT" | "OTHER" | null;
+    extraHourWeekdays?: number[];
     mondayOffAllowed?: boolean;
     fridayOffAllowed?: boolean;
     earlyStartDaysPerWeek?: number;

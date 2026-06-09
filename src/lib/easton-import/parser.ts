@@ -1,6 +1,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import ExcelJS from "exceljs";
+import { resolveEastonWorkPatternGroup } from "@/lib/easton-import/work-patterns";
 
 export type EastonParsedShift = {
   sheetName: string;
@@ -31,6 +32,9 @@ export type EastonEmployeeTarget = {
   employeeName: string;
   roleLabel: string | null;
   groupLabel: string | null;
+  workPatternCode: string | null;
+  requiredBackgroundAssignments: number;
+  extraHourWeekdays: number[];
   targetTaskCounts: Record<string, number>;
   targetPatientShifts: number | null;
   targetTotalHours: number | null;
@@ -143,9 +147,7 @@ export async function parseEastonWorkbook(explicitPath?: string | null) {
   }));
 
   const shiftsAndHours = workbook.getWorksheet("Shifts + Hours");
-  const juneShiftsAndHours = workbook.getWorksheet("June Shifts + Hours");
   const shiftsByGy = workbook.getWorksheet("Shifts by GY");
-  const juneSchedule = workbook.getWorksheet("June Schedule");
 
   if (!shiftsAndHours) {
     warnings.push("Missing Shifts + Hours sheet.");
@@ -155,25 +157,20 @@ export async function parseEastonWorkbook(explicitPath?: string | null) {
     warnings.push("Missing Shifts by GY sheet.");
   }
 
-  if (!juneSchedule) {
-    warnings.push("Missing June Schedule sheet.");
-  }
-
   const primaryDemand = shiftsAndHours
     ? parseShiftDemandSheet(shiftsAndHours)
-    : { shifts: [], roleDemand: [] };
-  const juneDemand = juneShiftsAndHours
-    ? parseShiftDemandSheet(juneShiftsAndHours)
-    : { shifts: [], roleDemand: [] };
+    : { shifts: [], roleDemand: [], warnings: [] };
+
+  warnings.push(...primaryDemand.warnings);
 
   return {
     workbookPath,
     workbookModifiedAt: stats.mtime.toISOString(),
     sheets,
-    shifts: dedupeShifts([...primaryDemand.shifts, ...juneDemand.shifts]),
-    roleDemand: [...primaryDemand.roleDemand, ...juneDemand.roleDemand],
+    shifts: dedupeShifts(primaryDemand.shifts),
+    roleDemand: primaryDemand.roleDemand,
     employeeTargets: shiftsByGy ? parseEmployeeTargetsSheet(shiftsByGy) : [],
-    sampleAssignments: juneSchedule ? parseJuneScheduleSheet(juneSchedule) : [],
+    sampleAssignments: [],
     warnings,
   } satisfies EastonWorkbookPreview;
 }
@@ -191,6 +188,7 @@ export function normalizeEastonRoleCode(roleName: string) {
 function parseShiftDemandSheet(worksheet: ExcelJS.Worksheet) {
   const shifts: EastonParsedShift[] = [];
   const roleDemand: EastonRoleDemand[] = [];
+  const warnings: string[] = [];
   const shiftColumns = parseShiftColumns(worksheet);
 
   shifts.push(...shiftColumns);
@@ -231,7 +229,9 @@ function parseShiftDemandSheet(worksheet: ExcelJS.Worksheet) {
     }
   }
 
-  return { shifts, roleDemand };
+  warnings.push(...validatePatientTotals(worksheet.name, shiftColumns, roleDemand));
+
+  return { shifts, roleDemand, warnings };
 }
 
 function parseShiftColumns(worksheet: ExcelJS.Worksheet) {
@@ -309,6 +309,7 @@ function parseEmployeeTargetsSheet(worksheet: ExcelJS.Worksheet) {
     const targetTaskCounts: Record<string, number> = {};
     let targetPatientShifts: number | null = null;
     let targetTotalHours: number | null = null;
+    let requiredBackgroundAssignments = 0;
 
     for (const [column, header] of headers) {
       if (column < 5) {
@@ -327,6 +328,7 @@ function parseEmployeeTargetsSheet(worksheet: ExcelJS.Worksheet) {
         targetPatientShifts = value;
       } else if (header.trim().toLowerCase() === "bg") {
         targetTaskCounts.BACKGROUND = value;
+        requiredBackgroundAssignments = value;
       } else if (headerCode !== "SHIFT_HOURS") {
         targetTaskCounts[headerCode] = value;
       }
@@ -339,14 +341,19 @@ function parseEmployeeTargetsSheet(worksheet: ExcelJS.Worksheet) {
     const exposureGoals = ["GI", "ALLERGY", "PCP"].filter((goal) =>
       hasExposureTarget(goal, targetTaskCounts),
     );
+    const groupLabel = nullableText(row.getCell(5));
+    const workPatternGroup = resolveEastonWorkPatternGroup(groupLabel);
 
     targets.push({
       employeeName,
       roleLabel: nullableText(row.getCell(4)),
-      groupLabel: nullableText(row.getCell(5)),
+      groupLabel,
+      workPatternCode: workPatternGroup?.code ?? null,
+      requiredBackgroundAssignments,
+      extraHourWeekdays: workPatternGroup?.extraHourWeekdays ?? [],
       targetTaskCounts,
       targetPatientShifts,
-      targetTotalHours,
+      targetTotalHours: 40,
       exposureGoals,
     });
   }
@@ -463,6 +470,37 @@ function hasExposureTarget(goal: string, counts: Record<string, number>) {
   return Object.entries(counts).some(
     ([roleCode, count]) => count > 0 && EXPOSURE_BY_ROLE_CODE[roleCode] === goal,
   );
+}
+
+function validatePatientTotals(
+  sheetName: string,
+  shifts: EastonParsedShift[],
+  roleDemand: EastonRoleDemand[],
+) {
+  const warnings: string[] = [];
+  const patientFacingCodes = new Set(["NEW_GI", "NEW_ALLERGY", "FOLLOWUP"]);
+
+  for (const shift of shifts) {
+    const shiftDemand = roleDemand.filter(
+      (demand) =>
+        demand.weekday === shift.weekday &&
+        demand.startMinute === shift.startMinute &&
+        demand.endMinute === shift.endMinute &&
+        demand.paidHours === shift.paidHours,
+    );
+    const expected = shiftDemand
+      .filter((demand) => patientFacingCodes.has(demand.roleCode))
+      .reduce((total, demand) => total + demand.count, 0);
+    const patients = shiftDemand.find((demand) => demand.roleCode === "PATIENTS");
+
+    if (patients && patients.count !== expected) {
+      warnings.push(
+        `${sheetName}: Patients total ${patients.count} does not match GI + Allergy + PCP total ${expected} for ${shift.dayLabel} ${shift.label}.`,
+      );
+    }
+  }
+
+  return warnings;
 }
 
 function dedupeShifts(shifts: EastonParsedShift[]) {

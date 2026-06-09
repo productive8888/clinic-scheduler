@@ -181,7 +181,39 @@ export function getConstraintRejections(
     reasons.push("Weekly assignment limit reached");
   }
 
+  if (violatesSaturdayWorkPattern(employee, slot)) {
+    reasons.push("Wrong Saturday work-pattern shift");
+  }
+
   return reasons;
+}
+
+function violatesSaturdayWorkPattern(
+  employee: SchedulerEmployee,
+  slot: SchedulerTaskSlot,
+) {
+  if (dateToWeekday(slot.date) !== 6) {
+    return false;
+  }
+
+  const requiredCategory = employee.workPattern?.requiredSaturdayShiftCategory;
+
+  if (!requiredCategory) {
+    return false;
+  }
+
+  if (slot.shiftCategory && slot.shiftCategory !== requiredCategory) {
+    return true;
+  }
+
+  const saturdayHours = employee.workPattern?.saturdayPaidHours;
+
+  return Boolean(
+    saturdayHours &&
+      slot.paidHours !== null &&
+      slot.paidHours !== undefined &&
+      slot.paidHours !== saturdayHours,
+  );
 }
 
 function getWeekKey(date: string) {

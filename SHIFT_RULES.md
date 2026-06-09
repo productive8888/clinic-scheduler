@@ -48,9 +48,14 @@ demand count.
 
 `Shifts + Hours` is the active reusable Easton demand source. Every nonzero
 clinic and background count is stored against its exact shift template, so PM
-and Saturday blocks do not depend on the 8:00 AM safe default. `June Shifts +
-Hours` and `June Schedule` are retained as reference patterns rather than
-additional demand sources.
+and Saturday blocks do not depend on the 8:00 AM safe default. June sheets are
+ignored for active generation and no longer create schedule-pattern slots.
+
+`Shifts by GY` is the active Easton employee-target source. Its group column is
+imported as hard July work-pattern metadata: `Saturday` means the 6:00 AM-2:00
+PM endoscopy Saturday block, while `M + Th`, `T + Th`, `M + W`, `M + T`,
+`T + W`, and `W + Th` mean the 8:00 AM-2:00 PM Saturday block plus 5-hour
+make-up shifts on the listed weekdays.
 
 Generation summaries explicitly report total, AM, PM, and Saturday block
 counts. The schedule status calendar provides day/month review, while day,
@@ -58,5 +63,5 @@ week, month, and custom-range unpublish actions preserve assignments and make
 dates eligible for regeneration.
 
 The app does not hardcode final clinic policy in scheduler branches. Easton
-defaults seed editable rules for week-to-week patterns, shortage order, Saturday
-work patterns, and endoscopy PTO banking.
+defaults seed editable rules for week-to-week patterns, shortage order, exact
+July Saturday work-pattern groups, and endoscopy PTO banking.

@@ -614,21 +614,23 @@ model FairnessSetting {
 }
 
 model WorkPattern {
-  id                          String          @id @default(cuid())
-  code                        String          @unique
-  name                        String
-  kind                        WorkPatternKind @default(CUSTOM)
-  targetWeeklyHours           Decimal         @default(40) @db.Decimal(6, 2)
-  worksTuesdayThroughSaturday Boolean         @default(false)
-  saturdayPaidHours           Decimal?        @db.Decimal(6, 2)
-  mondayOffAllowed            Boolean         @default(false)
-  fridayOffAllowed            Boolean         @default(false)
-  earlyStartDaysPerWeek       Int             @default(0)
-  active                      Boolean         @default(true)
-  notes                       String?
-  createdByEmployeeId         String?
-  createdAt                   DateTime        @default(now())
-  updatedAt                   DateTime        @updatedAt
+  id                            String          @id @default(cuid())
+  code                          String          @unique
+  name                          String
+  kind                          WorkPatternKind @default(CUSTOM)
+  targetWeeklyHours             Decimal         @default(40) @db.Decimal(6, 2)
+  worksTuesdayThroughSaturday   Boolean         @default(false)
+  saturdayPaidHours             Decimal?        @db.Decimal(6, 2)
+  requiredSaturdayShiftCategory ShiftCategory?
+  extraHourWeekdays             Json?
+  mondayOffAllowed              Boolean         @default(false)
+  fridayOffAllowed              Boolean         @default(false)
+  earlyStartDaysPerWeek         Int             @default(0)
+  active                        Boolean         @default(true)
+  notes                         String?
+  createdByEmployeeId           String?
+  createdAt                     DateTime        @default(now())
+  updatedAt                     DateTime        @updatedAt
 
   createdBy Employee?  @relation("WorkPatternCreator", fields: [createdByEmployeeId], references: [id], onDelete: SetNull)
   employees Employee[]
@@ -787,25 +789,29 @@ model SchedulePatternSlot {
 }
 
 model EmployeeScheduleTarget {
-  id                  String   @id @default(cuid())
-  patternId           String?
-  employeeId          String?
-  employeeName        String
-  periodLabel         String?
-  targetPatientShifts Decimal? @db.Decimal(8, 2)
-  targetTotalHours    Decimal? @db.Decimal(8, 2)
-  targetTaskCounts    Json?
-  exposureGoals       Json?
-  source              String   @default("EASTON_SPREADSHEET")
-  notes               String?
-  createdAt           DateTime @default(now())
-  updatedAt           DateTime @updatedAt
+  id                            String   @id @default(cuid())
+  patternId                     String?
+  employeeId                    String?
+  employeeName                  String
+  periodLabel                   String?
+  workPatternCode               String?
+  requiredBackgroundAssignments Int      @default(0)
+  extraHourWeekdays             Json?
+  targetPatientShifts           Decimal? @db.Decimal(8, 2)
+  targetTotalHours              Decimal? @db.Decimal(8, 2)
+  targetTaskCounts              Json?
+  exposureGoals                 Json?
+  source                        String   @default("EASTON_SPREADSHEET")
+  notes                         String?
+  createdAt                     DateTime @default(now())
+  updatedAt                     DateTime @updatedAt
 
   pattern  SchedulePattern? @relation(fields: [patternId], references: [id], onDelete: Cascade)
   employee Employee?        @relation(fields: [employeeId], references: [id], onDelete: SetNull)
 
   @@index([patternId])
   @@index([employeeId])
+  @@index([workPatternCode])
   @@index([employeeName])
 }
 

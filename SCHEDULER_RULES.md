@@ -84,15 +84,15 @@ not contain scheduling decisions.
   6:00 AM-2:00 PM, and Saturday shorter 8:00 AM-2:00 PM.
 - The private Easton workbook can be parsed from `private/easton-scheduling.xlsx`
   or `private/Copy of Easton Scheduling.xlsx` through the admin Easton import
-  page. Parsed shifts, role demand, employee targets, and June sample assignment
-  patterns are reviewed before applying editable database rules.
+  page. Parsed July shifts, role demand, employee targets, BG minimums, and work
+  pattern groups are reviewed before applying editable database rules.
 - `Shifts + Hours` is the active reusable source for Easton shift templates and
   staffing demand. Its counts are per shift block, never whole-day totals.
   Background, Front Background, Booking, Research, and Float counts therefore
   become desired staffing slots on the exact AM, PM, or Saturday block where
-  they appear. `June Shifts + Hours` and `June Schedule` remain reference
-  patterns and targets so applying the workbook does not double-count demand or
-  hardcode a single historical week.
+  they appear. `Patients` is a validation aggregate only and never creates task
+  slots. June sheets are ignored for active generation so applying the workbook
+  does not double-count demand or hardcode a single historical week.
 - For deployed databases, run `npm run review:easton` and then
   `npm run apply:easton` locally against the target `DATABASE_URL`; the workbook
   remains private and is not required on Vercel.
@@ -130,9 +130,12 @@ not contain scheduling decisions.
 - Generation summaries report total, AM, PM, and Saturday shift blocks,
   clinic/background slots, fills, required shortages, conflicts, published
   skips, regenerated dates, and employees under/over their weekly target.
-- Weekly target hours and assigned work patterns are soft scoring guidance.
-  They move employees toward configured weekly hours and pattern-compatible
-  shifts without bypassing skills, availability, PTO/NPTO, or overlap rules.
+- Weekly target hours influence scoring, but imported July work-pattern groups
+  and required BG minimums are hard publish checks. The scheduler strongly
+  prefers the required 5-hour make-up weekdays and correct Saturday block while
+  still respecting skills, availability, PTO/NPTO, and overlap rules. If a week
+  remains infeasible, publish is blocked unless a manager records an override
+  reason that is stored in audit metadata.
 - Managers can review draft/published/needs-regeneration status from the
   schedule calendar. Unpublishing a day, week, month, or custom range preserves
   assignments, records audit logs, and allows a later regeneration. Normal

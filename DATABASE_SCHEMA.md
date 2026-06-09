@@ -78,16 +78,17 @@ versioned migrations in `prisma/migrations`.
   type, shift template/category, scenario, priority, effective dates, and
   instruction text. These rules provide visible guidance and store Easton's
   editable closure/pull order without silently dropping clinic roles.
-- `WorkPattern`: editable employee work-pattern templates, including
-  endoscopy Saturday and non-endoscopy Saturday patterns, target weekly hours,
-  Saturday paid hours, Monday/Friday-off allowance, and early-start day count.
+- `WorkPattern`: editable employee work-pattern templates, including exact
+  July Easton groups, target weekly hours, required Saturday shift category,
+  Saturday paid hours, and configured extra-hour weekdays.
 - `SchedulePattern` and `SchedulePatternSlot`: editable/reference weekly
-  schedule patterns parsed from the Easton workbook so Mondays can resemble
-  Mondays, Tuesdays can resemble Tuesdays, and PTO/regeneration can deviate when
-  required.
+  schedule pattern storage. The active July Easton import uses
+  `SchedulePattern` only as an employee-target container and does not create
+  slots from June sample assignments.
 - `EmployeeScheduleTarget`: spreadsheet-derived target counts by employee name
-  or employee link, including patient-shift targets, per-role counts, exposure
-  goals, and target hours.
+  or employee link, including patient-shift targets, per-role counts, required
+  weekly BG minimums, imported work-pattern code, extra-hour weekdays, exposure
+  goals, and 40-hour weekly targets.
 - `BackgroundPullRule`: employee-specific pull order and max-pull caps for
   pullable, non-protected background work.
 - `BackgroundTaskCategory`, `BackgroundTaskDefinition`, and

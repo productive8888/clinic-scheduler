@@ -51,6 +51,7 @@ export async function getManualAssignmentWarnings(input: {
         where: { id: input.employeeId },
         include: {
           skills: true,
+          workPattern: true,
           availability: { where: { active: true } },
           ptoRequests: {
             where: {
@@ -148,6 +149,7 @@ export async function getManualAssignmentWarningMatrix(date: string) {
       where: { status: "ACTIVE" },
       include: {
         skills: true,
+        workPattern: true,
         availability: { where: { active: true } },
         ptoRequests: {
           where: {
@@ -229,6 +231,23 @@ function toSchedulerEmployee(employee: {
   fullName: string;
   status: string;
   weeklyAssignmentLimit: number | null;
+  workPattern: {
+    kind: "CUSTOM" | "ENDOSCOPY_SATURDAY" | "NON_ENDOSCOPY_SATURDAY";
+    worksTuesdayThroughSaturday: boolean;
+    saturdayPaidHours: unknown;
+    requiredSaturdayShiftCategory:
+      | "AM"
+      | "PM"
+      | "SATURDAY"
+      | "ENDO"
+      | "FLOAT"
+      | "OTHER"
+      | null;
+    extraHourWeekdays: unknown;
+    mondayOffAllowed: boolean;
+    fridayOffAllowed: boolean;
+    earlyStartDaysPerWeek: number;
+  } | null;
   skills: { skillId: string }[];
   availability: Array<{
     weekday: number;
@@ -276,6 +295,24 @@ function toSchedulerEmployee(employee: {
         active: true,
       }),
     ),
+    workPattern: employee.workPattern
+      ? {
+          kind: employee.workPattern.kind,
+          worksTuesdayThroughSaturday:
+            employee.workPattern.worksTuesdayThroughSaturday,
+          saturdayPaidHours: employee.workPattern.saturdayPaidHours
+            ? Number(employee.workPattern.saturdayPaidHours)
+            : null,
+          requiredSaturdayShiftCategory:
+            employee.workPattern.requiredSaturdayShiftCategory,
+          extraHourWeekdays: jsonNumberArray(
+            employee.workPattern.extraHourWeekdays,
+          ),
+          mondayOffAllowed: employee.workPattern.mondayOffAllowed,
+          fridayOffAllowed: employee.workPattern.fridayOffAllowed,
+          earlyStartDaysPerWeek: employee.workPattern.earlyStartDaysPerWeek,
+        }
+      : null,
   };
 }
 
@@ -432,4 +469,12 @@ function toExistingAssignment(assignment: {
     isEndoscopy: assignment.taskSlot.taskType.isEndoscopy,
     locked: assignment.locked,
   };
+}
+
+function jsonNumberArray(value: unknown) {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+
+  return value.map(Number).filter((item) => Number.isFinite(item));
 }

@@ -63,6 +63,7 @@ export async function publishScheduleAction(formData: FormData) {
   await publishScheduleForDate({
     date,
     actorEmployeeId: auditActorId(actor),
+    overrideReason: String(formData.get("overrideReason") || "") || null,
   });
   revalidatePath("/schedule");
   revalidatePath("/schedule/week");
@@ -158,7 +159,7 @@ export async function bulkGenerateScheduleAction(formData: FormData) {
   revalidatePath("/schedule/week");
   revalidatePath("/schedule/calendar");
   redirect(
-    `/schedule/week?date=${range.startDate}&processed=${summary.datesProcessed}&daysCreated=${summary.scheduleDaysCreated}&daysRegenerated=${summary.datesRegenerated}&blocks=${summary.shiftBlocks}&amBlocks=${summary.amShiftBlocks}&pmBlocks=${summary.pmShiftBlocks}&saturdayBlocks=${summary.saturdayShiftBlocks}&slotsCreated=${summary.taskSlotsCreated}&clinicSlots=${summary.clinicSlots}&backgroundSlots=${summary.backgroundSlots}&filled=${summary.assignmentsFilled}&requiredUnfilled=${summary.requiredSlotsUnfilled}&shortages=${summary.shortages}&conflicts=${summary.conflicts}&underTarget=${summary.employeesUnderTarget}&overTarget=${summary.employeesOverTarget}&review=${summary.datesNeedingManualReview.length}&publishedSkipped=${summary.publishedDatesSkipped.length}`,
+    `/schedule/week?date=${range.startDate}&processed=${summary.datesProcessed}&daysCreated=${summary.scheduleDaysCreated}&daysRegenerated=${summary.datesRegenerated}&blocks=${summary.shiftBlocks}&amBlocks=${summary.amShiftBlocks}&pmBlocks=${summary.pmShiftBlocks}&saturdayBlocks=${summary.saturdayShiftBlocks}&slotsCreated=${summary.taskSlotsCreated}&clinicSlots=${summary.clinicSlots}&backgroundSlots=${summary.backgroundSlots}&filled=${summary.assignmentsFilled}&requiredUnfilled=${summary.requiredSlotsUnfilled}&shortages=${summary.shortages}&conflicts=${summary.conflicts}&underTarget=${summary.employeesUnderTarget}&overTarget=${summary.employeesOverTarget}&hardRequirements=${summary.hardRequirementIssues}&bgMinimum=${summary.bgMinimumIssues}&workPatterns=${summary.workPatternIssues}&review=${summary.datesNeedingManualReview.length}&publishedSkipped=${summary.publishedDatesSkipped.length}`,
   );
 }
 
@@ -174,6 +175,7 @@ export async function publishScheduleRangeAction(formData: FormData) {
   const summary = await publishScheduleRange({
     ...range,
     actorEmployeeId: auditActorId(actor),
+    overrideReason: String(formData.get("overrideReason") || "") || null,
   });
 
   revalidatePath("/schedule");

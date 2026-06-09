@@ -22,6 +22,8 @@ import {
 import { getSchedulePublishIssues } from "@/lib/schedule/publish-validation";
 import { LEGACY_SHIFT_TEMPLATE_ID } from "@/lib/shifts/legacy";
 import { enumerateIsoDates, parseIsoDate, toIsoDate } from "@/lib/utils/date";
+import { getWeeklyHardRequirementSummary } from "@/lib/db/weekly-hard-requirements";
+import { eastonWorkPatternGroups } from "@/lib/easton-import/work-patterns";
 
 export type BulkGenerationSummary = {
   startDate: string;
@@ -52,6 +54,10 @@ export type BulkGenerationSummary = {
   conflicts: number;
   employeesUnderTarget: number;
   employeesOverTarget: number;
+  hardRequirementIssues: number;
+  bgMinimumIssues: number;
+  workPatternIssues: number;
+  unmatchedTargetIssues: number;
   datesNeedingManualReview: string[];
   generationDiagnostics: Array<{
     date: string;
@@ -127,6 +133,10 @@ export async function generateScheduleRange(input: {
     conflicts: 0,
     employeesUnderTarget: 0,
     employeesOverTarget: 0,
+    hardRequirementIssues: 0,
+    bgMinimumIssues: 0,
+    workPatternIssues: 0,
+    unmatchedTargetIssues: 0,
     datesNeedingManualReview: [],
     generationDiagnostics: [],
     skippedClosedDates: [],
@@ -277,6 +287,21 @@ export async function generateScheduleRange(input: {
   const targetSummary = await getRangeWeeklyTargetSummary(datesToGenerate);
   summary.employeesUnderTarget = targetSummary.underTarget;
   summary.employeesOverTarget = targetSummary.overTarget;
+  const hardRequirementSummary = await getWeeklyHardRequirementSummary({
+    startDate: input.startDate,
+    endDate: input.endDate,
+  });
+  summary.hardRequirementIssues = hardRequirementSummary.issues.length;
+  summary.bgMinimumIssues = hardRequirementSummary.bgMinimumIssues.length;
+  summary.workPatternIssues = hardRequirementSummary.workPatternIssues.length;
+  summary.unmatchedTargetIssues =
+    hardRequirementSummary.unmatchedTargetIssues.length;
+
+  if (hardRequirementSummary.issues.length > 0) {
+    summary.datesNeedingManualReview = [
+      ...new Set([...summary.datesNeedingManualReview, ...datesToGenerate]),
+    ].sort();
+  }
 
   await writeAuditLog({
     actorEmployeeId: input.actorEmployeeId,
@@ -293,6 +318,7 @@ export async function publishScheduleRange(input: {
   startDate: string;
   endDate: string;
   actorEmployeeId?: string | null;
+  overrideReason?: string | null;
 }) {
   const days = await getDb().scheduleDay.findMany({
     where: {
@@ -311,6 +337,35 @@ export async function publishScheduleRange(input: {
     alreadyPublishedDates: [] as string[],
     skippedDates: [] as Array<{ date: string; reason: string }>,
   };
+  const hardRequirements = await getWeeklyHardRequirementSummary({
+    startDate: input.startDate,
+    endDate: input.endDate,
+  });
+
+  if (hardRequirements.issues.length > 0 && !input.overrideReason?.trim()) {
+    const reason = `Weekly hard requirements are unmet. ${hardRequirements.issues
+      .slice(0, 6)
+      .map((issue) => issue.message)
+      .join(" ")}`;
+
+    summary.skippedDates = days.map((day) => ({
+      date: toIsoDate(day.date),
+      reason,
+    }));
+
+    await writeAuditLog({
+      actorEmployeeId: input.actorEmployeeId,
+      action: "schedule.range_publish_blocked",
+      entityType: "ScheduleRange",
+      entityId: `${input.startDate}:${input.endDate}`,
+      after: {
+        ...summary,
+        hardRequirementIssueCount: hardRequirements.issues.length,
+      },
+    });
+
+    return summary;
+  }
 
   for (const day of days) {
     const date = toIsoDate(day.date);
@@ -324,6 +379,7 @@ export async function publishScheduleRange(input: {
       await publishScheduleForDate({
         date,
         actorEmployeeId: input.actorEmployeeId,
+        overrideReason: input.overrideReason,
       });
       summary.publishedDates.push(date);
     } catch (error) {
@@ -340,6 +396,10 @@ export async function publishScheduleRange(input: {
     entityType: "ScheduleRange",
     entityId: `${input.startDate}:${input.endDate}`,
     after: summary,
+    metadata: {
+      overrideReason: input.overrideReason?.trim() || null,
+      hardRequirementIssues: hardRequirements.issues,
+    },
   });
 
   return summary;
@@ -407,6 +467,7 @@ export async function getScheduleWeekData(anchorDate: string) {
     employees,
     backgroundDefinitionCount,
     backgroundStaffingRuleCount,
+    hardRequirements,
     configurationWarnings,
   ] =
     await Promise.all([
@@ -500,9 +561,10 @@ export async function getScheduleWeekData(anchorDate: string) {
         taskType: { active: true, isBackground: true },
       },
     }),
+    getWeeklyHardRequirementSummary(range),
     getGenerationConfigurationWarnings(),
   ]);
-  const staffRows = buildWeekStaffSummary({
+  const baseStaffRows = buildWeekStaffSummary({
     employees: employees.map((employee) => ({
       id: employee.id,
       fullName: employee.fullName,
@@ -531,11 +593,46 @@ export async function getScheduleWeekData(anchorDate: string) {
       ),
     ),
   });
+  const targetsByEmployeeId = new Map(
+    hardRequirements.targets
+      .filter((target) => target.employeeId)
+      .map((target) => [target.employeeId!, target]),
+  );
+  const issuesByEmployeeId = new Map<string, typeof hardRequirements.issues>();
+
+  for (const issue of hardRequirements.issues) {
+    if (!issue.employeeId) {
+      continue;
+    }
+
+    const issues = issuesByEmployeeId.get(issue.employeeId) ?? [];
+    issues.push(issue);
+    issuesByEmployeeId.set(issue.employeeId, issues);
+  }
+
+  const workPatternLabels = new Map(
+    eastonWorkPatternGroups().map((group) => [group.code, group.label]),
+  );
+  const staffRows = baseStaffRows.map((row) => {
+    const target = targetsByEmployeeId.get(row.employeeId);
+
+    return {
+      ...row,
+      workPatternLabel: target?.workPatternCode
+        ? workPatternLabels.get(target.workPatternCode) ?? target.workPatternCode
+        : null,
+      requiredBackgroundAssignments:
+        target?.requiredBackgroundAssignments ?? 0,
+      extraHourWeekdays: target?.extraHourWeekdays ?? [],
+      hardRequirementIssues: issuesByEmployeeId.get(row.employeeId) ?? [],
+    };
+  });
 
   return {
     range,
     backgroundDefinitionCount,
     backgroundStaffingRuleCount,
+    hardRequirements,
     configurationWarnings,
     publishBlockingDays: scheduleDays
       .map((day) => ({

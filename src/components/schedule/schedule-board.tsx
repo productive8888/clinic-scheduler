@@ -87,8 +87,7 @@ export function ScheduleBoard({
   const publishIssues = scheduleDay ? getSchedulePublishIssues(scheduleDay) : [];
   const canPublish = Boolean(
     scheduleDay &&
-      scheduleDay.status !== "PUBLISHED" &&
-      publishIssues.length === 0,
+      scheduleDay.status !== "PUBLISHED",
   );
   const canUnpublish = scheduleDay?.status === "PUBLISHED";
   const previousDate = addDaysIsoDate(date, -1);
@@ -208,6 +207,11 @@ export function ScheduleBoard({
             </form>
             <form action={publishScheduleAction}>
               <input type="hidden" name="date" value={date} />
+              <input
+                name="overrideReason"
+                placeholder="Override reason (optional)"
+                className="mb-2 h-10 w-full rounded-md border border-slate-300 bg-white px-3 text-sm outline-none focus:border-emerald-700"
+              />
               <button
                 disabled={!canPublish}
                 className="inline-flex h-10 w-full items-center justify-center gap-2 rounded-md bg-slate-950 px-3 text-sm font-semibold text-white hover:bg-slate-800 disabled:cursor-not-allowed disabled:bg-slate-300 disabled:text-slate-600"

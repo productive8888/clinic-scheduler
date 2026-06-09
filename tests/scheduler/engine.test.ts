@@ -19,6 +19,7 @@ import {
   type SchedulerTaskType,
 } from "../../src/lib/scheduler";
 import { parseEastonWorkbook } from "../../src/lib/easton-import/parser";
+import { evaluateWeeklyHardRequirements } from "../../src/lib/schedule/hard-requirements";
 import {
   invalidatedScheduleDayData,
   invalidatedTaskSlotStatus,
@@ -2100,6 +2101,7 @@ describe("Easton policy helpers", () => {
       "ALLERGY (1)",
       "PCP (1)",
       "Patients (3)",
+      "BG",
     ];
     targets.getRow(2).values = [
       1,
@@ -2111,6 +2113,7 @@ describe("Easton policy helpers", () => {
       1,
       1,
       3,
+      2,
     ];
 
     const june = workbook.addWorksheet("June Schedule");
@@ -2149,7 +2152,238 @@ describe("Easton policy helpers", () => {
       true,
     );
     assert.equal(preview.employeeTargets[0].employeeName, "Yvonne");
-    assert.equal(preview.sampleAssignments[0].roleCode, "NEW_GI");
+    assert.equal(preview.employeeTargets[0].workPatternCode, "EASTON_GROUP_T_TH");
+    assert.deepEqual(preview.employeeTargets[0].extraHourWeekdays, [2, 4]);
+    assert.equal(preview.employeeTargets[0].requiredBackgroundAssignments, 2);
+    assert.equal(preview.employeeTargets[0].targetTotalHours, 40);
+    assert.equal(preview.sampleAssignments.length, 0);
+  });
+});
+
+describe("Easton July hard requirements", () => {
+  it("reports missing BG minimums and work-pattern shifts", () => {
+    const result = evaluateWeeklyHardRequirements({
+      targets: [
+        {
+          employeeId: "yvonne",
+          employeeName: "Yvonne",
+          workPatternCode: "EASTON_GROUP_T_TH",
+          requiredBackgroundAssignments: 2,
+          extraHourWeekdays: [2, 4],
+        },
+      ],
+      assignments: [
+        {
+          employeeId: "yvonne",
+          date: "2026-07-07",
+          shiftBlockId: "tue-regular",
+          shiftCategory: "AM",
+          paidHours: 4,
+          taskTypeCode: "BACKGROUND",
+        },
+      ],
+    });
+
+    assert.equal(result.canPublish, false);
+    assert.equal(result.bgMinimumIssues.length, 1);
+    assert.equal(result.workPatternIssues.length, 3);
+    assert.equal(
+      result.issues.some((issue) => issue.code === "SATURDAY_PATTERN_UNMET"),
+      true,
+    );
+    assert.equal(
+      result.issues.some((issue) => issue.message.includes("Thu")),
+      true,
+    );
+  });
+
+  it("blocks meaningful imported targets that have no work-pattern group", () => {
+    const result = evaluateWeeklyHardRequirements({
+      targets: [
+        {
+          employeeId: "rowan",
+          employeeName: "Rowan",
+          workPatternCode: null,
+          requiresWorkPattern: true,
+          requiredBackgroundAssignments: 0,
+          extraHourWeekdays: [],
+        },
+        {
+          employeeId: "placeholder",
+          employeeName: "Placeholder",
+          workPatternCode: null,
+          requiresWorkPattern: false,
+          requiredBackgroundAssignments: 0,
+          extraHourWeekdays: [],
+        },
+      ],
+      assignments: [],
+    });
+
+    assert.equal(result.canPublish, false);
+    assert.equal(result.workPatternIssues.length, 1);
+    assert.equal(result.workPatternIssues[0]?.code, "WORK_PATTERN_MISSING");
+  });
+
+  it("passes when BG minimum, Saturday group, and extra-hour days are met", () => {
+    const result = evaluateWeeklyHardRequirements({
+      targets: [
+        {
+          employeeId: "yvonne",
+          employeeName: "Yvonne",
+          workPatternCode: "EASTON_GROUP_T_TH",
+          requiredBackgroundAssignments: 2,
+          extraHourWeekdays: [2, 4],
+        },
+      ],
+      assignments: [
+        {
+          employeeId: "yvonne",
+          date: "2026-07-07",
+          shiftBlockId: "tue-early",
+          shiftCategory: "AM",
+          paidHours: 5,
+          taskTypeCode: "BACKGROUND",
+        },
+        {
+          employeeId: "yvonne",
+          date: "2026-07-09",
+          shiftBlockId: "thu-early",
+          shiftCategory: "AM",
+          paidHours: 5,
+          taskTypeCode: "BACKGROUND",
+        },
+        {
+          employeeId: "yvonne",
+          date: "2026-07-11",
+          shiftBlockId: "sat-short",
+          shiftCategory: "SATURDAY",
+          paidHours: 6,
+          taskTypeCode: "NEW_ALLERGY",
+        },
+      ],
+    });
+
+    assert.equal(result.canPublish, true);
+    assert.equal(result.issues.length, 0);
+  });
+
+  it("assigns Saturday endoscopy slots only to the endoscopy Saturday group", () => {
+    const result = generateSchedule({
+      seed: "july-saturday-group",
+      employees: [
+        {
+          id: "endo",
+          fullName: "Endo Worker",
+          skillIds: [],
+          availability: [{ weekday: 6, startMinute: 0, endMinute: 24 * 60 }],
+          workPattern: {
+            kind: "ENDOSCOPY_SATURDAY",
+            saturdayPaidHours: 8,
+            requiredSaturdayShiftCategory: "ENDO",
+            extraHourWeekdays: [],
+          },
+        },
+        {
+          id: "regular",
+          fullName: "Regular Saturday Worker",
+          skillIds: [],
+          availability: [{ weekday: 6, startMinute: 0, endMinute: 24 * 60 }],
+          workPattern: {
+            kind: "NON_ENDOSCOPY_SATURDAY",
+            saturdayPaidHours: 6,
+            requiredSaturdayShiftCategory: "SATURDAY",
+            extraHourWeekdays: [1, 4],
+          },
+        },
+      ],
+      taskTypes: [
+        {
+          id: "endoscopy",
+          code: "ENDOSCOPY",
+          name: "Endoscopy",
+          requiredSkillIds: [],
+          isPatientFacing: true,
+          isClinical: true,
+          isEndoscopy: true,
+        },
+      ],
+      slots: [
+        {
+          id: "sat-endo",
+          date: "2026-07-11",
+          shiftBlockId: "sat-endo",
+          shiftCategory: "ENDO",
+          paidHours: 8,
+          taskTypeId: "endoscopy",
+          slotIndex: 1,
+          startMinute: 6 * 60,
+          endMinute: 14 * 60,
+          requirementLevel: "REQUIRED",
+        },
+      ],
+    });
+
+    assert.equal(result.assignments[0]?.employeeId, "endo");
+  });
+
+  it("prioritizes employees below their required BG minimum for BG slots", () => {
+    const result = generateSchedule({
+      seed: "july-bg-minimum",
+      employees: [
+        {
+          id: "needs-bg",
+          fullName: "Needs BG",
+          skillIds: [],
+          availability: [{ weekday: 2, startMinute: 0, endMinute: 24 * 60 }],
+          requiredBackgroundAssignments: 2,
+        },
+        {
+          id: "no-bg-target",
+          fullName: "No BG Target",
+          skillIds: [],
+          availability: [{ weekday: 2, startMinute: 0, endMinute: 24 * 60 }],
+          requiredBackgroundAssignments: 0,
+        },
+      ],
+      taskTypes: [
+        {
+          id: "background",
+          code: "BACKGROUND",
+          name: "Background",
+          requiredSkillIds: [],
+          isBackground: true,
+        },
+      ],
+      slots: [
+        {
+          id: "bg-slot",
+          date: "2026-07-07",
+          shiftBlockId: "tue-bg",
+          shiftCategory: "AM",
+          paidHours: 5,
+          taskTypeId: "background",
+          slotIndex: 1,
+          startMinute: 7 * 60,
+          endMinute: 12 * 60,
+          requirementLevel: "DESIRED",
+        },
+      ],
+      fairness: {
+        clinicalShiftWeight: 0,
+        patientFacingShiftWeight: 0,
+        totalShiftWeight: 0,
+        totalHoursWeight: 0,
+        saturdayShiftWeight: 0,
+        endoscopyShiftWeight: 0,
+        patternConsistencyWeight: 0,
+        skillRoleBalanceWeight: 10,
+        exposureGoalWeight: 0,
+        backgroundPenaltyWeight: 0,
+      },
+    });
+
+    assert.equal(result.assignments[0]?.employeeId, "needs-bg");
   });
 });
 

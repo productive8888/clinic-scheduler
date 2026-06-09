@@ -16,6 +16,7 @@ import {
 } from "@/app/(app)/schedule/actions";
 import { backgroundTaskDisplayName } from "@/lib/background/display";
 import type { getScheduleWeekData } from "@/lib/db/schedule-workflows";
+import { weekdayShortName } from "@/lib/easton-import/work-patterns";
 import {
   addDaysIsoDate,
   enumerateIsoDates,
@@ -107,6 +108,11 @@ export function ScheduleWeekBoard({
           <form action={publishScheduleRangeAction}>
             <input type="hidden" name="date" value={data.range.startDate} />
             <input type="hidden" name="mode" value="WEEK" />
+            <input
+              name="overrideReason"
+              placeholder="Override reason"
+              className="mr-2 h-10 rounded-md border border-slate-300 bg-white px-3 text-sm outline-none focus:border-emerald-700"
+            />
             <button className="inline-flex h-10 items-center gap-2 rounded-md bg-slate-950 px-4 text-sm font-semibold text-white hover:bg-slate-800">
               <CheckCircle2 size={16} aria-hidden="true" />
               Publish this week
@@ -169,6 +175,29 @@ export function ScheduleWeekBoard({
                     .map((issue) => issue.message)
                     .join(" ")}
                 </div>
+              </div>
+            ))}
+          </div>
+        </section>
+      ) : null}
+
+      {data.hardRequirements.issues.length > 0 ? (
+        <section className="rounded-md border border-rose-200 bg-rose-50 p-4 text-sm text-rose-950">
+          <h2 className="font-semibold">July hard requirements are unmet</h2>
+          <p className="mt-1 text-rose-900">
+            Publish is blocked until BG minimums and work-pattern rules are fixed,
+            or a manager records an override in the schedule workflow.
+          </p>
+          <div className="mt-3 grid gap-2 md:grid-cols-2">
+            {data.hardRequirements.issues.slice(0, 12).map((issue, index) => (
+              <div
+                key={`${issue.code}:${issue.employeeId ?? issue.employeeName}:${index}`}
+                className="rounded-md bg-white px-3 py-2"
+              >
+                <div className="text-xs font-semibold uppercase text-rose-700">
+                  {issue.code.replaceAll("_", " ")}
+                </div>
+                <div className="mt-1">{issue.message}</div>
               </div>
             ))}
           </div>
@@ -272,6 +301,17 @@ function StaffSummaryTable({
                   >
                     {row.totalHours}/{row.targetHours} hours
                   </div>
+                  {row.workPatternLabel ? (
+                    <div className="mt-1 text-slate-500">
+                      Group {row.workPatternLabel}
+                    </div>
+                  ) : null}
+                  {row.hardRequirementIssues.length > 0 ? (
+                    <div className="mt-1 text-rose-700">
+                      {row.hardRequirementIssues.length} hard issue
+                      {row.hardRequirementIssues.length === 1 ? "" : "s"}
+                    </div>
+                  ) : null}
                 </th>
                 {weekDates.map((date) => {
                   const assignments = row.assignmentsByDate[date] ?? [];
@@ -320,6 +360,17 @@ function StaffSummaryTable({
                     <strong>{row.patientFacingShiftCount}</strong>
                     <span>Background shifts</span>
                     <strong>{row.backgroundShiftCount}</strong>
+                    <span>Required BG</span>
+                    <strong>
+                      {row.backgroundAssignmentCount}/
+                      {row.requiredBackgroundAssignments}
+                    </strong>
+                    <span>Extra days</span>
+                    <strong>
+                      {row.extraHourWeekdays.length
+                        ? row.extraHourWeekdays.map(weekdayShortName).join(", ")
+                        : "None"}
+                    </strong>
                     <span>Sat/Endo</span>
                     <strong>{row.saturdayEndoscopyCount}</strong>
                     <span>GI / Allergy / PCP</span>

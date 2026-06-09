@@ -92,8 +92,8 @@
 - Manual reassignment warning previews and audited override reasons, plus a
   multi-shift AM/PM assignment helper.
 - Easton spreadsheet import/review foundation for private workbook parsing,
-  parsed shift/demand/target/sample-pattern review, and applying editable
-  database defaults.
+  parsed July shift/demand/target review, and applying editable database
+  defaults without activating June sample assignments.
 - Easton spreadsheet shift times seeded as editable shift templates, including
   7:00 AM-12:00 PM early AM, 1:00 PM-6:00 PM Monday long PM, regular weekday
   AM/PM, and Saturday endoscopy/short shifts.
@@ -102,8 +102,12 @@
   goals.
 - Easton shortage recommendation order seeded as editable rules, plus
   employee-specific background pull-priority rules with max-pull caps.
-- Work-pattern templates for Easton endoscopy Saturday and non-endoscopy
-  Saturday 40-hour patterns, assignable from employee profiles.
+- Work-pattern templates for exact July Easton groups: Saturday endoscopy and
+  non-endoscopy `M + Th`, `T + Th`, `M + W`, `M + T`, `T + W`, and `W + Th`
+  40-hour patterns, assignable from employee profiles and imported from
+  `Shifts by GY`.
+- Hard weekly validation for July work-pattern requirements and employee BG
+  minimums, with week-view blockers and audited publish override reasons.
 - Task type classification flags are manager-editable from the staffing admin
   page.
 - Endoscopy extra-hour payroll policy defaults to PTO banking and avoids

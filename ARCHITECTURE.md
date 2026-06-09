@@ -478,8 +478,10 @@ draft, published, needs-regeneration, shortage, PTO, and NPTO status.
 
 Easton workbook application treats `Shifts + Hours` as the active reusable
 shift-demand source. Every clinic and background count is stored against the
-specific shift template where it appears. June sheets remain reference
-patterns, avoiding both missing PM demand and duplicated staffing counts.
+specific shift template where it appears. `Shifts by GY` is the active employee
+target source for July work-pattern groups, required BG minimums, and 40-hour
+weekly targets. June sheets are ignored by active generation, avoiding both
+missing PM demand and duplicated or historical staffing counts.
 
 Manual assignment remains a manager override workflow. Server-side validation
 previews skill, PTO/NPTO, availability, overlap, weekly-limit, expected-hours,

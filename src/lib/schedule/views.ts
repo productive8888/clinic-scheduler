@@ -162,6 +162,9 @@ export function buildWeekStaffSummary(input: {
       patientFacingShiftCount: uniqueShifts.filter((shift) => shift.patientFacing)
         .length,
       backgroundShiftCount: uniqueShifts.filter((shift) => shift.background).length,
+      backgroundAssignmentCount: assignments.filter(
+        (assignment) => assignment.taskTypeCode === "BACKGROUND",
+      ).length,
       saturdayEndoscopyCount: uniqueShifts.filter(
         (shift) => shift.saturdayOrEndoscopy,
       ).length,

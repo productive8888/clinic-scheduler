@@ -60,10 +60,16 @@ slots on that exact block. These spreadsheet counts are not collapsed into
 whole-day or weekly totals. Previously imported Easton weekly definitions are
 archived when the workbook defaults are reapplied.
 
+Easton `Shifts by GY` BG values are separate employee-specific weekly minimums.
+They are imported into `EmployeeScheduleTarget`, influence BG assignment scoring,
+and are hard publish checks for the week. If PTO/NPTO or availability makes the
+minimum infeasible, the week view reports the unmet employee requirement and a
+manager must record an override reason before publishing.
+
 Period-based `BackgroundTaskDefinition` records remain available for obligations
 that truly recur weekly, biweekly, monthly, or over a custom window. The June
-workbook sheets remain reference patterns rather than permanent assignments or
-duplicate demand.
+workbook sheets are ignored by active generation rather than permanent
+assignments or duplicate demand.
 
 The full rollover optimizer and final clinic background-priority policy remain
 deferred until clinic policy is finalized.

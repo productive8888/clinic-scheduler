@@ -176,8 +176,20 @@ function getTargetTaskScore(input: {
   }
 
   const target = input.employee.targetTaskAssignments?.[input.taskType.id];
+  const requiredBackgroundTarget =
+    input.taskType.code === "BACKGROUND"
+      ? input.employee.requiredBackgroundAssignments
+      : null;
+  const effectiveTarget =
+    requiredBackgroundTarget !== null && requiredBackgroundTarget !== undefined
+      ? requiredBackgroundTarget
+      : target;
 
-  if (target === null || target === undefined || target <= 0) {
+  if (
+    effectiveTarget === null ||
+    effectiveTarget === undefined ||
+    effectiveTarget <= 0
+  ) {
     return 0;
   }
 
@@ -185,11 +197,17 @@ function getTargetTaskScore(input: {
     getTaskAssignmentCount(input.employee, input.taskType.id) +
     getCurrentTaskCount(input.employee.id, input.taskType.id, input.assignments);
 
-  if (count < target) {
-    return (target - count) * input.settings.skillRoleBalanceWeight;
+  if (count < effectiveTarget) {
+    const multiplier = input.taskType.code === "BACKGROUND" ? 4 : 1;
+
+    return (
+      (effectiveTarget - count) *
+      input.settings.skillRoleBalanceWeight *
+      multiplier
+    );
   }
 
-  return -(count - target + 1) * input.settings.skillRoleBalanceWeight;
+  return -(count - effectiveTarget + 1) * input.settings.skillRoleBalanceWeight;
 }
 
 function getExposureGoalScore(input: {
@@ -293,6 +311,31 @@ export function getWorkPatternScore(input: {
   if (weekday === 6 && pattern.saturdayPaidHours) {
     score +=
       input.slot.paidHours === pattern.saturdayPaidHours ? weight : -weight;
+  }
+
+  if (weekday === 6 && pattern.requiredSaturdayShiftCategory) {
+    score +=
+      input.slot.shiftCategory === pattern.requiredSaturdayShiftCategory
+        ? weight * 2
+        : -weight * 2;
+  }
+
+  const extraHourWeekdays = pattern.extraHourWeekdays ?? [];
+
+  if (extraHourWeekdays.length > 0) {
+    const isExtraHourDay = extraHourWeekdays.includes(weekday);
+    const isFiveHourShift = (input.slot.paidHours ?? 0) >= 5;
+
+    if (isExtraHourDay) {
+      score += isFiveHourShift ? weight * 2 : -weight * 2;
+    } else if (
+      pattern.kind === "NON_ENDOSCOPY_SATURDAY" &&
+      isFiveHourShift &&
+      weekday >= 1 &&
+      weekday <= 5
+    ) {
+      score -= weight;
+    }
   }
 
   const targetEarlyStarts = pattern.earlyStartDaysPerWeek ?? 0;

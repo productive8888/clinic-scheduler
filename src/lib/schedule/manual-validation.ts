@@ -18,6 +18,7 @@ export type ManualAssignmentWarning = {
     | "OUTSIDE_AVAILABILITY"
     | "OVERLAPPING_SHIFT"
     | "WEEKLY_ASSIGNMENT_LIMIT"
+    | "WORK_PATTERN_SHIFT"
     | "ABOVE_EXPECTED_HOURS"
     | "FAIRNESS_IMBALANCE"
     | "PATTERN_DEVIATION"
@@ -158,6 +159,12 @@ function warningForConstraintReason(reason: string): ManualAssignmentWarning | n
       return {
         code: "WEEKLY_ASSIGNMENT_LIMIT",
         message: "Employee has reached their weekly assignment limit.",
+      };
+    case "Wrong Saturday work-pattern shift":
+      return {
+        code: "WORK_PATTERN_SHIFT",
+        message:
+          "This Saturday shift does not match the employee's configured July work-pattern group.",
       };
     default:
       return null;
