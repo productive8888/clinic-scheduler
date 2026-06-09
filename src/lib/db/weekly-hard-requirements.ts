@@ -1,9 +1,18 @@
 import { getDb } from "@/lib/db";
 import {
+  findEastonTargetForEmployee,
+  findEmployeeForEastonTarget,
+} from "@/lib/easton-import/employee-targets";
+import {
   evaluateWeeklyHardRequirements,
   type WeeklyHardRequirementAssignment,
   type WeeklyHardRequirementTarget,
 } from "@/lib/schedule/hard-requirements";
+import {
+  getEffectiveRequiredBackgroundAssignments,
+  getEffectiveWeeklyTargetHours,
+  getEffectiveWorkPattern,
+} from "@/lib/schedule/easton-work-pattern-resolution";
 import { parseIsoDate, toIsoDate } from "@/lib/utils/date";
 
 export async function getWeeklyHardRequirementSummary(input: {
@@ -74,45 +83,46 @@ export async function getWeeklyHardRequirementSummary(input: {
     }),
   ]);
 
-  const targetByEmployeeId = new Map(
-    targets
-      .filter((target) => target.employeeId)
-      .map((target) => [target.employeeId!, target]),
-  );
-  const activeEmployeeIds = new Set(employees.map((employee) => employee.id));
   const hardTargets: WeeklyHardRequirementTarget[] = [
     ...employees.map((employee) => {
-      const importedTarget = targetByEmployeeId.get(employee.id);
+      const importedTarget = findEastonTargetForEmployee(employee, targets);
+      const workPattern = getEffectiveWorkPattern({
+        employeeWorkPattern: employee.workPattern,
+        scheduleTarget: importedTarget,
+        expectedWeeklyHours: employee.expectedWeeklyHours,
+      });
 
       return {
         employeeId: employee.id,
         employeeName: employee.fullName,
         workPatternCode:
-          employee.workPattern?.code ?? importedTarget?.workPatternCode ?? null,
-        workPatternKind: employee.workPattern?.kind ?? null,
+          workPattern?.code ?? importedTarget?.workPatternCode ?? null,
+        workPatternKind: workPattern?.kind ?? null,
         requiredSaturdayShiftCategory:
-          employee.workPattern?.requiredSaturdayShiftCategory ?? null,
-        saturdayPaidHours: employee.workPattern?.saturdayPaidHours
-          ? Number(employee.workPattern.saturdayPaidHours)
-          : null,
+          workPattern?.requiredSaturdayShiftCategory ?? null,
+        saturdayPaidHours: workPattern?.saturdayPaidHours ?? null,
         requiresWorkPattern:
           Boolean(importedTarget && hasMeaningfulImportedTarget(importedTarget)) ||
-          Boolean(employee.workPattern),
-        requiredBackgroundAssignments:
-          employee.requiredWeeklyBackgroundShifts,
+          Boolean(workPattern),
+        requiredBackgroundAssignments: getEffectiveRequiredBackgroundAssignments({
+          employeeRequiredBackgroundAssignments:
+            employee.requiredWeeklyBackgroundShifts,
+          scheduleTarget: importedTarget,
+        }),
         extraHourWeekdays: jsonNumberArray(
-          employee.workPattern?.extraHourWeekdays ??
-            importedTarget?.extraHourWeekdays,
+          workPattern?.extraHourWeekdays ?? importedTarget?.extraHourWeekdays,
         ),
-        expectedWeeklyHours: Number(
-          employee.workPattern?.targetWeeklyHours ?? employee.expectedWeeklyHours,
-        ),
+        expectedWeeklyHours: getEffectiveWeeklyTargetHours({
+          workPattern,
+          scheduleTarget: importedTarget,
+          expectedWeeklyHours: employee.expectedWeeklyHours,
+        }),
       };
     }),
     ...targets
       .filter(
         (target) =>
-          (!target.employeeId || !activeEmployeeIds.has(target.employeeId)) &&
+          !findEmployeeForEastonTarget(target, employees) &&
           hasMeaningfulImportedTarget(target),
       )
       .map((target) => ({

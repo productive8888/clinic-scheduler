@@ -20,9 +20,14 @@ import {
 } from "../../src/lib/scheduler";
 import { parseEastonWorkbook } from "../../src/lib/easton-import/parser";
 import {
+  findEastonTargetForEmployee,
+  findEmployeeForEastonTarget,
+} from "../../src/lib/easton-import/employee-targets";
+import {
   eastonEmployeeProfileUpdateFromTarget,
   eastonShiftTemplateDataFromShift,
 } from "../../src/lib/db/easton-import";
+import { getEffectiveWorkPattern } from "../../src/lib/schedule/easton-work-pattern-resolution";
 import { evaluateWeeklyHardRequirements } from "../../src/lib/schedule/hard-requirements";
 import {
   isExtraHourShiftForWeekday,
@@ -2285,6 +2290,74 @@ describe("Easton policy helpers", () => {
 });
 
 describe("Easton July hard requirements", () => {
+  it("matches first-name Easton targets to unique active full-name employees", () => {
+    const employees = [
+      { id: "alice-id", fullName: "Alice Huang" },
+      { id: "carol-id", fullName: "Carol Ge" },
+    ];
+    const targets = [
+      { employeeId: null, employeeName: "Alice" },
+      { employeeId: null, employeeName: "Carol" },
+    ];
+
+    assert.equal(
+      findEastonTargetForEmployee(employees[0], targets)?.employeeName,
+      "Alice",
+    );
+    assert.equal(findEmployeeForEastonTarget(targets[1], employees)?.id, "carol-id");
+  });
+
+  it("does not guess ambiguous first-name Easton target matches", () => {
+    const employees = [
+      { id: "alice-h", fullName: "Alice Huang" },
+      { id: "alice-l", fullName: "Alice Lee" },
+    ];
+    const target = { employeeId: null, employeeName: "Alice" };
+
+    assert.equal(findEmployeeForEastonTarget(target, employees), null);
+  });
+
+  it("uses exact July target groups ahead of old generic Easton work patterns", () => {
+    const workPattern = getEffectiveWorkPattern({
+      employeeWorkPattern: {
+        code: "EASTON_NON_ENDOSCOPY_SATURDAY",
+        kind: "NON_ENDOSCOPY_SATURDAY",
+        targetWeeklyHours: 40,
+        saturdayPaidHours: 6,
+        requiredSaturdayShiftCategory: "SATURDAY",
+        extraHourWeekdays: [],
+      },
+      scheduleTarget: {
+        workPatternCode: "EASTON_GROUP_T_TH",
+        extraHourWeekdays: [2, 4],
+        targetTotalHours: 40,
+        requiredBackgroundAssignments: 2,
+      },
+      expectedWeeklyHours: 40,
+    });
+
+    assert.equal(workPattern?.kind, "NON_ENDOSCOPY_SATURDAY");
+    assert.deepEqual(workPattern?.extraHourWeekdays, [2, 4]);
+    assert.equal(workPattern?.saturdayPaidHours, 6);
+  });
+
+  it("treats old generic Easton patterns as non-authoritative without an exact July target", () => {
+    const workPattern = getEffectiveWorkPattern({
+      employeeWorkPattern: {
+        code: "EASTON_NON_ENDOSCOPY_SATURDAY",
+        kind: "NON_ENDOSCOPY_SATURDAY",
+        targetWeeklyHours: 40,
+        saturdayPaidHours: 6,
+        requiredSaturdayShiftCategory: "SATURDAY",
+        extraHourWeekdays: [],
+      },
+      scheduleTarget: null,
+      expectedWeeklyHours: 40,
+    });
+
+    assert.equal(workPattern, null);
+  });
+
   it("requires exact T + Th 0700-1200 extra-hour shifts", () => {
     assert.equal(
       isExtraHourShiftForWeekday(
@@ -2465,6 +2538,14 @@ describe("Easton July hard requirements", () => {
     );
     assert.equal(
       result.issues.some((issue) => issue.message.includes("Thu")),
+      true,
+    );
+    assert.equal(
+      result.issues.some(
+        (issue) =>
+          issue.message ===
+          "Yvonne is in T + Th but missing Tuesday 0700-1200.",
+      ),
       true,
     );
   });

@@ -29,6 +29,12 @@ import { patternPreferredEmployeeIdsForSlot } from "@/lib/schedule/pattern-prefe
 import { getSchedulePublishIssues } from "@/lib/schedule/publish-validation";
 import { clinicWeekRange } from "@/lib/schedule/range";
 import { getWeeklyHardRequirementSummary } from "@/lib/db/weekly-hard-requirements";
+import { findEastonTargetForEmployee } from "@/lib/easton-import/employee-targets";
+import {
+  getEffectiveRequiredBackgroundAssignments,
+  getEffectiveWeeklyTargetHours,
+  getEffectiveWorkPattern,
+} from "@/lib/schedule/easton-work-pattern-resolution";
 import { shouldPreserveSlotOutsideStaffingRequirements } from "@/lib/schedule/slot-reconciliation";
 import { buildShiftBlockSnapshot } from "@/lib/shifts/templates";
 import { LEGACY_SHIFT_TEMPLATE_ID } from "@/lib/shifts/legacy";
@@ -753,7 +759,10 @@ export async function generateScheduleForDate(input: {
     getPreviousPublishedWeekPatternSlots(input.date),
     getDb().employeeScheduleTarget.findMany({
       where: {
-        OR: [{ pattern: { active: true } }, { patternId: null }],
+        pattern: {
+          code: "EASTON_JULY_ACTIVE_TARGETS",
+          active: true,
+        },
       },
       orderBy: [{ employeeName: "asc" }, { id: "asc" }],
     }),
@@ -880,89 +889,88 @@ export async function generateScheduleForDate(input: {
   }
 
   const schedulerEmployees: SchedulerEmployee[] = employees
-    .map((employee) => ({
-      id: employee.id,
-      fullName: employee.fullName,
-      active: employee.status === "ACTIVE",
-      skillIds: employee.skills.map((skill) => skill.skillId).sort(),
-      preferredTaskTypeIds: [],
-      availability: employee.availability
-        .map((window) => ({
-          weekday: window.weekday,
-          startMinute: window.startMinute,
-          endMinute: window.endMinute,
-          effectiveStartDate: toIsoDate(window.effectiveStartDate),
-          effectiveEndDate: window.effectiveEndDate
-            ? toIsoDate(window.effectiveEndDate)
-            : null,
-          active: window.active,
-        }))
-        .sort(
-          (left, right) =>
-            left.weekday - right.weekday ||
-            left.startMinute - right.startMinute ||
-            left.endMinute - right.endMinute,
-        ),
-      unavailable: [...employee.ptoRequests, ...employee.nptoRequests]
-        .map((request) => ({
-          startDate: toIsoDate(request.startDate),
-          endDate: toIsoDate(request.endDate),
-          startMinute: request.startMinute,
-          endMinute: request.endMinute,
-          active: true,
-        }))
-        .sort(
-          (left, right) =>
-            left.startDate.localeCompare(right.startDate) ||
-            left.endDate.localeCompare(right.endDate) ||
-            (left.startMinute ?? 0) - (right.startMinute ?? 0),
-        ),
-      weeklyAssignmentLimit: employee.weeklyAssignmentLimit,
-      historicalAssignments: historicalCountByEmployee.get(employee.id) ?? 0,
-      historicalTaskAssignments: sortNumberRecord(
-        historicalTaskCountByEmployee.get(employee.id) ?? {},
-      ),
-      historicalClinicalAssignments:
-        historicalClinicalCountByEmployee.get(employee.id) ?? 0,
-      historicalPatientFacingAssignments:
-        historicalPatientFacingCountByEmployee.get(employee.id) ?? 0,
-      historicalScheduledHours: historicalHoursByEmployee.get(employee.id) ?? 0,
-      historicalSaturdayAssignments:
-        historicalSaturdayCountByEmployee.get(employee.id) ?? 0,
-      historicalEndoscopyAssignments:
-        historicalEndoscopyCountByEmployee.get(employee.id) ?? 0,
-      targetWeeklyHours: Number(
-        employee.workPattern?.targetWeeklyHours ?? employee.expectedWeeklyHours,
-      ),
-      requiredBackgroundAssignments: employee.requiredWeeklyBackgroundShifts,
-      scheduledHoursThisWeek: scheduledHoursThisWeekByEmployee.get(employee.id) ?? 0,
-      scheduledEarlyStartShiftsThisWeek:
-        scheduledEarlyStartsThisWeekByEmployee.get(employee.id) ?? 0,
-      workPattern: employee.workPattern
-        ? {
-            kind: employee.workPattern.kind,
-            worksTuesdayThroughSaturday:
-              employee.workPattern.worksTuesdayThroughSaturday,
-            saturdayPaidHours: employee.workPattern.saturdayPaidHours
-              ? Number(employee.workPattern.saturdayPaidHours)
+    .map((employee) => {
+      const scheduleTarget = findEastonTargetForEmployee(employee, scheduleTargets);
+      const workPattern = getEffectiveWorkPattern({
+        employeeWorkPattern: employee.workPattern,
+        scheduleTarget,
+        expectedWeeklyHours: employee.expectedWeeklyHours,
+      });
+
+      return {
+        id: employee.id,
+        fullName: employee.fullName,
+        active: employee.status === "ACTIVE",
+        skillIds: employee.skills.map((skill) => skill.skillId).sort(),
+        preferredTaskTypeIds: [],
+        availability: employee.availability
+          .map((window) => ({
+            weekday: window.weekday,
+            startMinute: window.startMinute,
+            endMinute: window.endMinute,
+            effectiveStartDate: toIsoDate(window.effectiveStartDate),
+            effectiveEndDate: window.effectiveEndDate
+              ? toIsoDate(window.effectiveEndDate)
               : null,
-            requiredSaturdayShiftCategory:
-              employee.workPattern.requiredSaturdayShiftCategory,
-            extraHourWeekdays: jsonNumberArray(
-              employee.workPattern.extraHourWeekdays,
-            ),
-            mondayOffAllowed: employee.workPattern.mondayOffAllowed,
-            fridayOffAllowed: employee.workPattern.fridayOffAllowed,
-            earlyStartDaysPerWeek: employee.workPattern.earlyStartDaysPerWeek,
-          }
-        : null,
-      ...targetInputsForEmployee({
-        employeeId: employee.id,
-        employeeName: employee.fullName,
-        scheduleTargets,
-        taskTypeIdByCode,
-      }),
-    }))
+            active: window.active,
+          }))
+          .sort(
+            (left, right) =>
+              left.weekday - right.weekday ||
+              left.startMinute - right.startMinute ||
+              left.endMinute - right.endMinute,
+          ),
+        unavailable: [...employee.ptoRequests, ...employee.nptoRequests]
+          .map((request) => ({
+            startDate: toIsoDate(request.startDate),
+            endDate: toIsoDate(request.endDate),
+            startMinute: request.startMinute,
+            endMinute: request.endMinute,
+            active: true,
+          }))
+          .sort(
+            (left, right) =>
+              left.startDate.localeCompare(right.startDate) ||
+              left.endDate.localeCompare(right.endDate) ||
+              (left.startMinute ?? 0) - (right.startMinute ?? 0),
+          ),
+        weeklyAssignmentLimit: employee.weeklyAssignmentLimit,
+        historicalAssignments: historicalCountByEmployee.get(employee.id) ?? 0,
+        historicalTaskAssignments: sortNumberRecord(
+          historicalTaskCountByEmployee.get(employee.id) ?? {},
+        ),
+        historicalClinicalAssignments:
+          historicalClinicalCountByEmployee.get(employee.id) ?? 0,
+        historicalPatientFacingAssignments:
+          historicalPatientFacingCountByEmployee.get(employee.id) ?? 0,
+        historicalScheduledHours: historicalHoursByEmployee.get(employee.id) ?? 0,
+        historicalSaturdayAssignments:
+          historicalSaturdayCountByEmployee.get(employee.id) ?? 0,
+        historicalEndoscopyAssignments:
+          historicalEndoscopyCountByEmployee.get(employee.id) ?? 0,
+        targetWeeklyHours: getEffectiveWeeklyTargetHours({
+          workPattern,
+          scheduleTarget,
+          expectedWeeklyHours: employee.expectedWeeklyHours,
+        }),
+        requiredBackgroundAssignments: getEffectiveRequiredBackgroundAssignments({
+          employeeRequiredBackgroundAssignments:
+            employee.requiredWeeklyBackgroundShifts,
+          scheduleTarget,
+        }),
+        scheduledHoursThisWeek:
+          scheduledHoursThisWeekByEmployee.get(employee.id) ?? 0,
+        scheduledEarlyStartShiftsThisWeek:
+          scheduledEarlyStartsThisWeekByEmployee.get(employee.id) ?? 0,
+        workPattern,
+        ...targetInputsForEmployee({
+          employeeId: employee.id,
+          employeeName: employee.fullName,
+          scheduleTargets,
+          taskTypeIdByCode,
+        }),
+      } satisfies SchedulerEmployee;
+    })
     .sort((left, right) => left.id.localeCompare(right.id));
 
   const slots: SchedulerTaskSlot[] = scheduleDay.taskSlots.map((slot) => ({
@@ -1425,13 +1433,10 @@ function targetInputsForEmployee(input: {
   }[];
   taskTypeIdByCode: Map<string, string>;
 }) {
-  const target = input.scheduleTargets.find((candidate) => {
-    if (candidate.employeeId) {
-      return candidate.employeeId === input.employeeId;
-    }
-
-    return normalizeName(candidate.employeeName) === normalizeName(input.employeeName);
-  });
+  const target = findEastonTargetForEmployee(
+    { id: input.employeeId, fullName: input.employeeName },
+    input.scheduleTargets,
+  );
 
   if (!target) {
     return {};
@@ -1473,10 +1478,6 @@ function taskExposureGroup(code: string) {
   return null;
 }
 
-function normalizeName(value: string) {
-  return value.trim().toLowerCase().replace(/\s+/g, " ");
-}
-
 function jsonNumberRecord(value: Prisma.JsonValue) {
   if (!value || Array.isArray(value) || typeof value !== "object") {
     return {};
@@ -1495,14 +1496,6 @@ function jsonStringArray(value: Prisma.JsonValue) {
   }
 
   return value.filter((item): item is string => typeof item === "string");
-}
-
-function jsonNumberArray(value: Prisma.JsonValue) {
-  if (!Array.isArray(value)) {
-    return [];
-  }
-
-  return value.map(Number).filter((item) => Number.isFinite(item));
 }
 
 function jsonRecord(value: Prisma.JsonValue) {

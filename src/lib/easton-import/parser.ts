@@ -363,40 +363,6 @@ function parseEmployeeTargetsSheet(worksheet: ExcelJS.Worksheet) {
   return targets;
 }
 
-function parseJuneScheduleSheet(worksheet: ExcelJS.Worksheet) {
-  const shifts = parseShiftColumns(worksheet);
-  const shiftsByColumn = new Map(shifts.map((shift) => [shift.column, shift]));
-  const assignments: EastonSampleAssignment[] = [];
-
-  for (let rowNumber = 3; rowNumber <= worksheet.rowCount; rowNumber += 1) {
-    const row = worksheet.getRow(rowNumber);
-    const employeeName = cellText(row.getCell(2));
-
-    if (!employeeName) {
-      continue;
-    }
-
-    for (const shift of shiftsByColumn.values()) {
-      const roleName = cellText(row.getCell(shift.column));
-
-      if (!roleName) {
-        continue;
-      }
-
-      assignments.push({
-        employeeName,
-        weekday: shift.weekday,
-        dayLabel: shift.dayLabel,
-        shiftLabel: shift.label,
-        roleName,
-        roleCode: normalizeEastonRoleCode(roleName),
-      });
-    }
-  }
-
-  return assignments;
-}
-
 function emptyPreview(input: {
   workbookPath: string | null;
   workbookModifiedAt: string | null;

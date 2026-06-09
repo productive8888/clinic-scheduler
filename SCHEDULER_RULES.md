@@ -129,6 +129,11 @@ not contain scheduling decisions.
   this employee field and keep `EmployeeScheduleTarget` as a historical import
   snapshot. Generation and publish validation use the employee field as the
   current source of truth.
+- Easton employee target matching accepts exact full-name matches and unique
+  first-name matches, because the workbook uses first names while the app stores
+  full employee names. Ambiguous first-name matches stay unmatched for manager
+  review. Archived generic Easton work patterns are ignored by active July
+  generation when no exact `Shifts by GY` group is present.
 - Bulk generation processes dates in stable ascending order. It prepares every
   included date's shift blocks and staffing-rule slots before assignment, then
   prepares period-based background instances and invokes the shared daily
@@ -164,8 +169,9 @@ not contain scheduling decisions.
   8:00 AM regular, 1:00-5:00 PM regular, Monday 1:00-6:00 PM long, Saturday
   endoscopy, and Saturday regular shift blocks, plus clinic/background slots,
   top-off slots and assignments, fills, required shortages, conflicts,
-  published skips, regenerated dates, and employees under/over their weekly
-  target.
+  published skips, regenerated dates, employees under/over their weekly target,
+  work-pattern employee counts, required/satisfied extra-hour day counts, and
+  employees still missing exact extra-hour days.
 - Weekly target hours influence scoring and top-off, while imported July
   work-pattern groups and employee-required BG/background minimums are hard
   publish checks. The scheduler strongly
@@ -181,6 +187,11 @@ not contain scheduling decisions.
   schedule calendar. Unpublishing a day, week, month, or custom range preserves
   assignments, records audit logs, and allows a later regeneration. Normal
   generation continues to skip published dates.
+- Managers can clear generated output for a day, week, month, or custom range.
+  Clearing removes generated assignments, cancels generated task slots,
+  deactivates empty generated shift blocks, preserves manual/locked overrides,
+  records audit logs, and skips published dates unless explicitly included and
+  confirmed.
 - If no shift template is marked as the schedule default, preparation
   deterministically uses the regular 8:00 AM block when available. This is a
   safety fallback only; managers can select a different default in shift

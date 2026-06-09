@@ -8,6 +8,7 @@ import {
   type EastonParsedShift,
   type EastonWorkbookPreview,
 } from "@/lib/easton-import/parser";
+import { findEmployeeForEastonTarget } from "@/lib/easton-import/employee-targets";
 import { eastonWorkPatternGroups } from "@/lib/easton-import/work-patterns";
 import {
   REQUIRED_CONFIGURABLE_SKILLS,
@@ -741,14 +742,11 @@ export async function applyEastonDefaultsFromWorkbook(input: {
       where: { status: "ACTIVE" },
       select: { id: true, fullName: true },
     });
-    const employeeIdByName = new Map(
-      employees.map((employee) => [normalizeName(employee.fullName), employee.id]),
-    );
     const unmatchedTargetNames: string[] = [];
 
     for (const target of preview.employeeTargets) {
-      const employeeId =
-        employeeIdByName.get(normalizeName(target.employeeName)) ?? null;
+      const matchedEmployee = findEmployeeForEastonTarget(target, employees);
+      const employeeId = matchedEmployee?.id ?? null;
       const workPatternId = target.workPatternCode
         ? workPatternIdByCode.get(target.workPatternCode) ?? null
         : null;
@@ -881,10 +879,6 @@ function weekdayName(weekday: number) {
     "Friday",
     "Saturday",
   ][weekday] ?? `Weekday ${weekday}`;
-}
-
-function normalizeName(name: string) {
-  return name.trim().toLowerCase().replace(/\s+/g, " ");
 }
 
 function hasMeaningfulEmployeeTarget(target: {

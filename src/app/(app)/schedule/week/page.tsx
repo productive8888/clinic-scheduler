@@ -62,6 +62,14 @@ export default async function ScheduleWeekPage({
         workPatternAssignments: stringParam(params.workPatternAssignments),
         workPatternSwaps: stringParam(params.workPatternSwaps),
         workPatternUnresolved: stringParam(params.workPatternUnresolved),
+        workPatternEmployees: stringParam(params.workPatternEmployees),
+        workPatternRequiredExtraDays: stringParam(
+          params.workPatternRequiredExtraDays,
+        ),
+        workPatternSatisfiedExtraDays: stringParam(
+          params.workPatternSatisfiedExtraDays,
+        ),
+        missingExtraHourEmployees: stringParam(params.missingExtraHourEmployees),
         topOffSlots: stringParam(params.topOffSlots),
         topOffAssignments: stringParam(params.topOffAssignments),
         topOffIncomplete: stringParam(params.topOffIncomplete),
@@ -80,6 +88,10 @@ export default async function ScheduleWeekPage({
         publishBlocked: stringParam(params.publishBlocked),
         unpublished: stringParam(params.unpublished),
         unpublishSkipped: stringParam(params.unpublishSkipped),
+        cleared: stringParam(params.cleared),
+        clearSkipped: stringParam(params.clearSkipped),
+        clearSlots: stringParam(params.clearSlots),
+        clearAssignments: stringParam(params.clearAssignments),
       }}
     />
   );

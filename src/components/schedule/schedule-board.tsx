@@ -24,6 +24,7 @@ import {
   setScheduleScenarioAction,
   unpublishScheduleAction,
 } from "@/app/(app)/schedule/actions";
+import { PendingSubmitButton } from "@/components/forms/pending-submit-button";
 import { ShortNoticeBadge } from "@/components/ui/short-notice-badge";
 import { BulkGenerationForm } from "@/components/schedule/bulk-generation-form";
 import { ManualAssignmentForm } from "@/components/schedule/manual-assignment-form";
@@ -200,10 +201,13 @@ export function ScheduleBoard({
             </form>
             <form action={generateScheduleAction}>
               <input type="hidden" name="date" value={date} />
-              <button className="inline-flex h-10 w-full items-center justify-center gap-2 rounded-md bg-emerald-700 px-3 text-sm font-semibold text-white hover:bg-emerald-800">
+              <PendingSubmitButton
+                pendingLabel="Generating..."
+                className="inline-flex h-10 w-full items-center justify-center gap-2 rounded-md bg-emerald-700 px-3 text-sm font-semibold text-white hover:bg-emerald-800 disabled:cursor-wait disabled:bg-emerald-600"
+              >
                 <RefreshCw size={16} aria-hidden="true" />
                 Generate day
-              </button>
+              </PendingSubmitButton>
             </form>
             <form action={publishScheduleAction}>
               <input type="hidden" name="date" value={date} />

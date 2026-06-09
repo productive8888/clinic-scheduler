@@ -1,4 +1,5 @@
 import { getDb } from "@/lib/db";
+import { findEastonTargetForEmployee } from "@/lib/easton-import/employee-targets";
 import type {
   ExistingAssignment,
   SchedulerEmployee,
@@ -11,6 +12,11 @@ import {
 } from "@/lib/schedule/manual-validation";
 import { clinicWeekRange } from "@/lib/schedule/range";
 import { patternPreferredEmployeeIdsForSlot } from "@/lib/schedule/pattern-preferences";
+import {
+  getEffectiveWeeklyTargetHours,
+  getEffectiveWorkPattern,
+  type EmployeeScheduleTargetSource,
+} from "@/lib/schedule/easton-work-pattern-resolution";
 import { LEGACY_SHIFT_TEMPLATE_ID } from "@/lib/shifts/legacy";
 import { parseIsoDate, toIsoDate } from "@/lib/utils/date";
 
@@ -45,7 +51,18 @@ export async function getManualAssignmentWarnings(input: {
   });
   const date = toIsoDate(slot.scheduleDay.date);
   const week = clinicWeekRange(date);
-  const patternSlots = await getActivePatternSlotsForDate(slot.scheduleDay.date);
+  const [patternSlots, scheduleTargets] = await Promise.all([
+    getActivePatternSlotsForDate(slot.scheduleDay.date),
+    getDb().employeeScheduleTarget.findMany({
+      where: {
+        pattern: {
+          code: "EASTON_JULY_ACTIVE_TARGETS",
+          active: true,
+        },
+      },
+      orderBy: [{ employeeName: "asc" }, { id: "asc" }],
+    }),
+  ]);
   const employee = input.employeeId
     ? await getDb().employee.findUniqueOrThrow({
         where: { id: input.employeeId },
@@ -96,15 +113,34 @@ export async function getManualAssignmentWarnings(input: {
       })
     : [];
 
+  const scheduleTarget = employee
+    ? findEastonTargetForEmployee(employee, scheduleTargets)
+    : null;
+  const workPattern = employee
+    ? getEffectiveWorkPattern({
+        employeeWorkPattern: employee.workPattern,
+        scheduleTarget,
+        expectedWeeklyHours: employee.expectedWeeklyHours,
+      })
+    : null;
+
   return validateManualAssignment({
-    employee: employee ? toSchedulerEmployee(employee) : null,
+    employee: employee
+      ? toSchedulerEmployee(employee, scheduleTarget)
+      : null,
     taskType: toSchedulerTaskType(slot.taskType),
     slot: toSchedulerSlot(
       slot,
       patternPreferredEmployeeIdsForSlot({ slot, patternSlots }),
     ),
     assignments: assignments.map(toExistingAssignment),
-    expectedWeeklyHours: employee ? Number(employee.expectedWeeklyHours) : null,
+    expectedWeeklyHours: employee
+      ? getEffectiveWeeklyTargetHours({
+          workPattern,
+          scheduleTarget,
+          expectedWeeklyHours: employee.expectedWeeklyHours,
+        })
+      : null,
     clearingRequiredSlot: !employee && slot.requirementLevel === "REQUIRED",
   });
 }
@@ -112,7 +148,7 @@ export async function getManualAssignmentWarnings(input: {
 export async function getManualAssignmentWarningMatrix(date: string) {
   const dateValue = parseIsoDate(date);
   const week = clinicWeekRange(date);
-  const [slots, employees, assignments, patternSlots] = await Promise.all([
+  const [slots, employees, assignments, patternSlots, scheduleTargets] = await Promise.all([
     getDb().taskSlot.findMany({
       where: {
         scheduleDay: { date: dateValue },
@@ -191,6 +227,15 @@ export async function getManualAssignmentWarningMatrix(date: string) {
       },
     }),
     getActivePatternSlotsForDate(dateValue),
+    getDb().employeeScheduleTarget.findMany({
+      where: {
+        pattern: {
+          code: "EASTON_JULY_ACTIVE_TARGETS",
+          active: true,
+        },
+      },
+      orderBy: [{ employeeName: "asc" }, { id: "asc" }],
+    }),
   ]);
   const matrix: ManualAssignmentWarningMatrix = {};
 
@@ -211,14 +256,25 @@ export async function getManualAssignmentWarningMatrix(date: string) {
     };
 
     for (const employee of employees) {
+      const scheduleTarget = findEastonTargetForEmployee(employee, scheduleTargets);
+      const workPattern = getEffectiveWorkPattern({
+        employeeWorkPattern: employee.workPattern,
+        scheduleTarget,
+        expectedWeeklyHours: employee.expectedWeeklyHours,
+      });
+
       matrix[slot.id][employee.id] = validateManualAssignment({
-        employee: toSchedulerEmployee(employee),
+        employee: toSchedulerEmployee(employee, scheduleTarget),
         taskType: schedulerTaskType,
         slot: schedulerSlot,
         assignments: assignments
           .filter((assignment) => assignment.taskSlotId !== slot.id)
           .map(toExistingAssignment),
-        expectedWeeklyHours: Number(employee.expectedWeeklyHours),
+        expectedWeeklyHours: getEffectiveWeeklyTargetHours({
+          workPattern,
+          scheduleTarget,
+          expectedWeeklyHours: employee.expectedWeeklyHours,
+        }),
       });
     }
   }
@@ -226,11 +282,13 @@ export async function getManualAssignmentWarningMatrix(date: string) {
   return matrix;
 }
 
-function toSchedulerEmployee(employee: {
+function toSchedulerEmployee(
+  employee: {
   id: string;
   fullName: string;
   status: string;
   weeklyAssignmentLimit: number | null;
+  expectedWeeklyHours: unknown;
   workPattern: {
     kind: "CUSTOM" | "ENDOSCOPY_SATURDAY" | "NON_ENDOSCOPY_SATURDAY";
     worksTuesdayThroughSaturday: boolean;
@@ -269,7 +327,15 @@ function toSchedulerEmployee(employee: {
     startMinute: number | null;
     endMinute: number | null;
   }>;
-}): SchedulerEmployee {
+  },
+  scheduleTarget?: EmployeeScheduleTargetSource,
+): SchedulerEmployee {
+  const workPattern = getEffectiveWorkPattern({
+    employeeWorkPattern: employee.workPattern,
+    scheduleTarget,
+    expectedWeeklyHours: employee.expectedWeeklyHours,
+  });
+
   return {
     id: employee.id,
     fullName: employee.fullName,
@@ -295,24 +361,7 @@ function toSchedulerEmployee(employee: {
         active: true,
       }),
     ),
-    workPattern: employee.workPattern
-      ? {
-          kind: employee.workPattern.kind,
-          worksTuesdayThroughSaturday:
-            employee.workPattern.worksTuesdayThroughSaturday,
-          saturdayPaidHours: employee.workPattern.saturdayPaidHours
-            ? Number(employee.workPattern.saturdayPaidHours)
-            : null,
-          requiredSaturdayShiftCategory:
-            employee.workPattern.requiredSaturdayShiftCategory,
-          extraHourWeekdays: jsonNumberArray(
-            employee.workPattern.extraHourWeekdays,
-          ),
-          mondayOffAllowed: employee.workPattern.mondayOffAllowed,
-          fridayOffAllowed: employee.workPattern.fridayOffAllowed,
-          earlyStartDaysPerWeek: employee.workPattern.earlyStartDaysPerWeek,
-        }
-      : null,
+    workPattern,
   };
 }
 
@@ -469,12 +518,4 @@ function toExistingAssignment(assignment: {
     isEndoscopy: assignment.taskSlot.taskType.isEndoscopy,
     locked: assignment.locked,
   };
-}
-
-function jsonNumberArray(value: unknown) {
-  if (!Array.isArray(value)) {
-    return [];
-  }
-
-  return value.map(Number).filter((item) => Number.isFinite(item));
 }

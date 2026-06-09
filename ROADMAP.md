@@ -115,6 +115,12 @@
   group extra-hour weekdays, Monday early-or-late 5-hour equivalence,
   endoscopy Saturday 6:00 AM-2:00 PM, and non-endoscopy Saturday
   8:00 AM-2:00 PM enforcement.
+- Runtime July target resolution that links first-name workbook rows to unique
+  full-name employees, ignores archived generic Easton work patterns, and shows
+  exact missing extra-hour days in week diagnostics.
+- Day/week/month/custom generated-output clearing that removes generated
+  assignments and slots while preserving manual/locked overrides and published
+  dates unless explicitly confirmed.
 - Employee-owned required weekly BG/background minimums, imported from Easton
   `Shifts by GY` but editable in employee profiles, plus deterministic
   BG/hour top-off slots after clinic coverage generation.

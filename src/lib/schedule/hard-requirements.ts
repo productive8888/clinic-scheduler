@@ -174,14 +174,16 @@ export function evaluateWeeklyHardRequirements(input: {
     }
 
     for (const weekday of workPatternValidation.missingExtraHourWeekdays) {
+      const patternLabel = pattern?.label ?? target.workPatternCode ?? "work pattern";
+
       issues.push({
         code: "EXTRA_HOUR_DAY_UNMET",
         employeeId: target.employeeId,
         employeeName: target.employeeName,
         message:
           weekday === 1
-            ? `${target.employeeName} is missing a Monday 5-hour make-up shift; either 0700-1200 or 1300-1800 can satisfy it.`
-            : `${target.employeeName} is missing a 0700-1200 5-hour make-up shift on ${weekdayShortName(weekday)}.`,
+            ? `${target.employeeName} is in ${patternLabel} but missing Monday 0700-1200 or 1300-1800.`
+            : `${target.employeeName} is in ${patternLabel} but missing ${weekdayFullName(weekday)} 0700-1200.`,
       });
     }
   }
@@ -205,4 +207,16 @@ export function evaluateWeeklyHardRequirements(input: {
 
 function formatHours(value: number) {
   return Number.isInteger(value) ? String(value) : value.toFixed(2);
+}
+
+function weekdayFullName(weekday: number) {
+  return [
+    "Sunday",
+    "Monday",
+    "Tuesday",
+    "Wednesday",
+    "Thursday",
+    "Friday",
+    "Saturday",
+  ][weekday] ?? weekdayShortName(weekday);
 }

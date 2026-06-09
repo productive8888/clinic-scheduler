@@ -1,11 +1,14 @@
 import { writeAuditLog } from "@/lib/audit";
+import { AssignmentSource, AssignmentStatus, TaskSlotStatus } from "@prisma/client";
 import {
+  GENERATED_BACKGROUND_TOP_OFF_SOURCE,
   clearGeneratedBackgroundTopOffSlots,
   topOffBackgroundAssignmentsForRange,
 } from "@/lib/db/background-top-off";
 import { generateBackgroundTaskSlotsForRange } from "@/lib/db/background-generation";
 import { getDb } from "@/lib/db";
 import {
+  GENERATED_WORK_PATTERN_TOP_OFF_SOURCE,
   clearGeneratedWorkPatternTopOffSlots,
   enforceWorkPatternRequirementsForRange,
 } from "@/lib/db/work-pattern-repair";
@@ -95,6 +98,10 @@ export type BulkGenerationSummary = {
   workPatternAssignmentsCreated: number;
   workPatternSwapsMade: number;
   workPatternUnresolved: number;
+  workPatternEmployees: number;
+  workPatternRequiredExtraDays: number;
+  workPatternSatisfiedExtraDays: number;
+  missingExtraHourEmployees: number;
   backgroundSkippedDefinitions: string[];
   backgroundSkippedPeriods: string[];
   configurationWarnings: string[];
@@ -178,6 +185,10 @@ export async function generateScheduleRange(input: {
     workPatternAssignmentsCreated: 0,
     workPatternSwapsMade: 0,
     workPatternUnresolved: 0,
+    workPatternEmployees: 0,
+    workPatternRequiredExtraDays: 0,
+    workPatternSatisfiedExtraDays: 0,
+    missingExtraHourEmployees: 0,
     backgroundSkippedDefinitions: [],
     backgroundSkippedPeriods: [],
     configurationWarnings: await getGenerationConfigurationWarnings(),
@@ -381,6 +392,24 @@ export async function generateScheduleRange(input: {
   summary.workPatternIssues = hardRequirementSummary.workPatternIssues.length;
   summary.unmatchedTargetIssues =
     hardRequirementSummary.unmatchedTargetIssues.length;
+  const workPatternDiagnostics =
+    hardRequirementSummary.employeeDiagnostics.filter(
+      (diagnostic) => diagnostic.workPattern.requirement,
+    );
+  summary.workPatternEmployees = workPatternDiagnostics.length;
+  summary.workPatternRequiredExtraDays = workPatternDiagnostics.reduce(
+    (count, diagnostic) =>
+      count + diagnostic.workPattern.requiredExtraHourWeekdays.length,
+    0,
+  );
+  summary.workPatternSatisfiedExtraDays = workPatternDiagnostics.reduce(
+    (count, diagnostic) =>
+      count + diagnostic.workPattern.satisfiedExtraHourWeekdays.length,
+    0,
+  );
+  summary.missingExtraHourEmployees = workPatternDiagnostics.filter(
+    (diagnostic) => diagnostic.workPattern.missingExtraHourWeekdays.length > 0,
+  ).length;
 
   if (hardRequirementSummary.issues.length > 0) {
     summary.datesNeedingManualReview = [
@@ -543,6 +572,172 @@ export async function unpublishScheduleRange(input: {
   return summary;
 }
 
+const GENERATED_TASK_SLOT_SOURCES = [
+  "DEFAULT",
+  "STAFFING_RULE",
+  "BACKGROUND_DEFINITION",
+  GENERATED_BACKGROUND_TOP_OFF_SOURCE,
+  GENERATED_WORK_PATTERN_TOP_OFF_SOURCE,
+] as const;
+
+export type ClearGeneratedScheduleSummary = {
+  startDate: string;
+  endDate: string;
+  datesCleared: string[];
+  publishedDatesSkipped: string[];
+  publishedDatesUnpublished: string[];
+  assignmentsRemoved: number;
+  taskSlotsCancelled: number;
+  shiftBlocksDeactivated: number;
+  manualSlotsPreserved: number;
+  lockedAssignmentsPreserved: number;
+};
+
+export async function clearGeneratedScheduleRange(input: {
+  startDate: string;
+  endDate: string;
+  includePublished?: boolean;
+  actorEmployeeId?: string | null;
+}) {
+  const db = getDb();
+  const days = await db.scheduleDay.findMany({
+    where: {
+      date: {
+        gte: parseIsoDate(input.startDate),
+        lte: parseIsoDate(input.endDate),
+      },
+    },
+    orderBy: { date: "asc" },
+    include: {
+      taskSlots: {
+        where: { status: { not: "CANCELLED" } },
+        select: {
+          id: true,
+          source: true,
+          assignments: {
+            where: { status: "ACTIVE" },
+            select: { locked: true, source: true },
+          },
+        },
+      },
+    },
+  });
+  const summary: ClearGeneratedScheduleSummary = {
+    startDate: input.startDate,
+    endDate: input.endDate,
+    datesCleared: [],
+    publishedDatesSkipped: [],
+    publishedDatesUnpublished: [],
+    assignmentsRemoved: 0,
+    taskSlotsCancelled: 0,
+    shiftBlocksDeactivated: 0,
+    manualSlotsPreserved: 0,
+    lockedAssignmentsPreserved: 0,
+  };
+  const removedAt = new Date();
+
+  for (const day of days) {
+    const date = toIsoDate(day.date);
+
+    if (day.status === "PUBLISHED" && !input.includePublished) {
+      summary.publishedDatesSkipped.push(date);
+      continue;
+    }
+
+    const lockedAssignments = day.taskSlots.flatMap((slot) =>
+      slot.assignments.filter((assignment) => assignment.locked),
+    );
+    summary.lockedAssignmentsPreserved += lockedAssignments.length;
+    summary.manualSlotsPreserved += day.taskSlots.filter(
+      (slot) =>
+        slot.source === "MANUAL" ||
+        slot.assignments.some(
+          (assignment) =>
+            assignment.locked || assignment.source === AssignmentSource.MANUAL_OVERRIDE,
+        ),
+    ).length;
+
+    const removedAssignments = await db.assignment.updateMany({
+      where: {
+        taskSlot: { scheduleDayId: day.id },
+        status: AssignmentStatus.ACTIVE,
+        locked: false,
+        source: {
+          in: [AssignmentSource.GENERATED, AssignmentSource.COVERAGE_REPLACEMENT],
+        },
+      },
+      data: {
+        status: AssignmentStatus.REMOVED,
+        removedAt,
+      },
+    });
+    summary.assignmentsRemoved += removedAssignments.count;
+
+    const cancelledSlots = await db.taskSlot.updateMany({
+      where: {
+        scheduleDayId: day.id,
+        status: { not: TaskSlotStatus.CANCELLED },
+        source: { in: [...GENERATED_TASK_SLOT_SOURCES] },
+        assignments: {
+          none: {
+            status: AssignmentStatus.ACTIVE,
+            locked: true,
+          },
+        },
+      },
+      data: {
+        status: TaskSlotStatus.CANCELLED,
+        notes: "Cleared generated schedule output. Regenerate to recreate from current rules.",
+      },
+    });
+    summary.taskSlotsCancelled += cancelledSlots.count;
+
+    const deactivatedBlocks = await db.shiftBlock.updateMany({
+      where: {
+        scheduleDayId: day.id,
+        active: true,
+        source: "TEMPLATE",
+        taskSlots: {
+          none: {
+            status: { not: TaskSlotStatus.CANCELLED },
+          },
+        },
+      },
+      data: {
+        active: false,
+        notes: "Cleared generated schedule output. Regenerate to recreate from current shift templates.",
+      },
+    });
+    summary.shiftBlocksDeactivated += deactivatedBlocks.count;
+
+    await db.scheduleDay.update({
+      where: { id: day.id },
+      data: {
+        status: "DRAFT",
+        publishedAt: null,
+        publishedByEmployeeId: null,
+      },
+    });
+
+    if (day.status === "PUBLISHED") {
+      summary.publishedDatesUnpublished.push(date);
+    }
+
+    summary.datesCleared.push(date);
+  }
+
+  await writeAuditLog({
+    actorEmployeeId: input.actorEmployeeId,
+    action: "schedule.clear_generated_range",
+    entityType: "ScheduleRange",
+    entityId: `${input.startDate}:${input.endDate}`,
+    after: summary,
+    metadata: { includePublished: Boolean(input.includePublished) },
+  });
+
+  return summary;
+}
+
 export async function getScheduleWeekData(anchorDate: string) {
   const range = clinicWeekRange(anchorDate);
   const [
@@ -649,13 +844,18 @@ export async function getScheduleWeekData(anchorDate: string) {
     getWeeklyHardRequirementSummary(range),
     getGenerationConfigurationWarnings(),
   ]);
+  const targetsByEmployeeId = new Map(
+    hardRequirements.targets
+      .filter((target) => target.employeeId)
+      .map((target) => [target.employeeId!, target]),
+  );
   const baseStaffRows = buildWeekStaffSummary({
     employees: employees.map((employee) => ({
       id: employee.id,
       fullName: employee.fullName,
-      targetHours: Number(
-        employee.workPattern?.targetWeeklyHours ?? employee.expectedWeeklyHours,
-      ),
+      targetHours:
+        targetsByEmployeeId.get(employee.id)?.expectedWeeklyHours ??
+        Number(employee.workPattern?.targetWeeklyHours ?? employee.expectedWeeklyHours),
     })),
     assignments: scheduleDays.flatMap((day) =>
       day.taskSlots.flatMap((slot) =>
@@ -678,11 +878,6 @@ export async function getScheduleWeekData(anchorDate: string) {
       ),
     ),
   });
-  const targetsByEmployeeId = new Map(
-    hardRequirements.targets
-      .filter((target) => target.employeeId)
-      .map((target) => [target.employeeId!, target]),
-  );
   const diagnosticsByEmployeeId = new Map(
     hardRequirements.employeeDiagnostics.map((diagnostic) => [
       diagnostic.employeeId,

@@ -11,9 +11,11 @@ import {
 import Link from "next/link";
 import {
   bulkGenerateScheduleAction,
+  clearGeneratedScheduleRangeAction,
   publishScheduleRangeAction,
   unpublishScheduleRangeAction,
 } from "@/app/(app)/schedule/actions";
+import { PendingSubmitButton } from "@/components/forms/pending-submit-button";
 import { backgroundTaskDisplayName } from "@/lib/background/display";
 import type { getScheduleWeekData } from "@/lib/db/schedule-workflows";
 import { weekdayShortName } from "@/lib/easton-import/work-patterns";
@@ -100,10 +102,13 @@ export function ScheduleWeekBoard({
             <input type="hidden" name="date" value={data.range.startDate} />
             <input type="hidden" name="mode" value="WEEK" />
             <input type="hidden" name="seedPrefix" value="clinic-week" />
-            <button className="inline-flex h-10 items-center gap-2 rounded-md bg-emerald-700 px-4 text-sm font-semibold text-white hover:bg-emerald-800">
+            <PendingSubmitButton
+              pendingLabel="Generating..."
+              className="inline-flex h-10 items-center gap-2 rounded-md bg-emerald-700 px-4 text-sm font-semibold text-white hover:bg-emerald-800 disabled:cursor-wait disabled:bg-emerald-600"
+            >
               <RefreshCw size={16} aria-hidden="true" />
               Generate this week
-            </button>
+            </PendingSubmitButton>
           </form>
           <form action={publishScheduleRangeAction}>
             <input type="hidden" name="date" value={data.range.startDate} />
@@ -121,10 +126,24 @@ export function ScheduleWeekBoard({
           <form action={unpublishScheduleRangeAction}>
             <input type="hidden" name="date" value={data.range.startDate} />
             <input type="hidden" name="mode" value="WEEK" />
-            <button className="inline-flex h-10 items-center gap-2 rounded-md border border-slate-300 px-4 text-sm font-semibold text-slate-700 hover:bg-slate-100">
+            <PendingSubmitButton
+              pendingLabel="Unpublishing..."
+              className="inline-flex h-10 items-center gap-2 rounded-md border border-slate-300 px-4 text-sm font-semibold text-slate-700 hover:bg-slate-100 disabled:cursor-wait disabled:bg-slate-100"
+            >
               <CalendarX2 size={16} aria-hidden="true" />
               Unpublish this week
-            </button>
+            </PendingSubmitButton>
+          </form>
+          <form action={clearGeneratedScheduleRangeAction}>
+            <input type="hidden" name="date" value={data.range.startDate} />
+            <input type="hidden" name="mode" value="WEEK" />
+            <PendingSubmitButton
+              pendingLabel="Clearing..."
+              className="inline-flex h-10 items-center gap-2 rounded-md border border-rose-300 px-4 text-sm font-semibold text-rose-800 hover:bg-rose-50 disabled:cursor-wait disabled:bg-rose-50"
+            >
+              <CalendarX2 size={16} aria-hidden="true" />
+              Clear generated week
+            </PendingSubmitButton>
           </form>
           <Link
             href="/api/exports/calendar/clinic"

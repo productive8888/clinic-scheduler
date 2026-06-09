@@ -953,9 +953,9 @@ async function main() {
       mondayOffAllowed: true,
       fridayOffAllowed: false,
       earlyStartDaysPerWeek: 0,
-      active: true,
+      active: false,
       notes:
-        "Seed: endoscopy team works Tuesday-Saturday, 8-hour Saturday, target 40 hours, bank PTO for extra time.",
+        "Seed archive: legacy generic Easton pattern. Use exact July group patterns from Shifts by GY.",
     },
     create: {
       code: "EASTON_ENDOSCOPY_SATURDAY",
@@ -967,9 +967,9 @@ async function main() {
       mondayOffAllowed: true,
       fridayOffAllowed: false,
       earlyStartDaysPerWeek: 0,
-      active: true,
+      active: false,
       notes:
-        "Seed: endoscopy team works Tuesday-Saturday, 8-hour Saturday, target 40 hours, bank PTO for extra time.",
+        "Seed archive: legacy generic Easton pattern. Use exact July group patterns from Shifts by GY.",
       createdByEmployeeId: demoAdminId,
     },
   });
@@ -985,9 +985,9 @@ async function main() {
       mondayOffAllowed: true,
       fridayOffAllowed: true,
       earlyStartDaysPerWeek: 2,
-      active: true,
+      active: false,
       notes:
-        "Seed: Saturday workers have a 6-hour Saturday, Monday or Friday off, and two early-start days.",
+        "Seed archive: legacy generic Easton pattern. Use exact July group patterns from Shifts by GY.",
     },
     create: {
       code: "EASTON_NON_ENDOSCOPY_SATURDAY",
@@ -999,9 +999,9 @@ async function main() {
       mondayOffAllowed: true,
       fridayOffAllowed: true,
       earlyStartDaysPerWeek: 2,
-      active: true,
+      active: false,
       notes:
-        "Seed: Saturday workers have a 6-hour Saturday, Monday or Friday off, and two early-start days.",
+        "Seed archive: legacy generic Easton pattern. Use exact July group patterns from Shifts by GY.",
       createdByEmployeeId: demoAdminId,
     },
   });

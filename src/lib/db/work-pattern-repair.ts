@@ -1,6 +1,7 @@
 import { AssignmentSource, type Prisma } from "@prisma/client";
 import { writeAuditLog } from "@/lib/audit";
 import { getDb } from "@/lib/db";
+import { findEastonTargetForEmployee } from "@/lib/easton-import/employee-targets";
 import { getConstraintRejections, overlaps } from "@/lib/scheduler/constraints";
 import type {
   ExistingAssignment,
@@ -16,6 +17,12 @@ import {
   validateEmployeeWeekPattern,
   type WorkPatternAssignmentInput,
 } from "@/lib/schedule/work-pattern-requirements";
+import {
+  getEffectiveRequiredBackgroundAssignments,
+  getEffectiveWeeklyTargetHours,
+  getEffectiveWorkPattern,
+  type EmployeeScheduleTargetSource,
+} from "@/lib/schedule/easton-work-pattern-resolution";
 import { parseIsoDate, toIsoDate } from "@/lib/utils/date";
 
 export const GENERATED_WORK_PATTERN_TOP_OFF_SOURCE =
@@ -113,7 +120,7 @@ export async function enforceWorkPatternRequirementsForRange(input: {
 
   const db = getDb();
   const allowedDates = new Set(input.allowedDates);
-  const [backgroundTaskType, rawEmployees, scheduleDays] = await Promise.all([
+  const [backgroundTaskType, rawEmployees, scheduleDays, scheduleTargets] = await Promise.all([
     db.taskType.findFirst({
       where: { code: "BACKGROUND", active: true },
       include: { skillRequirements: true },
@@ -189,6 +196,15 @@ export async function enforceWorkPatternRequirementsForRange(input: {
         },
       },
     }),
+    db.employeeScheduleTarget.findMany({
+      where: {
+        pattern: {
+          code: "EASTON_JULY_ACTIVE_TARGETS",
+          active: true,
+        },
+      },
+      orderBy: [{ employeeName: "asc" }, { id: "asc" }],
+    }),
   ]);
 
   if (!backgroundTaskType) {
@@ -201,7 +217,9 @@ export async function enforceWorkPatternRequirementsForRange(input: {
     return summary;
   }
 
-  const employees = rawEmployees.map(toRepairEmployee);
+  const employees = rawEmployees.map((employee) =>
+    toRepairEmployee(employee, findEastonTargetForEmployee(employee, scheduleTargets)),
+  );
   const employeeById = new Map(employees.map((employee) => [employee.id, employee]));
   const taskTypes = new Map<string, RepairTaskType>();
   const slots: RepairSlot[] = [];
@@ -395,7 +413,19 @@ function toRepairEmployee(
       nptoRequests: true;
     };
   }>,
+  scheduleTarget?: EmployeeScheduleTargetSource,
 ): RepairEmployee {
+  const workPattern = getEffectiveWorkPattern({
+    employeeWorkPattern: employee.workPattern,
+    scheduleTarget,
+    expectedWeeklyHours: employee.expectedWeeklyHours,
+  });
+  const targetWeeklyHours = getEffectiveWeeklyTargetHours({
+    workPattern,
+    scheduleTarget,
+    expectedWeeklyHours: employee.expectedWeeklyHours,
+  });
+
   return {
     id: employee.id,
     fullName: employee.fullName,
@@ -434,29 +464,14 @@ function toRepairEmployee(
           (left.startMinute ?? 0) - (right.startMinute ?? 0),
       ),
     weeklyAssignmentLimit: employee.weeklyAssignmentLimit,
-    targetWeeklyHours: Number(
-      employee.workPattern?.targetWeeklyHours ?? employee.expectedWeeklyHours,
-    ),
-    expectedHours: Number(
-      employee.workPattern?.targetWeeklyHours ?? employee.expectedWeeklyHours,
-    ),
-    requiredBackgroundAssignments: employee.requiredWeeklyBackgroundShifts,
-    workPattern: employee.workPattern
-      ? {
-          kind: employee.workPattern.kind,
-          worksTuesdayThroughSaturday:
-            employee.workPattern.worksTuesdayThroughSaturday,
-          saturdayPaidHours: employee.workPattern.saturdayPaidHours
-            ? Number(employee.workPattern.saturdayPaidHours)
-            : null,
-          requiredSaturdayShiftCategory:
-            employee.workPattern.requiredSaturdayShiftCategory,
-          extraHourWeekdays: jsonNumberArray(employee.workPattern.extraHourWeekdays),
-          mondayOffAllowed: employee.workPattern.mondayOffAllowed,
-          fridayOffAllowed: employee.workPattern.fridayOffAllowed,
-          earlyStartDaysPerWeek: employee.workPattern.earlyStartDaysPerWeek,
-        }
-      : null,
+    targetWeeklyHours,
+    expectedHours: targetWeeklyHours,
+    requiredBackgroundAssignments: getEffectiveRequiredBackgroundAssignments({
+      employeeRequiredBackgroundAssignments:
+        employee.requiredWeeklyBackgroundShifts,
+      scheduleTarget,
+    }),
+    workPattern,
   };
 }
 
@@ -1056,12 +1071,4 @@ function weekdayName(weekday: number) {
   return ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"][
     weekday
   ] ?? `weekday ${weekday}`;
-}
-
-function jsonNumberArray(value: unknown) {
-  if (!Array.isArray(value)) {
-    return [];
-  }
-
-  return value.map(Number).filter((item) => Number.isFinite(item));
 }

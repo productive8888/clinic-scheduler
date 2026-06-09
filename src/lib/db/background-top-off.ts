@@ -1,6 +1,7 @@
 import { AssignmentSource, type Prisma } from "@prisma/client";
 import { writeAuditLog } from "@/lib/audit";
 import { getDb } from "@/lib/db";
+import { findEastonTargetForEmployee } from "@/lib/easton-import/employee-targets";
 import { getConstraintRejections } from "@/lib/scheduler/constraints";
 import type {
   ExistingAssignment,
@@ -10,6 +11,12 @@ import type {
 } from "@/lib/scheduler";
 import { LEGACY_SHIFT_TEMPLATE_ID } from "@/lib/shifts/legacy";
 import { validateEmployeeWeekPattern } from "@/lib/schedule/work-pattern-requirements";
+import {
+  getEffectiveRequiredBackgroundAssignments,
+  getEffectiveWeeklyTargetHours,
+  getEffectiveWorkPattern,
+  type EmployeeScheduleTargetSource,
+} from "@/lib/schedule/easton-work-pattern-resolution";
 import { parseIsoDate, toIsoDate } from "@/lib/utils/date";
 
 export const GENERATED_BACKGROUND_TOP_OFF_SOURCE =
@@ -120,7 +127,8 @@ export async function topOffBackgroundAssignmentsForRange(input: {
 
   const db = getDb();
   const allowedDateSet = new Set(input.allowedDates);
-  const [backgroundTaskType, rawEmployees, scheduleDays] = await Promise.all([
+  const [backgroundTaskType, rawEmployees, scheduleDays, scheduleTargets] =
+    await Promise.all([
     db.taskType.findFirst({
       where: { code: "BACKGROUND", active: true },
       include: { skillRequirements: true },
@@ -195,6 +203,15 @@ export async function topOffBackgroundAssignmentsForRange(input: {
         },
       },
     }),
+    db.employeeScheduleTarget.findMany({
+      where: {
+        pattern: {
+          code: "EASTON_JULY_ACTIVE_TARGETS",
+          active: true,
+        },
+      },
+      orderBy: [{ employeeName: "asc" }, { id: "asc" }],
+    }),
   ]);
 
   if (!backgroundTaskType) {
@@ -204,7 +221,9 @@ export async function topOffBackgroundAssignmentsForRange(input: {
     return summary;
   }
 
-  const employees = rawEmployees.map(toTopOffEmployee);
+  const employees = rawEmployees.map((employee) =>
+    toTopOffEmployee(employee, findEastonTargetForEmployee(employee, scheduleTargets)),
+  );
   const allAssignments: ExistingAssignment[] = [];
   const states = new Map<string, TopOffEmployeeState>(
     employees.map((employee) => [
@@ -497,7 +516,19 @@ function toTopOffEmployee(
       nptoRequests: true;
     };
   }>,
+  scheduleTarget?: EmployeeScheduleTargetSource,
 ): TopOffEmployee {
+  const workPattern = getEffectiveWorkPattern({
+    employeeWorkPattern: employee.workPattern,
+    scheduleTarget,
+    expectedWeeklyHours: employee.expectedWeeklyHours,
+  });
+  const targetWeeklyHours = getEffectiveWeeklyTargetHours({
+    workPattern,
+    scheduleTarget,
+    expectedWeeklyHours: employee.expectedWeeklyHours,
+  });
+
   return {
     id: employee.id,
     fullName: employee.fullName,
@@ -536,29 +567,14 @@ function toTopOffEmployee(
           (left.startMinute ?? 0) - (right.startMinute ?? 0),
       ),
     weeklyAssignmentLimit: employee.weeklyAssignmentLimit,
-    targetWeeklyHours: Number(
-      employee.workPattern?.targetWeeklyHours ?? employee.expectedWeeklyHours,
-    ),
-    requiredBackgroundAssignments: employee.requiredWeeklyBackgroundShifts,
-    expectedHours: Number(
-      employee.workPattern?.targetWeeklyHours ?? employee.expectedWeeklyHours,
-    ),
-    workPattern: employee.workPattern
-      ? {
-          kind: employee.workPattern.kind,
-          worksTuesdayThroughSaturday:
-            employee.workPattern.worksTuesdayThroughSaturday,
-          saturdayPaidHours: employee.workPattern.saturdayPaidHours
-            ? Number(employee.workPattern.saturdayPaidHours)
-            : null,
-          requiredSaturdayShiftCategory:
-            employee.workPattern.requiredSaturdayShiftCategory,
-          extraHourWeekdays: jsonNumberArray(employee.workPattern.extraHourWeekdays),
-          mondayOffAllowed: employee.workPattern.mondayOffAllowed,
-          fridayOffAllowed: employee.workPattern.fridayOffAllowed,
-          earlyStartDaysPerWeek: employee.workPattern.earlyStartDaysPerWeek,
-        }
-      : null,
+    targetWeeklyHours,
+    requiredBackgroundAssignments: getEffectiveRequiredBackgroundAssignments({
+      employeeRequiredBackgroundAssignments:
+        employee.requiredWeeklyBackgroundShifts,
+      scheduleTarget,
+    }),
+    expectedHours: targetWeeklyHours,
+    workPattern,
   };
 }
 
@@ -797,12 +813,4 @@ function toWorkPatternAssignments(assignments: ExistingAssignment[]) {
     endMinute: assignment.endMinute ?? 24 * 60,
     paidHours: assignment.paidHours ?? 0,
   }));
-}
-
-function jsonNumberArray(value: unknown) {
-  if (!Array.isArray(value)) {
-    return [];
-  }
-
-  return value.map(Number).filter((item) => Number.isFinite(item));
 }

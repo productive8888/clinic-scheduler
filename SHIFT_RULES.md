@@ -69,6 +69,11 @@ matched employee profile as `requiredWeeklyBackgroundShifts`; the imported
 target row remains a snapshot, but the employee field drives current generation
 and publish validation.
 
+When `Shifts by GY` uses first names, the importer and runtime scheduler match
+those target rows to unique active employees by first name. Ambiguous names are
+left unmatched for review. Legacy generic Easton Saturday patterns are archived
+and ignored by active July generation unless an exact July group is available.
+
 For Tuesday, Wednesday, and Thursday, a group make-up day is satisfied only by
 the 7:00 AM-12:00 PM shift. For Monday, either 7:00 AM-12:00 PM or
 1:00 PM-6:00 PM satisfies the make-up day. Week generation repairs these hard
@@ -78,10 +83,11 @@ employee should not remain at 38 hours when a group-compliant week is feasible.
 Generation summaries explicitly report total, AM, PM, Saturday, 0700 early AM,
 0800 regular AM, 1300-1700 PM, Monday 1300-1800 PM, Saturday endoscopy, and
 Saturday regular block counts plus generated work-pattern and BG/hour top-off
-slots. The schedule status calendar provides day/month review, while day, week,
-month, and custom-range unpublish actions preserve assignments and make dates
-eligible for regeneration. Published prior-week assignments are used only as
-soft consistency preferences when the same weekday/shift/task is generated
+slots and exact work-pattern employee/extra-day counts. The schedule status
+calendar provides day/month review, while day, week, month, and custom-range
+unpublish or clear-generated actions preserve manual/locked overrides and make
+dates eligible for regeneration. Published prior-week assignments are used only
+as soft consistency preferences when the same weekday/shift/task is generated
 again.
 
 The app does not hardcode final clinic policy in scheduler branches. Easton

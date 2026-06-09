@@ -14,6 +14,7 @@ import {
   unpublishScheduleForDate,
 } from "@/lib/db/schedule";
 import {
+  clearGeneratedScheduleRange,
   generateScheduleRange,
   publishScheduleRange,
   unpublishScheduleRange,
@@ -180,6 +181,10 @@ export async function bulkGenerateScheduleAction(formData: FormData) {
     workPatternAssignments: String(summary.workPatternAssignmentsCreated),
     workPatternSwaps: String(summary.workPatternSwapsMade),
     workPatternUnresolved: String(summary.workPatternUnresolved),
+    workPatternEmployees: String(summary.workPatternEmployees),
+    workPatternRequiredExtraDays: String(summary.workPatternRequiredExtraDays),
+    workPatternSatisfiedExtraDays: String(summary.workPatternSatisfiedExtraDays),
+    missingExtraHourEmployees: String(summary.missingExtraHourEmployees),
     topOffSlots: String(summary.backgroundTopOffSlotsCreated),
     topOffAssignments: String(summary.backgroundTopOffAssignmentsCreated),
     topOffIncomplete: String(summary.backgroundTopOffIncompleteEmployees),
@@ -240,6 +245,35 @@ export async function unpublishScheduleRangeAction(formData: FormData) {
   revalidatePath("/schedule/calendar");
   redirect(
     `/schedule/week?date=${range.startDate}&unpublished=${summary.unpublishedDates.length}&unpublishSkipped=${summary.skippedNotPublishedDates.length}`,
+  );
+}
+
+export async function clearGeneratedScheduleRangeAction(formData: FormData) {
+  const actor = await requireManager();
+  const date = getDateFromForm(formData);
+  const range = resolveScheduleRange({
+    mode: scheduleRangeMode(formData.get("mode")),
+    date,
+    customStartDate: String(formData.get("startDate") || "") || null,
+    customEndDate: String(formData.get("endDate") || "") || null,
+  });
+  const includePublished = formData.get("includePublished") === "on";
+
+  if (includePublished && formData.get("confirmClearPublished") !== "on") {
+    throw new Error("Confirm that published dates may be unpublished and cleared.");
+  }
+
+  const summary = await clearGeneratedScheduleRange({
+    ...range,
+    includePublished,
+    actorEmployeeId: auditActorId(actor),
+  });
+
+  revalidatePath("/schedule");
+  revalidatePath("/schedule/week");
+  revalidatePath("/schedule/calendar");
+  redirect(
+    `/schedule/week?date=${range.startDate}&cleared=${summary.datesCleared.length}&clearSkipped=${summary.publishedDatesSkipped.length}&clearSlots=${summary.taskSlotsCancelled}&clearAssignments=${summary.assignmentsRemoved}`,
   );
 }
 
