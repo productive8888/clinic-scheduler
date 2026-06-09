@@ -10,8 +10,8 @@ async function main() {
         "",
         "Applies the private Easton scheduling workbook defaults to the database",
         "configured by DATABASE_URL. The workbook is never committed; place it in",
-        "private/easton-scheduling.xlsx, private/Copy of Easton Scheduling.xlsx,",
-        "or pass an explicit local path.",
+        "private/New Easton Scheduling.xlsx, private/easton-scheduling.xlsx,",
+        "private/Copy of Easton Scheduling.xlsx, or pass an explicit local path.",
       ].join("\n"),
     );
     return;

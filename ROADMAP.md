@@ -108,6 +108,10 @@
   `Shifts by GY`.
 - Hard weekly validation for July work-pattern requirements and employee BG
   minimums, with week-view blockers and audited publish override reasons.
+- Deterministic July work-pattern repair before BG/hour filler, including exact
+  group extra-hour weekdays, Monday early-or-late 5-hour equivalence,
+  endoscopy Saturday 6:00 AM-2:00 PM, and non-endoscopy Saturday
+  8:00 AM-2:00 PM enforcement.
 - Employee-owned required weekly BG/background minimums, imported from Easton
   `Shifts by GY` but editable in employee profiles, plus deterministic
   BG/hour top-off slots after clinic coverage generation.

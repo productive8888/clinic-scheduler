@@ -19,7 +19,12 @@ import {
   type SchedulerTaskType,
 } from "../../src/lib/scheduler";
 import { parseEastonWorkbook } from "../../src/lib/easton-import/parser";
+import { eastonEmployeeProfileUpdateFromTarget } from "../../src/lib/db/easton-import";
 import { evaluateWeeklyHardRequirements } from "../../src/lib/schedule/hard-requirements";
+import {
+  isExtraHourShiftForWeekday,
+  validateEmployeeWeekPattern,
+} from "../../src/lib/schedule/work-pattern-requirements";
 import {
   invalidatedScheduleDayData,
   invalidatedTaskSlotStatus,
@@ -121,6 +126,24 @@ const mondayThroughFriday = [1, 2, 3, 4, 5].map((weekday) => ({
   endMinute: 1440,
   effectiveStartDate: "2026-01-01",
 }));
+
+function shift(
+  date: string,
+  shiftBlockId: string,
+  shiftCategory: string,
+  startMinute: number,
+  endMinute: number,
+  paidHours: number,
+) {
+  return {
+    date,
+    shiftBlockId,
+    shiftCategory,
+    startMinute,
+    endMinute,
+    paidHours,
+  };
+}
 
 const taskTypes: SchedulerTaskType[] = [
   {
@@ -2157,11 +2180,163 @@ describe("Easton policy helpers", () => {
     assert.deepEqual(preview.employeeTargets[0].extraHourWeekdays, [2, 4]);
     assert.equal(preview.employeeTargets[0].requiredBackgroundAssignments, 2);
     assert.equal(preview.employeeTargets[0].targetTotalHours, 40);
+    assert.equal(
+      preview.roleDemand
+        .filter((demand) => demand.roleCode === "PATIENTS")
+        .every((demand) => demand.aggregate),
+      true,
+    );
+    assert.equal(
+      preview.roleDemand
+        .filter((demand) => !demand.aggregate)
+        .some((demand) => demand.roleCode === "PATIENTS"),
+      false,
+    );
     assert.equal(preview.sampleAssignments.length, 0);
   });
 });
 
 describe("Easton July hard requirements", () => {
+  it("requires exact T + Th 0700-1200 extra-hour shifts", () => {
+    assert.equal(
+      isExtraHourShiftForWeekday(
+        {
+          date: "2026-07-07",
+          startMinute: 420,
+          endMinute: 720,
+          paidHours: 5,
+        },
+        2,
+      ),
+      true,
+    );
+    assert.equal(
+      isExtraHourShiftForWeekday(
+        {
+          date: "2026-07-09",
+          startMinute: 780,
+          endMinute: 1080,
+          paidHours: 5,
+        },
+        4,
+      ),
+      false,
+    );
+
+    const validation = validateEmployeeWeekPattern({
+      employee: {
+        expectedWeeklyHours: 40,
+        workPattern: {
+          kind: "NON_ENDOSCOPY_SATURDAY",
+          targetWeeklyHours: 40,
+          requiredSaturdayShiftCategory: "SATURDAY",
+          saturdayPaidHours: 6,
+          extraHourWeekdays: [2, 4],
+        },
+      },
+      assignments: [
+        shift("2026-07-06", "mon-am", "AM", 480, 720, 4),
+        shift("2026-07-06", "mon-pm", "PM", 780, 1020, 4),
+        shift("2026-07-07", "tue-early", "AM", 420, 720, 5),
+        shift("2026-07-07", "tue-pm", "PM", 780, 1020, 4),
+        shift("2026-07-08", "wed-am", "AM", 480, 720, 4),
+        shift("2026-07-08", "wed-pm", "PM", 780, 1020, 4),
+        shift("2026-07-09", "thu-early", "AM", 420, 720, 5),
+        shift("2026-07-09", "thu-pm", "PM", 780, 1020, 4),
+        shift("2026-07-11", "sat-short", "SATURDAY", 480, 840, 6),
+      ],
+    });
+
+    assert.deepEqual(validation.satisfiedExtraHourWeekdays, [2, 4]);
+    assert.deepEqual(validation.missingExtraHourWeekdays, []);
+    assert.equal(validation.totalHours, 40);
+    assert.equal(validation.hasRequiredSaturday, true);
+  });
+
+  it("allows Monday extra hour via early AM or long PM", () => {
+    assert.equal(
+      isExtraHourShiftForWeekday(
+        {
+          date: "2026-07-06",
+          startMinute: 420,
+          endMinute: 720,
+          paidHours: 5,
+        },
+        1,
+      ),
+      true,
+    );
+    assert.equal(
+      isExtraHourShiftForWeekday(
+        {
+          date: "2026-07-06",
+          startMinute: 780,
+          endMinute: 1080,
+          paidHours: 5,
+        },
+        1,
+      ),
+      true,
+    );
+
+    const validation = validateEmployeeWeekPattern({
+      employee: {
+        expectedWeeklyHours: 40,
+        workPattern: {
+          kind: "NON_ENDOSCOPY_SATURDAY",
+          targetWeeklyHours: 40,
+          requiredSaturdayShiftCategory: "SATURDAY",
+          saturdayPaidHours: 6,
+          extraHourWeekdays: [1, 3],
+        },
+      },
+      assignments: [
+        shift("2026-07-06", "mon-am", "AM", 480, 720, 4),
+        shift("2026-07-06", "mon-long-pm", "PM", 780, 1080, 5),
+        shift("2026-07-07", "tue-am", "AM", 480, 720, 4),
+        shift("2026-07-07", "tue-pm", "PM", 780, 1020, 4),
+        shift("2026-07-08", "wed-early", "AM", 420, 720, 5),
+        shift("2026-07-08", "wed-pm", "PM", 780, 1020, 4),
+        shift("2026-07-09", "thu-am", "AM", 480, 720, 4),
+        shift("2026-07-09", "thu-pm", "PM", 780, 1020, 4),
+        shift("2026-07-11", "sat-short", "SATURDAY", 480, 840, 6),
+      ],
+    });
+
+    assert.deepEqual(validation.satisfiedExtraHourWeekdays, [1, 3]);
+    assert.equal(validation.totalHours, 40);
+  });
+
+  it("keeps Saturday/endoscopy employees at 40 without weekday extra-hour requirements", () => {
+    const validation = validateEmployeeWeekPattern({
+      employee: {
+        expectedWeeklyHours: 40,
+        workPattern: {
+          kind: "ENDOSCOPY_SATURDAY",
+          targetWeeklyHours: 40,
+          requiredSaturdayShiftCategory: "ENDO",
+          saturdayPaidHours: 8,
+          extraHourWeekdays: [],
+        },
+      },
+      assignments: [
+        shift("2026-07-07", "tue-am", "AM", 480, 720, 4),
+        shift("2026-07-07", "tue-pm", "PM", 780, 1020, 4),
+        shift("2026-07-08", "wed-am", "AM", 480, 720, 4),
+        shift("2026-07-08", "wed-pm", "PM", 780, 1020, 4),
+        shift("2026-07-09", "thu-am", "AM", 480, 720, 4),
+        shift("2026-07-09", "thu-pm", "PM", 780, 1020, 4),
+        shift("2026-07-10", "fri-am", "AM", 480, 720, 4),
+        shift("2026-07-10", "fri-pm", "PM", 780, 1020, 4),
+        shift("2026-07-11", "sat-endo", "ENDO", 360, 840, 8),
+      ],
+    });
+
+    assert.deepEqual(validation.requiredExtraHourWeekdays, []);
+    assert.equal(validation.hasRequiredSaturday, true);
+    assert.equal(validation.totalHours, 40);
+  });
+
   it("reports missing BG minimums and work-pattern shifts", () => {
     const result = evaluateWeeklyHardRequirements({
       targets: [
@@ -2180,6 +2355,8 @@ describe("Easton July hard requirements", () => {
           date: "2026-07-07",
           shiftBlockId: "tue-regular",
           shiftCategory: "AM",
+          startMinute: 480,
+          endMinute: 720,
           paidHours: 4,
           taskTypeCode: "BACKGROUND",
           isBackground: true,
@@ -2234,6 +2411,74 @@ describe("Easton July hard requirements", () => {
     assert.equal(result.workPatternIssues[0]?.code, "WORK_PATTERN_MISSING");
   });
 
+  it("validates BG minimum separately from 40-hour work-pattern math", () => {
+    const result = evaluateWeeklyHardRequirements({
+      targets: [
+        {
+          employeeId: "katie",
+          employeeName: "Katie",
+          workPatternCode: "EASTON_GROUP_M_W",
+          requiredBackgroundAssignments: 2,
+          extraHourWeekdays: [1, 3],
+          expectedWeeklyHours: 40,
+        },
+      ],
+      assignments: [
+        {
+          employeeId: "katie",
+          date: "2026-07-06",
+          shiftBlockId: "mon-long-pm",
+          shiftCategory: "PM",
+          startMinute: 780,
+          endMinute: 1080,
+          paidHours: 5,
+          taskTypeCode: "NEW_GI",
+          isBackground: false,
+        },
+        {
+          employeeId: "katie",
+          date: "2026-07-08",
+          shiftBlockId: "wed-early",
+          shiftCategory: "AM",
+          startMinute: 420,
+          endMinute: 720,
+          paidHours: 5,
+          taskTypeCode: "FOLLOWUP",
+          isBackground: false,
+        },
+        ...[
+          ["2026-07-06", "mon-am", "AM", 480, 720, 4],
+          ["2026-07-07", "tue-am", "AM", 480, 720, 4],
+          ["2026-07-07", "tue-pm", "PM", 780, 1020, 4],
+          ["2026-07-08", "wed-pm", "PM", 780, 1020, 4],
+          ["2026-07-09", "thu-am", "AM", 480, 720, 4],
+          ["2026-07-09", "thu-pm", "PM", 780, 1020, 4],
+          ["2026-07-11", "sat-short", "SATURDAY", 480, 840, 6],
+        ].map(([date, id, category, start, end, hours]) => ({
+          employeeId: "katie",
+          date: String(date),
+          shiftBlockId: String(id),
+          shiftCategory: String(category),
+          startMinute: Number(start),
+          endMinute: Number(end),
+          paidHours: Number(hours),
+          taskTypeCode: "NEW_ALLERGY",
+          isBackground: false,
+        })),
+      ],
+    });
+
+    assert.equal(result.bgMinimumIssues.length, 1);
+    assert.equal(
+      result.issues.some((issue) => issue.code === "BELOW_EXPECTED_HOURS"),
+      false,
+    );
+    assert.equal(
+      result.issues.some((issue) => issue.code === "EXTRA_HOUR_DAY_UNMET"),
+      false,
+    );
+  });
+
   it("passes when BG minimum, Saturday group, and extra-hour days are met", () => {
     const result = evaluateWeeklyHardRequirements({
       targets: [
@@ -2252,6 +2497,8 @@ describe("Easton July hard requirements", () => {
           date: "2026-07-07",
           shiftBlockId: "tue-early",
           shiftCategory: "AM",
+          startMinute: 420,
+          endMinute: 720,
           paidHours: 5,
           taskTypeCode: "BACKGROUND",
           isBackground: true,
@@ -2261,6 +2508,8 @@ describe("Easton July hard requirements", () => {
           date: "2026-07-09",
           shiftBlockId: "thu-early",
           shiftCategory: "AM",
+          startMinute: 420,
+          endMinute: 720,
           paidHours: 5,
           taskTypeCode: "RESEARCH",
           isBackground: true,
@@ -2270,6 +2519,8 @@ describe("Easton July hard requirements", () => {
           date: "2026-07-11",
           shiftBlockId: "sat-short",
           shiftCategory: "SATURDAY",
+          startMinute: 480,
+          endMinute: 840,
           paidHours: 6,
           taskTypeCode: "NEW_ALLERGY",
           isBackground: false,
@@ -2279,6 +2530,19 @@ describe("Easton July hard requirements", () => {
 
     assert.equal(result.canPublish, true);
     assert.equal(result.issues.length, 0);
+  });
+
+  it("maps Easton BG target onto the editable employee BG field", () => {
+    const update = eastonEmployeeProfileUpdateFromTarget(
+      {
+        requiredBackgroundAssignments: 3,
+      },
+      "work-pattern-id",
+    );
+
+    assert.equal(update.expectedWeeklyHours, 40);
+    assert.equal(update.requiredWeeklyBackgroundShifts, 3);
+    assert.equal(update.workPatternId, "work-pattern-id");
   });
 
   it("assigns Saturday endoscopy slots only to the endoscopy Saturday group", () => {

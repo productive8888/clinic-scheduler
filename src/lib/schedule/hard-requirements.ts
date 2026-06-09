@@ -1,11 +1,18 @@
-import { dateToWeekday } from "@/lib/scheduler/constraints";
 import { eastonWorkPatternGroups, weekdayShortName } from "@/lib/easton-import/work-patterns";
+import {
+  uniqueScheduledHours,
+  validateEmployeeWeekPattern,
+  type WorkPatternValidation,
+} from "@/lib/schedule/work-pattern-requirements";
 
 export type WeeklyHardRequirementTarget = {
   employeeId: string | null;
   employeeName: string;
   workPatternCode: string | null;
   requiresWorkPattern?: boolean;
+  workPatternKind?: "CUSTOM" | "ENDOSCOPY_SATURDAY" | "NON_ENDOSCOPY_SATURDAY" | null;
+  requiredSaturdayShiftCategory?: string | null;
+  saturdayPaidHours?: number | null;
   requiredBackgroundAssignments: number;
   extraHourWeekdays: number[];
   expectedWeeklyHours: number;
@@ -16,6 +23,8 @@ export type WeeklyHardRequirementAssignment = {
   date: string;
   shiftBlockId: string;
   shiftCategory: string;
+  startMinute: number;
+  endMinute: number;
   paidHours: number;
   taskTypeCode: string;
   isBackground: boolean;
@@ -34,6 +43,15 @@ export type WeeklyHardRequirementIssue = {
   message: string;
 };
 
+export type WeeklyHardRequirementEmployeeDiagnostic = {
+  employeeId: string;
+  employeeName: string;
+  workPattern: WorkPatternValidation;
+  requiredBackgroundAssignments: number;
+  assignedBackgroundAssignments: number;
+  missingBackgroundAssignments: number;
+};
+
 export function evaluateWeeklyHardRequirements(input: {
   targets: WeeklyHardRequirementTarget[];
   assignments: WeeklyHardRequirementAssignment[];
@@ -46,6 +64,7 @@ export function evaluateWeeklyHardRequirements(input: {
     WeeklyHardRequirementAssignment[]
   >();
   const issues: WeeklyHardRequirementIssue[] = [];
+  const employeeDiagnostics: WeeklyHardRequirementEmployeeDiagnostic[] = [];
 
   for (const assignment of input.assignments) {
     const employeeAssignments =
@@ -80,6 +99,45 @@ export function evaluateWeeklyHardRequirements(input: {
         assignment.taskTypeCode === "BACKGROUND" || assignment.isBackground,
     ).length;
     const scheduledHours = uniqueScheduledHours(employeeAssignments);
+    const pattern = target.workPatternCode
+      ? patternsByCode.get(target.workPatternCode)
+      : null;
+    const workPatternValidation = validateEmployeeWeekPattern({
+      employee: {
+        expectedWeeklyHours: target.expectedWeeklyHours,
+        workPattern:
+          pattern || target.workPatternKind
+            ? {
+                code: target.workPatternCode,
+                kind: target.workPatternKind ?? pattern?.kind ?? null,
+                targetWeeklyHours: target.expectedWeeklyHours,
+                requiredSaturdayShiftCategory:
+                  target.requiredSaturdayShiftCategory ??
+                  pattern?.requiredSaturdayShiftCategory ??
+                  null,
+                saturdayPaidHours:
+                  target.saturdayPaidHours ?? pattern?.saturdayPaidHours ?? null,
+                extraHourWeekdays:
+                  target.extraHourWeekdays.length > 0
+                    ? target.extraHourWeekdays
+                    : pattern?.extraHourWeekdays ?? [],
+              }
+            : null,
+      },
+      assignments: employeeAssignments,
+    });
+
+    employeeDiagnostics.push({
+      employeeId: target.employeeId,
+      employeeName: target.employeeName,
+      workPattern: workPatternValidation,
+      requiredBackgroundAssignments: target.requiredBackgroundAssignments,
+      assignedBackgroundAssignments: backgroundAssignments,
+      missingBackgroundAssignments: Math.max(
+        0,
+        target.requiredBackgroundAssignments - backgroundAssignments,
+      ),
+    });
 
     if (
       target.requiredBackgroundAssignments > 0 &&
@@ -102,49 +160,35 @@ export function evaluateWeeklyHardRequirements(input: {
       });
     }
 
-    const pattern = target.workPatternCode
-      ? patternsByCode.get(target.workPatternCode)
-      : null;
-
-    if (!pattern) {
+    if (!workPatternValidation.requirement) {
       continue;
     }
 
-    const hasRequiredSaturday = employeeAssignments.some(
-      (assignment) =>
-        dateToWeekday(assignment.date) === 6 &&
-        assignment.shiftCategory === pattern.requiredSaturdayShiftCategory &&
-        assignment.paidHours === pattern.saturdayPaidHours,
-    );
-
-    if (!hasRequiredSaturday) {
+    if (!workPatternValidation.hasRequiredSaturday) {
       issues.push({
         code: "SATURDAY_PATTERN_UNMET",
         employeeId: target.employeeId,
         employeeName: target.employeeName,
-        message: `${target.employeeName} is missing the required ${pattern.requiredSaturdayShiftCategory} Saturday ${pattern.saturdayPaidHours}-hour shift for ${pattern.label}.`,
+        message: `${target.employeeName} is missing the required ${workPatternValidation.requiredSaturdayShiftCategory} Saturday ${workPatternValidation.requiredSaturdayPaidHours}-hour shift${pattern ? ` for ${pattern.label}` : ""}.`,
       });
     }
 
-    for (const weekday of target.extraHourWeekdays) {
-      const hasExtraHourShift = employeeAssignments.some(
-        (assignment) =>
-          dateToWeekday(assignment.date) === weekday && assignment.paidHours >= 5,
-      );
-
-      if (!hasExtraHourShift) {
-        issues.push({
-          code: "EXTRA_HOUR_DAY_UNMET",
-          employeeId: target.employeeId,
-          employeeName: target.employeeName,
-          message: `${target.employeeName} is missing a 5-hour make-up shift on ${weekdayShortName(weekday)}.`,
-        });
-      }
+    for (const weekday of workPatternValidation.missingExtraHourWeekdays) {
+      issues.push({
+        code: "EXTRA_HOUR_DAY_UNMET",
+        employeeId: target.employeeId,
+        employeeName: target.employeeName,
+        message:
+          weekday === 1
+            ? `${target.employeeName} is missing a Monday 5-hour make-up shift; either 0700-1200 or 1300-1800 can satisfy it.`
+            : `${target.employeeName} is missing a 0700-1200 5-hour make-up shift on ${weekdayShortName(weekday)}.`,
+      });
     }
   }
 
   return {
     issues,
+    employeeDiagnostics,
     bgMinimumIssues: issues.filter((issue) => issue.code === "BG_MINIMUM_UNMET"),
     workPatternIssues: issues.filter(
       (issue) =>
@@ -157,19 +201,6 @@ export function evaluateWeeklyHardRequirements(input: {
     ),
     canPublish: issues.length === 0,
   };
-}
-
-function uniqueScheduledHours(assignments: WeeklyHardRequirementAssignment[]) {
-  const shifts = new Map<string, number>();
-
-  for (const assignment of assignments) {
-    shifts.set(
-      `${assignment.date}:${assignment.shiftBlockId}`,
-      assignment.paidHours,
-    );
-  }
-
-  return [...shifts.values()].reduce((total, hours) => total + hours, 0);
 }
 
 function formatHours(value: number) {

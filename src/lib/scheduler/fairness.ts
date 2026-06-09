@@ -1,4 +1,5 @@
 import { dateToWeekday } from "./constraints";
+import { isExtraHourShiftForWeekday } from "@/lib/schedule/work-pattern-requirements";
 import type {
   ExistingAssignment,
   SchedulerEmployee,
@@ -324,10 +325,14 @@ export function getWorkPatternScore(input: {
 
   if (extraHourWeekdays.length > 0) {
     const isExtraHourDay = extraHourWeekdays.includes(weekday);
+    const isRequiredExtraHourShift = isExtraHourShiftForWeekday(
+      input.slot,
+      weekday,
+    );
     const isFiveHourShift = (input.slot.paidHours ?? 0) >= 5;
 
     if (isExtraHourDay) {
-      score += isFiveHourShift ? weight * 2 : -weight * 2;
+      score += isRequiredExtraHourShift ? weight * 2 : -weight * 2;
     } else if (
       pattern.kind === "NON_ENDOSCOPY_SATURDAY" &&
       isFiveHourShift &&

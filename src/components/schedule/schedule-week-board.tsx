@@ -364,15 +364,53 @@ function StaffSummaryTable({
                     <strong>
                       {row.backgroundAssignmentCount}/
                       {row.requiredBackgroundAssignments}
+                      {row.missingBackgroundAssignments > 0
+                        ? ` missing ${row.missingBackgroundAssignments}`
+                        : ""}
                     </strong>
-                    <span>Extra days</span>
+                    <span>Required extra</span>
                     <strong>
                       {row.extraHourWeekdays.length
                         ? row.extraHourWeekdays.map(weekdayShortName).join(", ")
                         : "None"}
                     </strong>
-                    <span>Sat/Endo</span>
-                    <strong>{row.saturdayEndoscopyCount}</strong>
+                    <span>Satisfied extra</span>
+                    <strong>
+                      {row.satisfiedExtraHourWeekdays.length
+                        ? row.satisfiedExtraHourWeekdays
+                            .map(weekdayShortName)
+                            .join(", ")
+                        : "None"}
+                    </strong>
+                    <span>Missing extra</span>
+                    <strong
+                      className={
+                        row.missingExtraHourWeekdays.length
+                          ? "text-rose-700"
+                          : undefined
+                      }
+                    >
+                      {row.missingExtraHourWeekdays.length
+                        ? row.missingExtraHourWeekdays
+                            .map((weekday) =>
+                              weekday === 1
+                                ? "Mon 0700-1200 or 1300-1800"
+                                : `${weekdayShortName(weekday)} 0700-1200`,
+                            )
+                            .join(", ")
+                        : "None"}
+                    </strong>
+                    <span>Saturday block</span>
+                    <strong>
+                      {row.saturdayAssignment
+                        ? formatCompactMinuteRange(
+                            row.saturdayAssignment.startMinute ?? 0,
+                            row.saturdayAssignment.endMinute ?? 0,
+                          )
+                        : row.requiredSaturdayShiftCategory
+                          ? `Missing ${row.requiredSaturdayShiftCategory} ${row.requiredSaturdayPaidHours}h`
+                          : `${row.saturdayEndoscopyCount}`}
+                    </strong>
                     <span>GI / Allergy / PCP</span>
                     <strong>
                       {row.exposure.GI} / {row.exposure.ALLERGY} / {row.exposure.PCP}

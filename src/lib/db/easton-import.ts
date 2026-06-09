@@ -4,6 +4,7 @@ import { getDb } from "@/lib/db";
 import {
   normalizeEastonRoleCode,
   parseEastonWorkbook,
+  type EastonEmployeeTarget,
   type EastonParsedShift,
   type EastonWorkbookPreview,
 } from "@/lib/easton-import/parser";
@@ -769,12 +770,7 @@ export async function applyEastonDefaultsFromWorkbook(input: {
       if (employeeId) {
         await tx.employee.update({
           where: { id: employeeId },
-          data: {
-            expectedWeeklyHours: 40,
-            requiredWeeklyBackgroundShifts:
-              target.requiredBackgroundAssignments,
-            ...(workPatternId ? { workPatternId } : {}),
-          },
+          data: eastonEmployeeProfileUpdateFromTarget(target, workPatternId),
         });
       }
 
@@ -919,4 +915,15 @@ function hasMeaningfulEmployeeTarget(target: {
 
 export function isEastonBackgroundRole(roleCode: string) {
   return BACKGROUND_ROLE_CODES.has(normalizeEastonRoleCode(roleCode));
+}
+
+export function eastonEmployeeProfileUpdateFromTarget(
+  target: Pick<EastonEmployeeTarget, "requiredBackgroundAssignments">,
+  workPatternId: string | null,
+) {
+  return {
+    expectedWeeklyHours: 40,
+    requiredWeeklyBackgroundShifts: target.requiredBackgroundAssignments,
+    ...(workPatternId ? { workPatternId } : {}),
+  };
 }

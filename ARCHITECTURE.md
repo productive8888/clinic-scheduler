@@ -468,7 +468,8 @@ primitive. Manager range generation is an orchestration layer that:
 2. skips Sundays and published dates unless overwrite is explicitly confirmed
 3. prepares shift blocks, staffing-rule slots, and period-linked background slots
 4. runs daily generation in stable ascending date order
-5. persists assignments and returns an aggregate shortage/conflict summary
+5. repairs hard July work-pattern requirements before ordinary BG/hour top-off
+6. persists assignments and returns an aggregate shortage/conflict summary
 
 The manager schedule route is the whole-day review surface. It displays every
 dated shift block without requiring AM/PM navigation. `/schedule/week` provides
@@ -482,6 +483,13 @@ specific shift template where it appears. `Shifts by GY` is the active employee
 target source for July work-pattern groups, required BG minimums, and 40-hour
 weekly targets. June sheets are ignored by active generation, avoiding both
 missing PM demand and duplicated or historical staffing counts.
+
+July work-pattern math is a hard week-level validation layer. Non-endoscopy
+groups must receive the exact two configured 5-hour weekday shifts before BG
+filler can be used for remaining hour gaps. Monday can satisfy its extra hour
+with either the 7:00 AM-12:00 PM block or the 1:00 PM-6:00 PM block; Tuesday
+through Thursday require 7:00 AM-12:00 PM. The BG column stays separate as an
+employee-level required weekly background minimum.
 
 Manual assignment remains a manager override workflow. Server-side validation
 previews skill, PTO/NPTO, availability, overlap, weekly-limit, expected-hours,

@@ -68,14 +68,21 @@ generation, scoring, and publish validation use the employee profile field as
 the live source of truth.
 
 After required clinic and configured background slots are generated, week/range
-generation runs a deterministic BG/hour top-off pass. It fills existing open
-background-class slots first, then creates optional
+generation first repairs hard July work-pattern requirements. That repair may
+create optional `GENERATED_WORK_PATTERN_TOP_OFF` Background slots on the exact
+5-hour shift needed for a missing group extra-hour day. These are not ordinary
+BG minimum slots; they exist so the scheduler can expose and satisfy the
+configured 40-hour group math.
+
+After work-pattern repair, generation runs the deterministic BG/hour top-off
+pass. It fills existing open background-class slots first, then creates optional
 `GENERATED_BACKGROUND_TOP_OFF` Background slots as needed to meet employee
 BG/background minimums and move employees toward expected weekly hours without
 overfilling them. The pass respects skills, availability, PTO/NPTO, no overlap,
-published-date skipping, work-pattern rules, and locked/manual overrides. If the
-minimum is infeasible, the week view reports the unmet employee requirement and
-a manager must record an override reason before publishing.
+published-date skipping, work-pattern rules, and locked/manual overrides. It
+does not hide an unmet group extra-hour requirement. If the minimum is
+infeasible, the week view reports the unmet employee requirement and a manager
+must record an override reason before publishing.
 
 Period-based `BackgroundTaskDefinition` records remain available for obligations
 that truly recur weekly, biweekly, monthly, or over a custom window. The June

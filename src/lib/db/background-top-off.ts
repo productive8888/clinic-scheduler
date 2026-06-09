@@ -9,6 +9,7 @@ import type {
   SchedulerTaskType,
 } from "@/lib/scheduler";
 import { LEGACY_SHIFT_TEMPLATE_ID } from "@/lib/shifts/legacy";
+import { validateEmployeeWeekPattern } from "@/lib/schedule/work-pattern-requirements";
 import { parseIsoDate, toIsoDate } from "@/lib/utils/date";
 
 export const GENERATED_BACKGROUND_TOP_OFF_SOURCE =
@@ -337,6 +338,24 @@ export async function topOffBackgroundAssignmentsForRange(input: {
     isEndoscopy: backgroundTaskType.isEndoscopy,
     isFloat: backgroundTaskType.isFloat,
   };
+  const hasMissingWorkPatternByEmployeeId = new Map(
+    employees.map((employee) => {
+      const validation = validateEmployeeWeekPattern({
+        employee,
+        assignments: toWorkPatternAssignments(
+          allAssignments.filter(
+            (assignment) => assignment.employeeId === employee.id,
+          ),
+        ),
+      });
+
+      return [
+        employee.id,
+        !validation.hasRequiredSaturday ||
+          validation.missingExtraHourWeekdays.length > 0,
+      ] as const;
+    }),
+  );
 
   let progress = true;
   let guard = 0;
@@ -345,7 +364,11 @@ export async function topOffBackgroundAssignmentsForRange(input: {
     progress = false;
     guard += 1;
 
-    for (const employee of employeesNeedingTopOff(employees, states)) {
+    for (const employee of employeesNeedingTopOff(
+      employees,
+      states,
+      hasMissingWorkPatternByEmployeeId,
+    )) {
       const state = states.get(employee.id)!;
       const existingSlot = findExistingBackgroundSlot({
         employee,
@@ -542,16 +565,19 @@ function toTopOffEmployee(
 function employeesNeedingTopOff(
   employees: TopOffEmployee[],
   states: Map<string, TopOffEmployeeState>,
+  hasMissingWorkPatternByEmployeeId: Map<string, boolean>,
 ) {
   return [...employees]
     .filter((employee) => {
       const state = states.get(employee.id);
-
-      return Boolean(
+      const needsBackground =
         state &&
-          (state.backgroundAssignments < employee.requiredBackgroundAssignments ||
-            state.hours < employee.expectedHours),
-      );
+        state.backgroundAssignments < employee.requiredBackgroundAssignments;
+      const needsHours = state && state.hours < employee.expectedHours;
+      const hasMissingWorkPattern =
+        hasMissingWorkPatternByEmployeeId.get(employee.id) ?? false;
+
+      return Boolean(needsBackground || (needsHours && !hasMissingWorkPattern));
     })
     .sort((left, right) => {
       const leftState = states.get(left.id)!;
@@ -760,6 +786,17 @@ function weekdayPreferenceScore(employee: TopOffEmployee, shiftBlock: TopOffShif
 
 function shiftKeyForSlot(slot: Pick<TopOffSlot, "date" | "shiftBlockId">) {
   return `${slot.date}:${slot.shiftBlockId ?? "none"}`;
+}
+
+function toWorkPatternAssignments(assignments: ExistingAssignment[]) {
+  return assignments.map((assignment) => ({
+    date: assignment.date,
+    shiftBlockId: assignment.shiftBlockId ?? assignment.slotId,
+    shiftCategory: assignment.shiftCategory,
+    startMinute: assignment.startMinute ?? 0,
+    endMinute: assignment.endMinute ?? 24 * 60,
+    paidHours: assignment.paidHours ?? 0,
+  }));
 }
 
 function jsonNumberArray(value: unknown) {

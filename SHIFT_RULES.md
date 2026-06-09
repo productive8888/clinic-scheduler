@@ -48,8 +48,9 @@ demand count.
 
 `Shifts + Hours` is the active reusable Easton demand source. Every nonzero
 clinic and background count is stored against its exact shift template, so PM
-and Saturday blocks do not depend on the 8:00 AM safe default. June sheets are
-ignored for active generation and no longer create schedule-pattern slots.
+and Saturday blocks do not depend on the 8:00 AM safe default. June sheets,
+including `June Schedule`, `June Shifts by GY`, and `June Shifts + Hours`, are
+deprecated for active generation and no longer create schedule-pattern slots.
 
 `Shifts by GY` is the active Easton employee-target source. Its group column is
 imported as hard July work-pattern metadata: `Saturday` means the 6:00 AM-2:00
@@ -59,6 +60,12 @@ make-up shifts on the listed weekdays. The sheet's BG value is copied to the
 matched employee profile as `requiredWeeklyBackgroundShifts`; the imported
 target row remains a snapshot, but the employee field drives current generation
 and publish validation.
+
+For Tuesday, Wednesday, and Thursday, a group make-up day is satisfied only by
+the 7:00 AM-12:00 PM shift. For Monday, either 7:00 AM-12:00 PM or
+1:00 PM-6:00 PM satisfies the make-up day. Week generation repairs these hard
+requirements before any general BG/hour filler runs, so a normal non-endoscopy
+employee should not remain at 38 hours when a group-compliant week is feasible.
 
 Generation summaries explicitly report total, AM, PM, and Saturday block
 counts plus generated BG/hour top-off slots. The schedule status calendar

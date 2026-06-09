@@ -62,6 +62,8 @@ export type EastonWorkbookPreview = {
 };
 
 const PRIVATE_WORKBOOK_CANDIDATES = [
+  path.join(process.cwd(), "private", "New Easton Scheduling.xlsx"),
+  path.join(process.cwd(), "private", "new easton scheduling.xlsx"),
   path.join(process.cwd(), "private", "easton-scheduling.xlsx"),
   path.join(process.cwd(), "private", "Copy of Easton Scheduling.xlsx"),
 ];

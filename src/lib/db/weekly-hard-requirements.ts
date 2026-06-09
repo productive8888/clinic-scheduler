@@ -42,8 +42,11 @@ export async function getWeeklyHardRequirementSummary(input: {
         workPattern: {
           select: {
             code: true,
+            kind: true,
             targetWeeklyHours: true,
             extraHourWeekdays: true,
+            requiredSaturdayShiftCategory: true,
+            saturdayPaidHours: true,
           },
         },
       },
@@ -86,6 +89,12 @@ export async function getWeeklyHardRequirementSummary(input: {
         employeeName: employee.fullName,
         workPatternCode:
           employee.workPattern?.code ?? importedTarget?.workPatternCode ?? null,
+        workPatternKind: employee.workPattern?.kind ?? null,
+        requiredSaturdayShiftCategory:
+          employee.workPattern?.requiredSaturdayShiftCategory ?? null,
+        saturdayPaidHours: employee.workPattern?.saturdayPaidHours
+          ? Number(employee.workPattern.saturdayPaidHours)
+          : null,
         requiresWorkPattern:
           Boolean(importedTarget && hasMeaningfulImportedTarget(importedTarget)) ||
           Boolean(employee.workPattern),
@@ -110,6 +119,9 @@ export async function getWeeklyHardRequirementSummary(input: {
         employeeId: target.employeeId,
         employeeName: target.employeeName,
         workPatternCode: target.workPatternCode,
+        workPatternKind: null,
+        requiredSaturdayShiftCategory: null,
+        saturdayPaidHours: null,
         requiresWorkPattern: true,
         requiredBackgroundAssignments: target.requiredBackgroundAssignments,
         extraHourWeekdays: jsonNumberArray(target.extraHourWeekdays),
@@ -123,6 +135,8 @@ export async function getWeeklyHardRequirementSummary(input: {
         date: toIsoDate(day.date),
         shiftBlockId: slot.shiftBlockId,
         shiftCategory: slot.shiftBlock.shiftCategory,
+        startMinute: slot.shiftBlock.startMinute,
+        endMinute: slot.shiftBlock.endMinute,
         paidHours: Number(slot.shiftBlock.paidHours),
         taskTypeCode: slot.taskType.code,
         isBackground: slot.taskType.isBackground,

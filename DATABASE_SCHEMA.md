@@ -66,8 +66,10 @@ versioned migrations in `prisma/migrations`.
   `shiftBlockId`, requirement level (`REQUIRED`, `DESIRED`, `OPTIONAL`, or
   `CONDITIONAL`), source (`DEFAULT`, `STAFFING_RULE`, `MANUAL`, or
   `BACKGROUND_DEFINITION`). Generated weekly top-off filler uses
-  `GENERATED_BACKGROUND_TOP_OFF` as its slot source. Task slots can optionally
-  link to the generated background task instance that created them.
+  `GENERATED_BACKGROUND_TOP_OFF` as its slot source, while hard July
+  work-pattern repair uses `GENERATED_WORK_PATTERN_TOP_OFF` for optional slots
+  created on exact required 5-hour group shifts. Task slots can optionally link
+  to the generated background task instance that created them.
 - `StaffingRequirementRule`: admin-configured multi-slot requirements by task
   type, shift template or shift category, weekday, scenario, effective date
   range, min/desired/max slots, requirement level, active state, and notes.
@@ -83,7 +85,9 @@ versioned migrations in `prisma/migrations`.
   editable closure/pull order without silently dropping clinic roles.
 - `WorkPattern`: editable employee work-pattern templates, including exact
   July Easton groups, target weekly hours, required Saturday shift category,
-  Saturday paid hours, and configured extra-hour weekdays.
+  Saturday paid hours, and configured extra-hour weekdays. Generation validates
+  the exact group weekdays, including Monday's early-or-late 5-hour equivalence,
+  before ordinary BG/hour top-off is allowed to fill remaining gaps.
 - `SchedulePattern` and `SchedulePatternSlot`: editable/reference weekly
   schedule pattern storage. The active July Easton import uses
   `SchedulePattern` only as an employee-target container and does not create

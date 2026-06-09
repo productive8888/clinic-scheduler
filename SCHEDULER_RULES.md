@@ -82,9 +82,11 @@ not contain scheduling decisions.
   8:00 AM-12:00 PM, Monday long PM 1:00 PM-6:00 PM where configured,
   weekday regular PM 1:00 PM-5:00 PM, Saturday long/endoscopy
   6:00 AM-2:00 PM, and Saturday shorter 8:00 AM-2:00 PM.
-- The private Easton workbook can be parsed from `private/easton-scheduling.xlsx`
-  or `private/Copy of Easton Scheduling.xlsx` through the admin Easton import
-  page. Parsed July shifts, role demand, employee targets, BG minimums, and work
+- The private Easton workbook can be parsed from
+  `private/New Easton Scheduling.xlsx`, `private/new easton scheduling.xlsx`,
+  `private/easton-scheduling.xlsx`, or
+  `private/Copy of Easton Scheduling.xlsx` through the admin Easton import page.
+  Parsed July shifts, role demand, employee targets, BG minimums, and work
   pattern groups are reviewed before applying editable database rules.
 - `Shifts + Hours` is the active reusable source for Easton shift templates and
   staffing demand. Its counts are per shift block, never whole-day totals.
@@ -130,15 +132,28 @@ not contain scheduling decisions.
   the range.
 - Day/week/month/range generation is one operation: it prepares dated shift
   blocks, reconciles clinic and period-linked background slots, invokes the
-  shared scheduler, runs a deterministic BG/hour top-off pass, persists
-  assignments and conflict state, and returns an aggregate review summary.
+  shared scheduler, repairs hard July work-pattern requirements, runs a
+  deterministic BG/hour top-off pass, persists assignments and conflict state,
+  and returns an aggregate review summary.
+- July work-pattern repair is hard. For non-endoscopy employees, the employee's
+  group weekdays from `Shifts by GY` must be satisfied by exact 5-hour shifts:
+  Tuesday, Wednesday, and Thursday use 7:00 AM-12:00 PM; Monday may use either
+  7:00 AM-12:00 PM or 1:00 PM-6:00 PM. Saturday endoscopy employees must use
+  the 6:00 AM-2:00 PM Saturday block and have no weekday extra-hour requirement.
+  Non-endoscopy Saturday employees must use the 8:00 AM-2:00 PM Saturday block.
+- If a valid generated week misses a group extra-hour day, generation first
+  tries deterministic swaps among generated nonlocked assignments, then creates
+  optional `GENERATED_WORK_PATTERN_TOP_OFF` Background slots on the exact
+  required shift when that is the only safe way to expose the missing hour.
+  These slots are separate from ordinary BG minimum filler.
 - The BG/hour top-off pass fills existing open background-class slots first,
   then creates optional `GENERATED_BACKGROUND_TOP_OFF` Background slots when
   needed. It tries to meet required weekly BG/background minimums and move
-  employees toward expected weekly hours without exceeding those hours. It still
-  enforces skills, recurring availability, PTO/NPTO, no overlapping shifts,
-  work-pattern Saturday rules, published-date skip rules, and locked/manual
-  overrides. Infeasible gaps remain visible as hard weekly issues.
+  employees toward expected weekly hours without exceeding those hours. It runs
+  after July group repair and does not mask missing group extra-hour days. It
+  still enforces skills, recurring availability, PTO/NPTO, no overlapping
+  shifts, work-pattern Saturday rules, published-date skip rules, and
+  locked/manual overrides. Infeasible gaps remain visible as hard weekly issues.
 - Generation summaries report total, AM, PM, and Saturday shift blocks,
   clinic/background slots, top-off slots and assignments, fills, required
   shortages, conflicts, published skips, regenerated dates, and employees

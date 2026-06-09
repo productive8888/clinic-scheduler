@@ -6,6 +6,10 @@ import {
 import { generateBackgroundTaskSlotsForRange } from "@/lib/db/background-generation";
 import { getDb } from "@/lib/db";
 import {
+  clearGeneratedWorkPatternTopOffSlots,
+  enforceWorkPatternRequirementsForRange,
+} from "@/lib/db/work-pattern-repair";
+import {
   ensureScheduleDayWithDefaultSlots,
   generateScheduleForDate,
   getScheduleBoard,
@@ -81,6 +85,10 @@ export type BulkGenerationSummary = {
   backgroundTopOffSlotsCreated: number;
   backgroundTopOffAssignmentsCreated: number;
   backgroundTopOffIncompleteEmployees: number;
+  workPatternTopOffSlotsCreated: number;
+  workPatternAssignmentsCreated: number;
+  workPatternSwapsMade: number;
+  workPatternUnresolved: number;
   backgroundSkippedDefinitions: string[];
   backgroundSkippedPeriods: string[];
   configurationWarnings: string[];
@@ -154,6 +162,10 @@ export async function generateScheduleRange(input: {
     backgroundTopOffSlotsCreated: 0,
     backgroundTopOffAssignmentsCreated: 0,
     backgroundTopOffIncompleteEmployees: 0,
+    workPatternTopOffSlotsCreated: 0,
+    workPatternAssignmentsCreated: 0,
+    workPatternSwapsMade: 0,
+    workPatternUnresolved: 0,
     backgroundSkippedDefinitions: [],
     backgroundSkippedPeriods: [],
     configurationWarnings: await getGenerationConfigurationWarnings(),
@@ -185,6 +197,9 @@ export async function generateScheduleRange(input: {
 
   if (datesToGenerate.length > 0) {
     await clearGeneratedBackgroundTopOffSlots({
+      allowedDates: datesToGenerate,
+    });
+    await clearGeneratedWorkPatternTopOffSlots({
       allowedDates: datesToGenerate,
     });
 
@@ -221,6 +236,18 @@ export async function generateScheduleRange(input: {
   }
 
   if (datesToGenerate.length > 0) {
+    const workPatternSummary = await enforceWorkPatternRequirementsForRange({
+      startDate: input.startDate,
+      endDate: input.endDate,
+      allowedDates: datesToGenerate,
+      actorEmployeeId: input.actorEmployeeId,
+    });
+    summary.workPatternTopOffSlotsCreated = workPatternSummary.slotsCreated;
+    summary.workPatternAssignmentsCreated =
+      workPatternSummary.assignmentsCreated;
+    summary.workPatternSwapsMade = workPatternSummary.swapsMade;
+    summary.workPatternUnresolved = workPatternSummary.unresolved.length;
+
     const topOffSummary = await topOffBackgroundAssignmentsForRange({
       startDate: input.startDate,
       endDate: input.endDate,
@@ -638,6 +665,12 @@ export async function getScheduleWeekData(anchorDate: string) {
       .filter((target) => target.employeeId)
       .map((target) => [target.employeeId!, target]),
   );
+  const diagnosticsByEmployeeId = new Map(
+    hardRequirements.employeeDiagnostics.map((diagnostic) => [
+      diagnostic.employeeId,
+      diagnostic,
+    ]),
+  );
   const issuesByEmployeeId = new Map<string, typeof hardRequirements.issues>();
 
   for (const issue of hardRequirements.issues) {
@@ -655,6 +688,7 @@ export async function getScheduleWeekData(anchorDate: string) {
   );
   const staffRows = baseStaffRows.map((row) => {
     const target = targetsByEmployeeId.get(row.employeeId);
+    const diagnostic = diagnosticsByEmployeeId.get(row.employeeId);
 
     return {
       ...row,
@@ -663,7 +697,18 @@ export async function getScheduleWeekData(anchorDate: string) {
         : null,
       requiredBackgroundAssignments:
         target?.requiredBackgroundAssignments ?? 0,
+      missingBackgroundAssignments:
+        diagnostic?.missingBackgroundAssignments ?? 0,
       extraHourWeekdays: target?.extraHourWeekdays ?? [],
+      satisfiedExtraHourWeekdays:
+        diagnostic?.workPattern.satisfiedExtraHourWeekdays ?? [],
+      missingExtraHourWeekdays:
+        diagnostic?.workPattern.missingExtraHourWeekdays ?? [],
+      saturdayAssignment: diagnostic?.workPattern.saturdayAssignment ?? null,
+      requiredSaturdayShiftCategory:
+        diagnostic?.workPattern.requiredSaturdayShiftCategory ?? null,
+      requiredSaturdayPaidHours:
+        diagnostic?.workPattern.requiredSaturdayPaidHours ?? null,
       hardRequirementIssues: issuesByEmployeeId.get(row.employeeId) ?? [],
     };
   });
