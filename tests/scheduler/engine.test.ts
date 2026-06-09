@@ -74,6 +74,7 @@ import {
   REQUIRED_CONFIGURABLE_SKILLS,
   REQUIRED_TASK_SKILL_CODES,
 } from "../../src/lib/skills/catalog";
+import { employeeFormSchema } from "../../src/lib/validation/employee";
 
 const monday = "2026-06-01";
 const saturday = "2026-06-06";
@@ -2170,6 +2171,7 @@ describe("Easton July hard requirements", () => {
           workPatternCode: "EASTON_GROUP_T_TH",
           requiredBackgroundAssignments: 2,
           extraHourWeekdays: [2, 4],
+          expectedWeeklyHours: 40,
         },
       ],
       assignments: [
@@ -2180,6 +2182,7 @@ describe("Easton July hard requirements", () => {
           shiftCategory: "AM",
           paidHours: 4,
           taskTypeCode: "BACKGROUND",
+          isBackground: true,
         },
       ],
     });
@@ -2189,6 +2192,10 @@ describe("Easton July hard requirements", () => {
     assert.equal(result.workPatternIssues.length, 3);
     assert.equal(
       result.issues.some((issue) => issue.code === "SATURDAY_PATTERN_UNMET"),
+      true,
+    );
+    assert.equal(
+      result.issues.some((issue) => issue.code === "BELOW_EXPECTED_HOURS"),
       true,
     );
     assert.equal(
@@ -2207,6 +2214,7 @@ describe("Easton July hard requirements", () => {
           requiresWorkPattern: true,
           requiredBackgroundAssignments: 0,
           extraHourWeekdays: [],
+          expectedWeeklyHours: 0,
         },
         {
           employeeId: "placeholder",
@@ -2215,6 +2223,7 @@ describe("Easton July hard requirements", () => {
           requiresWorkPattern: false,
           requiredBackgroundAssignments: 0,
           extraHourWeekdays: [],
+          expectedWeeklyHours: 0,
         },
       ],
       assignments: [],
@@ -2234,6 +2243,7 @@ describe("Easton July hard requirements", () => {
           workPatternCode: "EASTON_GROUP_T_TH",
           requiredBackgroundAssignments: 2,
           extraHourWeekdays: [2, 4],
+          expectedWeeklyHours: 16,
         },
       ],
       assignments: [
@@ -2244,6 +2254,7 @@ describe("Easton July hard requirements", () => {
           shiftCategory: "AM",
           paidHours: 5,
           taskTypeCode: "BACKGROUND",
+          isBackground: true,
         },
         {
           employeeId: "yvonne",
@@ -2251,7 +2262,8 @@ describe("Easton July hard requirements", () => {
           shiftBlockId: "thu-early",
           shiftCategory: "AM",
           paidHours: 5,
-          taskTypeCode: "BACKGROUND",
+          taskTypeCode: "RESEARCH",
+          isBackground: true,
         },
         {
           employeeId: "yvonne",
@@ -2260,6 +2272,7 @@ describe("Easton July hard requirements", () => {
           shiftCategory: "SATURDAY",
           paidHours: 6,
           taskTypeCode: "NEW_ALLERGY",
+          isBackground: false,
         },
       ],
     });
@@ -2639,6 +2652,27 @@ describe("automated scheduling workflow foundations", () => {
     assert.deepEqual(REQUIRED_TASK_SKILL_CODES.PRIOR_AUTHORIZATION, [
       "PRIOR_AUTHORIZATION",
     ]);
+  });
+
+  it("parses required weekly BG shifts from the employee form", () => {
+    const parsed = employeeFormSchema.parse({
+      fullName: "Test Employee",
+      email: "test@example.com",
+      authProviderId: "",
+      role: "EMPLOYEE",
+      status: "ACTIVE",
+      ptoBalanceHours: "0",
+      expectedWeeklyHours: "40",
+      requiredWeeklyBackgroundShifts: "3",
+      weeklyAssignmentLimit: "",
+      workPatternId: "",
+      startDate: "2026-07-01",
+      endDate: "",
+      skillIds: [],
+      availability: [],
+    });
+
+    assert.equal(parsed.requiredWeeklyBackgroundShifts, 3);
   });
 
   for (const [taskCode, skillCode] of [

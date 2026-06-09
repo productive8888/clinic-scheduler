@@ -108,6 +108,11 @@
   `Shifts by GY`.
 - Hard weekly validation for July work-pattern requirements and employee BG
   minimums, with week-view blockers and audited publish override reasons.
+- Employee-owned required weekly BG/background minimums, imported from Easton
+  `Shifts by GY` but editable in employee profiles, plus deterministic
+  BG/hour top-off slots after clinic coverage generation.
+- Soft week-to-week consistency preference from the previous published matching
+  weekday/shift/task assignment.
 - Task type classification flags are manager-editable from the staffing admin
   page.
 - Endoscopy extra-hour payroll policy defaults to PTO banking and avoids

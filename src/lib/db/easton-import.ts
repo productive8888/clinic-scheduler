@@ -753,6 +753,8 @@ export async function applyEastonDefaultsFromWorkbook(input: {
     const employeeIdByName = new Map(
       employees.map((employee) => [normalizeName(employee.fullName), employee.id]),
     );
+    const unmatchedTargetNames: string[] = [];
+
     for (const target of preview.employeeTargets) {
       const employeeId =
         employeeIdByName.get(normalizeName(target.employeeName)) ?? null;
@@ -760,12 +762,18 @@ export async function applyEastonDefaultsFromWorkbook(input: {
         ? workPatternIdByCode.get(target.workPatternCode) ?? null
         : null;
 
-      if (employeeId && workPatternId) {
+      if (!employeeId && hasMeaningfulEmployeeTarget(target)) {
+        unmatchedTargetNames.push(target.employeeName);
+      }
+
+      if (employeeId) {
         await tx.employee.update({
           where: { id: employeeId },
           data: {
             expectedWeeklyHours: 40,
-            workPatternId,
+            requiredWeeklyBackgroundShifts:
+              target.requiredBackgroundAssignments,
+            ...(workPatternId ? { workPatternId } : {}),
           },
         });
       }
@@ -809,6 +817,9 @@ export async function applyEastonDefaultsFromWorkbook(input: {
           ...skippedPullNames.map(
             (name) => `Skipped background pull rule for missing employee: ${name}`,
           ),
+          ...unmatchedTargetNames.map(
+            (name) => `Imported target row could not be linked to an active employee: ${name}`,
+          ),
         ] as Prisma.InputJsonArray,
         createdByEmployeeId: input.actorEmployeeId ?? null,
         appliedAt: new Date(),
@@ -824,6 +835,7 @@ export async function applyEastonDefaultsFromWorkbook(input: {
       shortageRuleCount: SHORTAGE_DEFAULTS.length,
       workPatternCount: workPatternIdByCode.size,
       skippedPullNames,
+      unmatchedTargetNames,
       patternSlotCount: 0,
       employeeTargetCount: preview.employeeTargets.length,
     };
@@ -887,6 +899,22 @@ function weekdayName(weekday: number) {
 
 function normalizeName(name: string) {
   return name.trim().toLowerCase().replace(/\s+/g, " ");
+}
+
+function hasMeaningfulEmployeeTarget(target: {
+  requiredBackgroundAssignments: number;
+  targetPatientShifts: number | null;
+  targetTotalHours: number | null;
+  targetTaskCounts: Record<string, number>;
+  exposureGoals: string[];
+}) {
+  return (
+    target.requiredBackgroundAssignments > 0 ||
+    Number(target.targetPatientShifts ?? 0) > 0 ||
+    Number(target.targetTotalHours ?? 0) > 0 ||
+    target.exposureGoals.length > 0 ||
+    Object.values(target.targetTaskCounts).some((value) => value > 0)
+  );
 }
 
 export function isEastonBackgroundRole(roleCode: string) {

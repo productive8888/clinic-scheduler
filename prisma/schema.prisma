@@ -169,22 +169,23 @@ enum PayrollAdjustmentType {
 }
 
 model Employee {
-  id                    String         @id @default(cuid())
-  authProviderId        String?        @unique
-  email                 String         @unique
-  fullName              String
-  role                  EmployeeRole   @default(EMPLOYEE)
-  status                EmployeeStatus @default(ACTIVE)
-  ptoBalanceHours       Decimal        @default(0) @db.Decimal(7, 2)
-  expectedWeeklyHours   Decimal        @default(40) @db.Decimal(6, 2)
-  compTimeBalanceHours  Decimal        @default(0) @db.Decimal(7, 2)
-  weeklyAssignmentLimit Int?
-  workPatternId         String?
-  startDate             DateTime       @db.Date
-  endDate               DateTime?      @db.Date
-  notes                 String?
-  createdAt             DateTime       @default(now())
-  updatedAt             DateTime       @updatedAt
+  id                             String         @id @default(cuid())
+  authProviderId                 String?        @unique
+  email                          String         @unique
+  fullName                       String
+  role                           EmployeeRole   @default(EMPLOYEE)
+  status                         EmployeeStatus @default(ACTIVE)
+  ptoBalanceHours                Decimal        @default(0) @db.Decimal(7, 2)
+  expectedWeeklyHours            Decimal        @default(40) @db.Decimal(6, 2)
+  requiredWeeklyBackgroundShifts Int            @default(0)
+  compTimeBalanceHours           Decimal        @default(0) @db.Decimal(7, 2)
+  weeklyAssignmentLimit          Int?
+  workPatternId                  String?
+  startDate                      DateTime       @db.Date
+  endDate                        DateTime?      @db.Date
+  notes                          String?
+  createdAt                      DateTime       @default(now())
+  updatedAt                      DateTime       @updatedAt
 
   skills                     EmployeeSkill[]
   availability               WeeklyAvailability[]

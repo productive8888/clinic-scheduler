@@ -6,9 +6,11 @@ versioned migrations in `prisma/migrations`.
 ## Core Tables
 
 - `Employee`: staff profile, Auth.js user link, role, status, PTO balance,
-  expected weekly hours, comp-time balance display field, weekly assignment
-  limit, start/end dates. Employee role/status remains the source of truth for
-  authorization.
+  expected weekly hours, required weekly BG/background shift minimum,
+  comp-time balance display field, weekly assignment limit, work pattern,
+  start/end dates. Employee role/status remains the source of truth for
+  authorization, and `requiredWeeklyBackgroundShifts` is the live source of
+  truth for weekly BG/background minimums.
 - `User`, `Account`, `Session`, and `VerificationToken`: Auth.js-owned
   authentication tables for magic-link users, persistent sessions, and email
   verification tokens.
@@ -63,8 +65,9 @@ versioned migrations in `prisma/migrations`.
 - `TaskSlot`: concrete task opening on a schedule day, including `slotIndex`,
   `shiftBlockId`, requirement level (`REQUIRED`, `DESIRED`, `OPTIONAL`, or
   `CONDITIONAL`), source (`DEFAULT`, `STAFFING_RULE`, `MANUAL`, or
-  `BACKGROUND_DEFINITION`), and an optional link to the generated background
-  task instance that created it.
+  `BACKGROUND_DEFINITION`). Generated weekly top-off filler uses
+  `GENERATED_BACKGROUND_TOP_OFF` as its slot source. Task slots can optionally
+  link to the generated background task instance that created them.
 - `StaffingRequirementRule`: admin-configured multi-slot requirements by task
   type, shift template or shift category, weekday, scenario, effective date
   range, min/desired/max slots, requirement level, active state, and notes.
@@ -86,9 +89,11 @@ versioned migrations in `prisma/migrations`.
   `SchedulePattern` only as an employee-target container and does not create
   slots from June sample assignments.
 - `EmployeeScheduleTarget`: spreadsheet-derived target counts by employee name
-  or employee link, including patient-shift targets, per-role counts, required
-  weekly BG minimums, imported work-pattern code, extra-hour weekdays, exposure
-  goals, and 40-hour weekly targets.
+  or employee link, including patient-shift targets, per-role counts, imported
+  BG minimum snapshots, imported work-pattern code, extra-hour weekdays,
+  exposure goals, and 40-hour weekly targets. These rows remain historical and
+  auditable; current generation and publish validation read the editable
+  employee profile field for required weekly BG/background shifts.
 - `BackgroundPullRule`: employee-specific pull order and max-pull caps for
   pullable, non-protected background work.
 - `BackgroundTaskCategory`, `BackgroundTaskDefinition`, and

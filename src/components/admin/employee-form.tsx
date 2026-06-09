@@ -117,6 +117,18 @@ export function EmployeeForm({ skills, workPatterns = [], employee }: EmployeeFo
           />
         </label>
         <label className="grid gap-1 text-sm font-medium text-slate-700">
+          Required weekly BG shifts
+          <input
+            name="requiredWeeklyBackgroundShifts"
+            type="number"
+            min="0"
+            max="20"
+            step="1"
+            defaultValue={employee?.requiredWeeklyBackgroundShifts ?? 0}
+            className="h-10 rounded-md border border-slate-300 bg-white px-3 text-slate-950 outline-none focus:border-emerald-700"
+          />
+        </label>
+        <label className="grid gap-1 text-sm font-medium text-slate-700">
           Weekly assignment limit
           <input
             name="weeklyAssignmentLimit"

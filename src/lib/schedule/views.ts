@@ -163,7 +163,8 @@ export function buildWeekStaffSummary(input: {
         .length,
       backgroundShiftCount: uniqueShifts.filter((shift) => shift.background).length,
       backgroundAssignmentCount: assignments.filter(
-        (assignment) => assignment.taskTypeCode === "BACKGROUND",
+        (assignment) =>
+          assignment.taskTypeCode === "BACKGROUND" || assignment.isBackground,
       ).length,
       saturdayEndoscopyCount: uniqueShifts.filter(
         (shift) => shift.saturdayOrEndoscopy,

@@ -1,4 +1,8 @@
 import { writeAuditLog } from "@/lib/audit";
+import {
+  clearGeneratedBackgroundTopOffSlots,
+  topOffBackgroundAssignmentsForRange,
+} from "@/lib/db/background-top-off";
 import { generateBackgroundTaskSlotsForRange } from "@/lib/db/background-generation";
 import { getDb } from "@/lib/db";
 import {
@@ -74,6 +78,9 @@ export type BulkGenerationSummary = {
   publishedDatesSkipped: string[];
   publishedDatesOverwritten: string[];
   backgroundSlotsCreated: number;
+  backgroundTopOffSlotsCreated: number;
+  backgroundTopOffAssignmentsCreated: number;
+  backgroundTopOffIncompleteEmployees: number;
   backgroundSkippedDefinitions: string[];
   backgroundSkippedPeriods: string[];
   configurationWarnings: string[];
@@ -144,6 +151,9 @@ export async function generateScheduleRange(input: {
     publishedDatesSkipped: [],
     publishedDatesOverwritten: [],
     backgroundSlotsCreated: 0,
+    backgroundTopOffSlotsCreated: 0,
+    backgroundTopOffAssignmentsCreated: 0,
+    backgroundTopOffIncompleteEmployees: 0,
     backgroundSkippedDefinitions: [],
     backgroundSkippedPeriods: [],
     configurationWarnings: await getGenerationConfigurationWarnings(),
@@ -174,6 +184,10 @@ export async function generateScheduleRange(input: {
   );
 
   if (datesToGenerate.length > 0) {
+    await clearGeneratedBackgroundTopOffSlots({
+      allowedDates: datesToGenerate,
+    });
+
     for (const date of datesToGenerate) {
       await ensureScheduleDayWithDefaultSlots(date, input.actorEmployeeId);
     }
@@ -192,16 +206,42 @@ export async function generateScheduleRange(input: {
     summary.backgroundSkippedPeriods = backgroundSummary.skippedPeriods;
   }
 
+  const generationResults = new Map<
+    string,
+    Awaited<ReturnType<typeof generateScheduleForDate>>
+  >();
+
   for (const date of datesToGenerate) {
-    const beforeBoard = beforeBoards.get(date) ?? null;
     const result = await generateScheduleForDate({
       date,
       seed: `${input.seedPrefix}:${date}`,
       actorEmployeeId: input.actorEmployeeId,
     });
+    generationResults.set(date, result);
+  }
+
+  if (datesToGenerate.length > 0) {
+    const topOffSummary = await topOffBackgroundAssignmentsForRange({
+      startDate: input.startDate,
+      endDate: input.endDate,
+      allowedDates: datesToGenerate,
+      actorEmployeeId: input.actorEmployeeId,
+    });
+
+    summary.backgroundTopOffSlotsCreated = topOffSummary.slotsCreated;
+    summary.backgroundTopOffAssignmentsCreated = topOffSummary.assignmentsCreated;
+    summary.backgroundTopOffIncompleteEmployees =
+      topOffSummary.employeesMissingBackground.length +
+      topOffSummary.employeesUnderExpectedHours.length;
+    summary.configurationWarnings.push(...topOffSummary.configurationWarnings);
+  }
+
+  for (const date of datesToGenerate) {
+    const beforeBoard = beforeBoards.get(date) ?? null;
+    const result = generationResults.get(date);
     const board = await getScheduleBoard(date);
 
-    if (!board) {
+    if (!board || !result) {
       continue;
     }
 

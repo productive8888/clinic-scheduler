@@ -360,7 +360,7 @@ function StaffSummaryTable({
                     <strong>{row.patientFacingShiftCount}</strong>
                     <span>Background shifts</span>
                     <strong>{row.backgroundShiftCount}</strong>
-                    <span>Required BG</span>
+                    <span>BG/background min</span>
                     <strong>
                       {row.backgroundAssignmentCount}/
                       {row.requiredBackgroundAssignments}

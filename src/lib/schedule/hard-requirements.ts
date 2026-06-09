@@ -8,6 +8,7 @@ export type WeeklyHardRequirementTarget = {
   requiresWorkPattern?: boolean;
   requiredBackgroundAssignments: number;
   extraHourWeekdays: number[];
+  expectedWeeklyHours: number;
 };
 
 export type WeeklyHardRequirementAssignment = {
@@ -17,6 +18,7 @@ export type WeeklyHardRequirementAssignment = {
   shiftCategory: string;
   paidHours: number;
   taskTypeCode: string;
+  isBackground: boolean;
 };
 
 export type WeeklyHardRequirementIssue = {
@@ -24,6 +26,7 @@ export type WeeklyHardRequirementIssue = {
     | "UNMATCHED_TARGET_EMPLOYEE"
     | "WORK_PATTERN_MISSING"
     | "BG_MINIMUM_UNMET"
+    | "BELOW_EXPECTED_HOURS"
     | "SATURDAY_PATTERN_UNMET"
     | "EXTRA_HOUR_DAY_UNMET";
   employeeId: string | null;
@@ -73,8 +76,10 @@ export function evaluateWeeklyHardRequirements(input: {
 
     const employeeAssignments = assignmentsByEmployeeId.get(target.employeeId) ?? [];
     const backgroundAssignments = employeeAssignments.filter(
-      (assignment) => assignment.taskTypeCode === "BACKGROUND",
+      (assignment) =>
+        assignment.taskTypeCode === "BACKGROUND" || assignment.isBackground,
     ).length;
+    const scheduledHours = uniqueScheduledHours(employeeAssignments);
 
     if (
       target.requiredBackgroundAssignments > 0 &&
@@ -85,6 +90,15 @@ export function evaluateWeeklyHardRequirements(input: {
         employeeId: target.employeeId,
         employeeName: target.employeeName,
         message: `${target.employeeName} has ${backgroundAssignments}/${target.requiredBackgroundAssignments} required BG assignments.`,
+      });
+    }
+
+    if (target.expectedWeeklyHours > 0 && scheduledHours < target.expectedWeeklyHours) {
+      issues.push({
+        code: "BELOW_EXPECTED_HOURS",
+        employeeId: target.employeeId,
+        employeeName: target.employeeName,
+        message: `${target.employeeName} has ${formatHours(scheduledHours)}/${formatHours(target.expectedWeeklyHours)} expected weekly hours scheduled.`,
       });
     }
 
@@ -143,4 +157,21 @@ export function evaluateWeeklyHardRequirements(input: {
     ),
     canPublish: issues.length === 0,
   };
+}
+
+function uniqueScheduledHours(assignments: WeeklyHardRequirementAssignment[]) {
+  const shifts = new Map<string, number>();
+
+  for (const assignment of assignments) {
+    shifts.set(
+      `${assignment.date}:${assignment.shiftBlockId}`,
+      assignment.paidHours,
+    );
+  }
+
+  return [...shifts.values()].reduce((total, hours) => total + hours, 0);
+}
+
+function formatHours(value: number) {
+  return Number.isInteger(value) ? String(value) : value.toFixed(2);
 }

@@ -61,10 +61,21 @@ whole-day or weekly totals. Previously imported Easton weekly definitions are
 archived when the workbook defaults are reapplied.
 
 Easton `Shifts by GY` BG values are separate employee-specific weekly minimums.
-They are imported into `EmployeeScheduleTarget`, influence BG assignment scoring,
-and are hard publish checks for the week. If PTO/NPTO or availability makes the
-minimum infeasible, the week view reports the unmet employee requirement and a
-manager must record an override reason before publishing.
+They are imported into each matched `Employee.requiredWeeklyBackgroundShifts`
+field so managers can edit them directly from employee profiles. The same value
+is also preserved in `EmployeeScheduleTarget` as the import snapshot. Current
+generation, scoring, and publish validation use the employee profile field as
+the live source of truth.
+
+After required clinic and configured background slots are generated, week/range
+generation runs a deterministic BG/hour top-off pass. It fills existing open
+background-class slots first, then creates optional
+`GENERATED_BACKGROUND_TOP_OFF` Background slots as needed to meet employee
+BG/background minimums and move employees toward expected weekly hours without
+overfilling them. The pass respects skills, availability, PTO/NPTO, no overlap,
+published-date skipping, work-pattern rules, and locked/manual overrides. If the
+minimum is infeasible, the week view reports the unmet employee requirement and
+a manager must record an override reason before publishing.
 
 Period-based `BackgroundTaskDefinition` records remain available for obligations
 that truly recur weekly, biweekly, monthly, or over a custom window. The June

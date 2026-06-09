@@ -55,12 +55,17 @@ ignored for active generation and no longer create schedule-pattern slots.
 imported as hard July work-pattern metadata: `Saturday` means the 6:00 AM-2:00
 PM endoscopy Saturday block, while `M + Th`, `T + Th`, `M + W`, `M + T`,
 `T + W`, and `W + Th` mean the 8:00 AM-2:00 PM Saturday block plus 5-hour
-make-up shifts on the listed weekdays.
+make-up shifts on the listed weekdays. The sheet's BG value is copied to the
+matched employee profile as `requiredWeeklyBackgroundShifts`; the imported
+target row remains a snapshot, but the employee field drives current generation
+and publish validation.
 
 Generation summaries explicitly report total, AM, PM, and Saturday block
-counts. The schedule status calendar provides day/month review, while day,
-week, month, and custom-range unpublish actions preserve assignments and make
-dates eligible for regeneration.
+counts plus generated BG/hour top-off slots. The schedule status calendar
+provides day/month review, while day, week, month, and custom-range unpublish
+actions preserve assignments and make dates eligible for regeneration. Published
+prior-week assignments are used only as soft consistency preferences when the
+same weekday/shift/task is generated again.
 
 The app does not hardcode final clinic policy in scheduler branches. Easton
 defaults seed editable rules for week-to-week patterns, shortage order, exact

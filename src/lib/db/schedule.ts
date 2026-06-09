@@ -37,7 +37,7 @@ import {
   type StaffingSlotSpec,
 } from "@/lib/staffing/requirements";
 import { selectShortageRecommendations } from "@/lib/shortage/recommendations";
-import { parseIsoDate, toIsoDate } from "@/lib/utils/date";
+import { addDaysIsoDate, parseIsoDate, toIsoDate } from "@/lib/utils/date";
 
 export async function getScheduleBoard(date: string) {
   return getDb().scheduleDay.findUnique({
@@ -629,6 +629,7 @@ export async function generateScheduleForDate(input: {
     shortageRules,
     backgroundPullRules,
     patternSlots,
+    previousWeekPatternSlots,
     scheduleTargets,
   ] = await Promise.all([
     getScheduleBoard(input.date),
@@ -749,6 +750,7 @@ export async function generateScheduleForDate(input: {
         { id: "asc" },
       ],
     }),
+    getPreviousPublishedWeekPatternSlots(input.date),
     getDb().employeeScheduleTarget.findMany({
       where: {
         OR: [{ pattern: { active: true } }, { patternId: null }],
@@ -932,6 +934,7 @@ export async function generateScheduleForDate(input: {
       targetWeeklyHours: Number(
         employee.workPattern?.targetWeeklyHours ?? employee.expectedWeeklyHours,
       ),
+      requiredBackgroundAssignments: employee.requiredWeeklyBackgroundShifts,
       scheduledHoursThisWeek: scheduledHoursThisWeekByEmployee.get(employee.id) ?? 0,
       scheduledEarlyStartShiftsThisWeek:
         scheduledEarlyStartsThisWeekByEmployee.get(employee.id) ?? 0,
@@ -979,7 +982,7 @@ export async function generateScheduleForDate(input: {
     requirementLevel: slot.requirementLevel,
     patternPreferredEmployeeIds: patternPreferredEmployeeIdsForSlot({
       slot,
-      patternSlots,
+      patternSlots: [...patternSlots, ...previousWeekPatternSlots],
     }),
     requiredSkillIds:
       slot.backgroundTaskInstance?.definition.requiredSkills.map(
@@ -1368,6 +1371,48 @@ function formatConflictNote(conflict: {
     : baseNote;
 }
 
+async function getPreviousPublishedWeekPatternSlots(date: string) {
+  const previousDate = addDaysIsoDate(date, -7);
+  const previousDay = await getDb().scheduleDay.findUnique({
+    where: { date: parseIsoDate(previousDate) },
+    select: {
+      status: true,
+      taskSlots: {
+        where: { status: { not: "CANCELLED" } },
+        select: {
+          taskTypeId: true,
+          slotIndex: true,
+          shiftBlock: {
+            select: {
+              shiftTemplateId: true,
+              shiftCategory: true,
+            },
+          },
+          assignments: {
+            where: { status: "ACTIVE" },
+            select: { employeeId: true },
+            orderBy: { assignedAt: "asc" },
+          },
+        },
+      },
+    },
+  });
+
+  if (!previousDay || previousDay.status !== "PUBLISHED") {
+    return [];
+  }
+
+  return previousDay.taskSlots.flatMap((slot) =>
+    slot.assignments.map((assignment) => ({
+      taskTypeId: slot.taskTypeId,
+      slotIndex: slot.slotIndex,
+      shiftTemplateId: slot.shiftBlock.shiftTemplateId,
+      shiftCategory: slot.shiftBlock.shiftCategory,
+      preferredEmployeeId: assignment.employeeId,
+    })),
+  );
+}
+
 function targetInputsForEmployee(input: {
   employeeId: string;
   employeeName: string;
@@ -1377,7 +1422,6 @@ function targetInputsForEmployee(input: {
     targetPatientShifts: Prisma.Decimal | null;
     targetTaskCounts: Prisma.JsonValue;
     exposureGoals: Prisma.JsonValue;
-    requiredBackgroundAssignments: number;
   }[];
   taskTypeIdByCode: Map<string, string>;
 }) {
@@ -1408,7 +1452,6 @@ function targetInputsForEmployee(input: {
     targetPatientFacingAssignments: target.targetPatientShifts
       ? Number(target.targetPatientShifts)
       : null,
-    requiredBackgroundAssignments: target.requiredBackgroundAssignments,
     targetTaskAssignments,
     exposureGoals: jsonStringArray(target.exposureGoals),
   };

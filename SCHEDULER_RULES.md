@@ -116,6 +116,11 @@ not contain scheduling decisions.
   for weekly, biweekly, monthly, or custom windows. Required count takes
   precedence over hours-based slot sizing. Definition-level required skills and
   eligible employees are hard constraints.
+- Each employee profile stores an editable required weekly BG/background shift
+  minimum. Easton `Shifts by GY` imports write the spreadsheet BG value into
+  this employee field and keep `EmployeeScheduleTarget` as a historical import
+  snapshot. Generation and publish validation use the employee field as the
+  current source of truth.
 - Bulk generation processes dates in stable ascending order. It prepares every
   included date's shift blocks and staffing-rule slots before assignment, then
   prepares period-based background instances and invokes the shared daily
@@ -125,17 +130,30 @@ not contain scheduling decisions.
   the range.
 - Day/week/month/range generation is one operation: it prepares dated shift
   blocks, reconciles clinic and period-linked background slots, invokes the
-  shared scheduler, persists assignments and conflict state, and returns an
-  aggregate review summary.
+  shared scheduler, runs a deterministic BG/hour top-off pass, persists
+  assignments and conflict state, and returns an aggregate review summary.
+- The BG/hour top-off pass fills existing open background-class slots first,
+  then creates optional `GENERATED_BACKGROUND_TOP_OFF` Background slots when
+  needed. It tries to meet required weekly BG/background minimums and move
+  employees toward expected weekly hours without exceeding those hours. It still
+  enforces skills, recurring availability, PTO/NPTO, no overlapping shifts,
+  work-pattern Saturday rules, published-date skip rules, and locked/manual
+  overrides. Infeasible gaps remain visible as hard weekly issues.
 - Generation summaries report total, AM, PM, and Saturday shift blocks,
-  clinic/background slots, fills, required shortages, conflicts, published
-  skips, regenerated dates, and employees under/over their weekly target.
-- Weekly target hours influence scoring, but imported July work-pattern groups
-  and required BG minimums are hard publish checks. The scheduler strongly
+  clinic/background slots, top-off slots and assignments, fills, required
+  shortages, conflicts, published skips, regenerated dates, and employees
+  under/over their weekly target.
+- Weekly target hours influence scoring and top-off, while imported July
+  work-pattern groups and employee-required BG/background minimums are hard
+  publish checks. The scheduler strongly
   prefers the required 5-hour make-up weekdays and correct Saturday block while
   still respecting skills, availability, PTO/NPTO, and overlap rules. If a week
   remains infeasible, publish is blocked unless a manager records an override
   reason that is stored in audit metadata.
+- When a previous week's same weekday/shift/task assignment is published, the
+  matching employee is added as a soft pattern-consistency preference for the
+  next generation. This never bypasses hard constraints and does not become a
+  manual lock.
 - Managers can review draft/published/needs-regeneration status from the
   schedule calendar. Unpublishing a day, week, month, or custom range preserves
   assignments, records audit logs, and allows a later regeneration. Normal
