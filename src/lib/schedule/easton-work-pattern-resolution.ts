@@ -94,8 +94,8 @@ export function getEffectiveRequiredBackgroundAssignments(input: {
   scheduleTarget?: EmployeeScheduleTargetSource;
 }) {
   return (
-    input.scheduleTarget?.requiredBackgroundAssignments ??
     input.employeeRequiredBackgroundAssignments ??
+    input.scheduleTarget?.requiredBackgroundAssignments ??
     0
   );
 }

@@ -27,6 +27,14 @@
 - Easton week generation now applies all `Shifts + Hours` demand to exact AM,
   PM, and Saturday shift templates, including shift-specific BG, Front
   Background, Booking, Research, and Float slots.
+- July generation treats Saturday work-pattern blocks as hard-first: endoscopy
+  group employees are reserved for Saturday 6:00 AM-2:00 PM and non-endoscopy
+  employees for Saturday 8:00 AM-2:00 PM before weekday assignment.
+- July work-pattern availability is derived during generation as Monday-Friday
+  7:00 AM-6:00 PM and Saturday 6:00 AM-2:00 PM, while PTO/NPTO and explicit
+  unavailability remain hard blockers.
+- July PCP spreadsheet demand now maps to a real PCP task type; Patients stays
+  aggregate-only and legacy Followup remains separate.
 - Schedule status calendar with draft/published/needs-regeneration visibility,
   shortages, PTO/NPTO counts, day actions, and range unpublish workflows.
 - Weekly generation prepares the complete date range before assignment and uses

@@ -178,7 +178,7 @@ function getTargetTaskScore(input: {
 
   const target = input.employee.targetTaskAssignments?.[input.taskType.id];
   const requiredBackgroundTarget =
-    input.taskType.code === "BACKGROUND"
+    input.taskType.isBackground
       ? input.employee.requiredBackgroundAssignments
       : null;
   const effectiveTarget =
@@ -194,12 +194,14 @@ function getTargetTaskScore(input: {
     return 0;
   }
 
-  const count =
-    getTaskAssignmentCount(input.employee, input.taskType.id) +
-    getCurrentTaskCount(input.employee.id, input.taskType.id, input.assignments);
+  const count = input.taskType.isBackground
+    ? (input.employee.scheduledBackgroundAssignmentsThisWeek ?? 0) +
+      getCurrentBackgroundCount(input.employee.id, input.assignments)
+    : getTaskAssignmentCount(input.employee, input.taskType.id) +
+      getCurrentTaskCount(input.employee.id, input.taskType.id, input.assignments);
 
   if (count < effectiveTarget) {
-    const multiplier = input.taskType.code === "BACKGROUND" ? 4 : 1;
+    const multiplier = input.taskType.isBackground ? 4 : 1;
 
     return (
       (effectiveTarget - count) *
@@ -209,6 +211,15 @@ function getTargetTaskScore(input: {
   }
 
   return -(count - effectiveTarget + 1) * input.settings.skillRoleBalanceWeight;
+}
+
+function getCurrentBackgroundCount(
+  employeeId: string,
+  assignments: ExistingAssignment[],
+) {
+  return assignments.filter(
+    (assignment) => assignment.employeeId === employeeId && assignment.isBackground,
+  ).length;
 }
 
 function getExposureGoalScore(input: {

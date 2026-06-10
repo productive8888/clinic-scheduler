@@ -79,12 +79,17 @@ the 7:00 AM-12:00 PM shift. For Monday, either 7:00 AM-12:00 PM or
 1:00 PM-6:00 PM satisfies the make-up day. Week generation repairs these hard
 requirements before any general BG/hour filler runs, so a normal non-endoscopy
 employee should not remain at 38 hours when a group-compliant week is feasible.
-During generation and repair, these imported July groups add derived
-availability for the required group shifts. This keeps old 8:00 AM-5:00 PM
-availability rows from blocking 7:00 AM, Monday 6:00 PM, or Saturday 6:00 AM
-requirements while leaving manager-edited availability visible on the employee
-profile. PTO, NPTO, and explicit unavailability still override the derived
-availability.
+During generation and repair, these imported July groups add broad derived
+availability of Monday-Friday 7:00 AM-6:00 PM and Saturday 6:00 AM-2:00 PM.
+This keeps old 8:00 AM-5:00 PM availability rows from blocking 7:00 AM,
+Monday 6:00 PM, or Saturday 6:00 AM requirements while leaving manager-edited
+availability visible on the employee profile. PTO, NPTO, and explicit
+unavailability still override the derived availability.
+
+Week generation assigns and repairs Saturday work-pattern requirements first:
+the Saturday/endoscopy group uses the 6:00 AM-2:00 PM block, and all
+non-endoscopy July groups use the 8:00 AM-2:00 PM block. Weekday 5-hour group
+repair then runs after the ordinary weekday schedules have been generated.
 
 Generation summaries explicitly report total, AM, PM, Saturday, 0700 early AM,
 0800 regular AM, 1300-1700 PM, Monday 1300-1800 PM, Saturday endoscopy, and

@@ -27,7 +27,10 @@ import {
   eastonEmployeeProfileUpdateFromTarget,
   eastonShiftTemplateDataFromShift,
 } from "../../src/lib/db/easton-import";
-import { getEffectiveWorkPattern } from "../../src/lib/schedule/easton-work-pattern-resolution";
+import {
+  getEffectiveRequiredBackgroundAssignments,
+  getEffectiveWorkPattern,
+} from "../../src/lib/schedule/easton-work-pattern-resolution";
 import {
   eastonDerivedAvailabilityWindows,
   withEastonDerivedAvailability,
@@ -2208,8 +2211,9 @@ describe("Easton policy helpers", () => {
     ];
     shifts.getRow(3).values = ["Shift Hours", 5, 4, 8, 6];
     shifts.getRow(4).values = ["GI", 1, 2, 0, 1];
-    shifts.getRow(5).values = ["BG", 0, 3, 0, 1];
-    shifts.getRow(6).values = ["Patients", 1, 2, 0, 1];
+    shifts.getRow(5).values = ["PCP", 1, 0, 0, 2];
+    shifts.getRow(6).values = ["BG", 0, 3, 0, 1];
+    shifts.getRow(7).values = ["Patients", 2, 2, 0, 3];
 
     const targets = workbook.addWorksheet("Shifts by GY");
     targets.getRow(1).values = [
@@ -2250,6 +2254,10 @@ describe("Easton policy helpers", () => {
     assert.equal(preview.shifts[0].endMinute, 12 * 60);
     assert.equal(preview.shifts[0].paidHours, 5);
     assert.equal(preview.roleDemand[0].roleCode, "NEW_GI");
+    assert.equal(
+      preview.roleDemand.some((demand) => demand.roleCode === "PCP"),
+      true,
+    );
     assert.equal(
       preview.shifts.some(
         (shift) =>
@@ -2345,7 +2353,7 @@ describe("Easton July hard requirements", () => {
     assert.equal(workPattern?.saturdayPaidHours, 6);
   });
 
-  it("derives July availability for exact non-endoscopy extra-hour days", () => {
+  it("derives broad July clinic availability for non-endoscopy employees", () => {
     const employee = withEastonDerivedAvailability({
       id: "alice",
       fullName: "Alice Huang",
@@ -2365,9 +2373,9 @@ describe("Easton July hard requirements", () => {
     assert.equal(
       employee.availability.some(
         (window) =>
-          window.weekday === 2 &&
+          window.weekday === 1 &&
           window.startMinute === 420 &&
-          window.endMinute === 720,
+          window.endMinute === 1080,
       ),
       true,
     );
@@ -2375,14 +2383,14 @@ describe("Easton July hard requirements", () => {
       employee.availability.some(
         (window) =>
           window.weekday === 6 &&
-          window.startMinute === 480 &&
+          window.startMinute === 360 &&
           window.endMinute === 840,
       ),
       true,
     );
   });
 
-  it("derives July availability for Monday early or Monday long PM", () => {
+  it("derives July availability that covers Monday early and long PM", () => {
     const windows = eastonDerivedAvailabilityWindows({
       workPattern: {
         kind: "NON_ENDOSCOPY_SATURDAY",
@@ -2397,16 +2405,16 @@ describe("Easton July hard requirements", () => {
         (window) =>
           window.weekday === 1 &&
           window.startMinute === 420 &&
-          window.endMinute === 720,
+          window.endMinute === 1080,
       ),
       true,
     );
     assert.equal(
       windows.some(
         (window) =>
-          window.weekday === 1 &&
-          window.startMinute === 780 &&
-          window.endMinute === 1080,
+          window.weekday === 6 &&
+          window.startMinute === 360 &&
+          window.endMinute === 840,
       ),
       true,
     );
@@ -2515,6 +2523,66 @@ describe("Easton July hard requirements", () => {
 
     assert.equal(result.assignments[0]?.slotId, "sat-endo");
     assert.equal(result.conflicts.length, 0);
+  });
+
+  it("assigns hard Saturday slots before ordinary weekday slots", () => {
+    const result = generateSchedule({
+      seed: "saturday-hard-first",
+      employees: [
+        withEastonDerivedAvailability({
+          id: "regular",
+          fullName: "Regular Saturday Worker",
+          skillIds: [],
+          availability: [
+            { weekday: 1, startMinute: 480, endMinute: 1020 },
+            { weekday: 6, startMinute: 480, endMinute: 1020 },
+          ],
+          weeklyAssignmentLimit: 1,
+          workPattern: {
+            kind: "NON_ENDOSCOPY_SATURDAY",
+            requiredSaturdayShiftCategory: "SATURDAY",
+            saturdayPaidHours: 6,
+            extraHourWeekdays: [1, 4],
+          },
+        }),
+      ],
+      taskTypes: [
+        {
+          id: "background",
+          code: "BACKGROUND",
+          name: "Background",
+          requiredSkillIds: [],
+          isBackground: true,
+        },
+      ],
+      slots: [
+        {
+          id: "mon-bg",
+          date: "2026-07-06",
+          taskTypeId: "background",
+          slotIndex: 1,
+          startMinute: 480,
+          endMinute: 720,
+          paidHours: 4,
+          shiftCategory: "AM",
+          requirementLevel: "REQUIRED",
+        },
+        {
+          id: "sat-short",
+          date: "2026-07-11",
+          taskTypeId: "background",
+          slotIndex: 1,
+          startMinute: 480,
+          endMinute: 840,
+          paidHours: 6,
+          shiftCategory: "SATURDAY",
+          requirementLevel: "REQUIRED",
+        },
+      ],
+    });
+
+    assert.equal(result.assignments[0]?.slotId, "sat-short");
+    assert.equal(result.conflicts[0]?.slotId, "mon-bg");
   });
 
   it("treats old generic Easton patterns as non-authoritative without an exact July target", () => {
@@ -2890,6 +2958,16 @@ describe("Easton July hard requirements", () => {
     assert.equal(update.workPatternId, "work-pattern-id");
   });
 
+  it("uses the editable employee BG minimum ahead of the imported snapshot", () => {
+    assert.equal(
+      getEffectiveRequiredBackgroundAssignments({
+        employeeRequiredBackgroundAssignments: 5,
+        scheduleTarget: { requiredBackgroundAssignments: 2 },
+      }),
+      5,
+    );
+  });
+
   it("assigns Saturday endoscopy slots only to the endoscopy Saturday group", () => {
     const result = generateSchedule({
       seed: "july-saturday-group",
@@ -2949,7 +3027,7 @@ describe("Easton July hard requirements", () => {
     assert.equal(result.assignments[0]?.employeeId, "endo");
   });
 
-  it("prioritizes employees below their required BG minimum for BG slots", () => {
+  it("prioritizes employees below their required BG minimum for background slots", () => {
     const result = generateSchedule({
       seed: "july-bg-minimum",
       employees: [
@@ -2970,9 +3048,9 @@ describe("Easton July hard requirements", () => {
       ],
       taskTypes: [
         {
-          id: "background",
-          code: "BACKGROUND",
-          name: "Background",
+          id: "research",
+          code: "RESEARCH",
+          name: "Research",
           requiredSkillIds: [],
           isBackground: true,
         },
@@ -2984,7 +3062,7 @@ describe("Easton July hard requirements", () => {
           shiftBlockId: "tue-bg",
           shiftCategory: "AM",
           paidHours: 5,
-          taskTypeId: "background",
+          taskTypeId: "research",
           slotIndex: 1,
           startMinute: 7 * 60,
           endMinute: 12 * 60,

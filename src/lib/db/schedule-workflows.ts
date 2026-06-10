@@ -219,6 +219,7 @@ export async function generateScheduleRange(input: {
   );
 
   if (datesToGenerate.length > 0) {
+    await clearGeneratedAssignmentsForRange(datesToGenerate);
     await clearGeneratedBackgroundTopOffSlots({
       allowedDates: datesToGenerate,
     });
@@ -248,8 +249,38 @@ export async function generateScheduleRange(input: {
     string,
     Awaited<ReturnType<typeof generateScheduleForDate>>
   >();
+  const saturdayDates = datesToGenerate.filter(
+    (date) => parseIsoDate(date).getUTCDay() === 6,
+  );
+  const nonSaturdayDates = datesToGenerate.filter(
+    (date) => parseIsoDate(date).getUTCDay() !== 6,
+  );
 
-  for (const date of datesToGenerate) {
+  for (const date of saturdayDates) {
+    const result = await generateScheduleForDate({
+      date,
+      seed: `${input.seedPrefix}:${date}`,
+      actorEmployeeId: input.actorEmployeeId,
+    });
+    generationResults.set(date, result);
+  }
+
+  if (saturdayDates.length > 0) {
+    const saturdayRepairSummary = await enforceWorkPatternRequirementsForRange({
+      startDate: input.startDate,
+      endDate: input.endDate,
+      allowedDates: saturdayDates,
+      mode: "SATURDAY_ONLY",
+      actorEmployeeId: input.actorEmployeeId,
+    });
+    summary.workPatternTopOffSlotsCreated += saturdayRepairSummary.slotsCreated;
+    summary.workPatternAssignmentsCreated +=
+      saturdayRepairSummary.assignmentsCreated;
+    summary.workPatternSwapsMade += saturdayRepairSummary.swapsMade;
+    summary.workPatternUnresolved += saturdayRepairSummary.unresolved.length;
+  }
+
+  for (const date of nonSaturdayDates) {
     const result = await generateScheduleForDate({
       date,
       seed: `${input.seedPrefix}:${date}`,
@@ -265,11 +296,11 @@ export async function generateScheduleRange(input: {
       allowedDates: datesToGenerate,
       actorEmployeeId: input.actorEmployeeId,
     });
-    summary.workPatternTopOffSlotsCreated = workPatternSummary.slotsCreated;
-    summary.workPatternAssignmentsCreated =
+    summary.workPatternTopOffSlotsCreated += workPatternSummary.slotsCreated;
+    summary.workPatternAssignmentsCreated +=
       workPatternSummary.assignmentsCreated;
-    summary.workPatternSwapsMade = workPatternSummary.swapsMade;
-    summary.workPatternUnresolved = workPatternSummary.unresolved.length;
+    summary.workPatternSwapsMade += workPatternSummary.swapsMade;
+    summary.workPatternUnresolved += workPatternSummary.unresolved.length;
 
     const topOffSummary = await topOffBackgroundAssignmentsForRange({
       startDate: input.startDate,
@@ -426,6 +457,44 @@ export async function generateScheduleRange(input: {
   });
 
   return summary;
+}
+
+async function clearGeneratedAssignmentsForRange(dates: string[]) {
+  if (dates.length === 0) {
+    return;
+  }
+
+  await getDb().assignment.updateMany({
+    where: {
+      status: "ACTIVE",
+      locked: false,
+      source: {
+        in: [
+          AssignmentSource.GENERATED,
+          AssignmentSource.COVERAGE_REPLACEMENT,
+        ],
+      },
+      taskSlot: {
+        scheduleDay: {
+          date: {
+            in: dates.map(parseIsoDate),
+          },
+        },
+        OR: [
+          { backgroundTaskInstanceId: null },
+          {
+            backgroundTaskInstance: {
+              definition: { protectedFromPull: false },
+            },
+          },
+        ],
+      },
+    },
+    data: {
+      status: AssignmentStatus.REMOVED,
+      removedAt: new Date(),
+    },
+  });
 }
 
 export async function publishScheduleRange(input: {

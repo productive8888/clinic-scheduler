@@ -75,7 +75,7 @@ const ROLE_CODE_ALIASES: Record<string, string> = {
   GI: "NEW_GI",
   "NEW GI": "NEW_GI",
   "VIRTUAL GI": "VIRTUAL_GI",
-  PCP: "FOLLOWUP",
+  PCP: "PCP",
   "FOLLOW UP": "FOLLOWUP",
   FOLLOWUP: "FOLLOWUP",
   FRONT: "FRONT_DESK",
@@ -102,6 +102,7 @@ const EXPOSURE_BY_ROLE_CODE: Record<string, string> = {
   VIRTUAL_GI: "GI",
   NEW_ALLERGY: "ALLERGY",
   VIRTUAL_ALLERGY: "ALLERGY",
+  PCP: "PCP",
   FOLLOWUP: "PCP",
 };
 
@@ -446,7 +447,12 @@ function validatePatientTotals(
   roleDemand: EastonRoleDemand[],
 ) {
   const warnings: string[] = [];
-  const patientFacingCodes = new Set(["NEW_GI", "NEW_ALLERGY", "FOLLOWUP"]);
+  const patientFacingCodes = new Set([
+    "NEW_GI",
+    "NEW_ALLERGY",
+    "PCP",
+    "FOLLOWUP",
+  ]);
 
   for (const shift of shifts) {
     const shiftDemand = roleDemand.filter(

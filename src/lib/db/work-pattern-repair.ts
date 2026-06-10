@@ -104,6 +104,7 @@ export async function enforceWorkPatternRequirementsForRange(input: {
   startDate: string;
   endDate: string;
   allowedDates: string[];
+  mode?: "ALL" | "SATURDAY_ONLY";
   actorEmployeeId?: string | null;
 }) {
   const summary: WorkPatternRepairSummary = {
@@ -360,6 +361,10 @@ export async function enforceWorkPatternRequirementsForRange(input: {
             "Could not assign required Saturday work-pattern shift.",
         });
       }
+    }
+
+    if (input.mode === "SATURDAY_ONLY") {
+      continue;
     }
 
     validation = validateForEmployee(employee, allAssignments);

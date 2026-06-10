@@ -18,6 +18,7 @@ export type SchedulerEmployee = {
   historicalEndoscopyAssignments?: number;
   targetWeeklyHours?: number | null;
   scheduledHoursThisWeek?: number;
+  scheduledBackgroundAssignmentsThisWeek?: number;
   scheduledEarlyStartShiftsThisWeek?: number;
   requiredBackgroundAssignments?: number;
   workPattern?: {

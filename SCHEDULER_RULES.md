@@ -134,13 +134,13 @@ not contain scheduling decisions.
   full employee names. Ambiguous first-name matches stay unmatched for manager
   review. Archived generic Easton work patterns are ignored by active July
   generation when no exact `Shifts by GY` group is present.
-- Bulk generation processes dates in stable ascending order. It prepares every
-  included date's shift blocks and staffing-rule slots before assignment, then
-  prepares period-based background instances and invokes the shared daily
-  scheduler. Locked/manual overrides are preserved and published dates are
-  skipped unless a manager explicitly confirms overwrite. Earlier generated
-  days become deterministic fairness and weekly-hours context for later days in
-  the range.
+- Bulk generation prepares every included date's shift blocks and staffing-rule
+  slots before assignment, then prepares period-based background instances.
+  Within each week, Saturday dates are generated and repaired first so the hard
+  Saturday work-pattern block is reserved before ordinary weekday clinic,
+  background, fairness, or top-off assignment. Locked/manual overrides are
+  preserved and published dates are skipped unless a manager explicitly confirms
+  overwrite.
 - Day/week/month/range generation is one operation: it prepares dated shift
   blocks, reconciles clinic and period-linked background slots, invokes the
   shared scheduler, repairs hard July work-pattern requirements, runs a
@@ -152,9 +152,10 @@ not contain scheduling decisions.
   7:00 AM-12:00 PM or 1:00 PM-6:00 PM. Saturday endoscopy employees must use
   the 6:00 AM-2:00 PM Saturday block and have no weekday extra-hour requirement.
   Non-endoscopy Saturday employees must use the 8:00 AM-2:00 PM Saturday block.
-- Active July work-pattern groups derive generation-time availability for their
-  required group shifts so stale 8:00 AM-5:00 PM recurring availability does
-  not make 7:00 AM, Monday 6:00 PM, or Saturday 6:00 AM blocks impossible.
+- Active July work-pattern groups derive generation-time availability of Monday
+  through Friday 7:00 AM-6:00 PM and Saturday 6:00 AM-2:00 PM so stale
+  8:00 AM-5:00 PM recurring availability does not make 7:00 AM, Monday 6:00
+  PM, or Saturday 6:00 AM blocks impossible.
   This derived layer does not edit saved employee availability, and PTO/NPTO or
   explicit unavailability still blocks the affected shift.
 - If a valid generated week misses a group extra-hour day, generation first
@@ -164,14 +165,17 @@ not contain scheduling decisions.
   creates optional `GENERATED_WORK_PATTERN_TOP_OFF` Background slots on the
   exact required shift when that is the only safe way to expose the missing
   hour. These slots are separate from ordinary BG minimum filler.
-- The BG/hour top-off pass fills existing open background-class slots first,
-  then creates optional `GENERATED_BACKGROUND_TOP_OFF` Background slots when
-  needed. It tries to meet required weekly BG/background minimums and move
-  employees toward expected weekly hours without exceeding those hours. It runs
-  after July group repair and does not mask missing group extra-hour days. It
-  still enforces skills, recurring availability, PTO/NPTO, no overlapping
-  shifts, work-pattern Saturday rules, published-date skip rules, and
-  locked/manual overrides. Infeasible gaps remain visible as hard weekly issues.
+- Required weekly BG/background minimums are scored against any background-class
+  role, including BG, Front Background, Booking, Research, Float, and generated
+  Background slots. The BG/hour top-off pass fills existing open
+  background-class slots first, then creates optional
+  `GENERATED_BACKGROUND_TOP_OFF` Background slots when needed. It tries to meet
+  required weekly BG/background minimums and move employees toward expected
+  weekly hours without exceeding those hours. It runs after Saturday and July
+  group repair and does not mask missing group extra-hour days. It still
+  enforces skills, derived/saved availability, PTO/NPTO, no overlapping shifts,
+  work-pattern Saturday rules, published-date skip rules, and locked/manual
+  overrides. Infeasible gaps remain visible as hard weekly issues.
 - Generation summaries report total, AM, PM, Saturday, 7:00 AM early,
   8:00 AM regular, 1:00-5:00 PM regular, Monday 1:00-6:00 PM long, Saturday
   endoscopy, and Saturday regular shift blocks, plus clinic/background slots,
@@ -249,6 +253,7 @@ not contain scheduling decisions.
 - New GI
 - Virtual GI
 - Followup
+- PCP
 - Front Desk
 - Civil Surgeon
 - Allergy Shots

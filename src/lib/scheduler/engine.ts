@@ -1,4 +1,5 @@
 import { selectAssignment, toExistingAssignment } from "./assignment";
+import { dateToWeekday } from "./constraints";
 import { tryRepairRequiredAssignment } from "./repair";
 import type {
   ExistingAssignment,
@@ -175,6 +176,7 @@ function sortSlots(
     const rightSortOrder = rightTask?.sortOrder ?? 0;
 
     return (
+      hardWorkPatternPriority(left) - hardWorkPatternPriority(right) ||
       requirementPriority(left) - requirementPriority(right) ||
       objectivePriority(leftTask) - objectivePriority(rightTask) ||
       rightSkillCount - leftSkillCount ||
@@ -185,6 +187,17 @@ function sortSlots(
       left.id.localeCompare(right.id)
     );
   });
+}
+
+function hardWorkPatternPriority(slot: SchedulerTaskSlot) {
+  if (
+    dateToWeekday(slot.date) === 6 &&
+    (slot.shiftCategory === "ENDO" || slot.shiftCategory === "SATURDAY")
+  ) {
+    return 0;
+  }
+
+  return 1;
 }
 
 function objectivePriority(taskType: SchedulerTaskType | undefined) {

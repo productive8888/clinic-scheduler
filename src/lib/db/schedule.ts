@@ -668,10 +668,21 @@ export async function generateScheduleForDate(input: {
         status: "ACTIVE",
         taskSlot: {
           scheduleDay: {
-            date: {
-              gte: parseIsoDate(fairnessWindow.startDate),
-              lt: parseIsoDate(input.date),
-            },
+            OR: [
+              {
+                date: {
+                  gte: parseIsoDate(fairnessWindow.startDate),
+                  lt: parseIsoDate(input.date),
+                },
+              },
+              {
+                AND: [
+                  { date: { gte: parseIsoDate(currentWeek.startDate) } },
+                  { date: { lte: parseIsoDate(currentWeek.endDate) } },
+                  { date: { not: parseIsoDate(input.date) } },
+                ],
+              },
+            ],
           },
         },
       },
@@ -809,6 +820,7 @@ export async function generateScheduleForDate(input: {
   const historicalSaturdayCountByEmployee = new Map<string, number>();
   const historicalEndoscopyCountByEmployee = new Map<string, number>();
   const scheduledHoursThisWeekByEmployee = new Map<string, number>();
+  const scheduledBackgroundAssignmentsThisWeekByEmployee = new Map<string, number>();
   const scheduledEarlyStartsThisWeekByEmployee = new Map<string, number>();
   const countedCurrentWeekShifts = new Set<string>();
 
@@ -870,19 +882,29 @@ export async function generateScheduleForDate(input: {
     if (
       assignmentDate >= currentWeek.startDate &&
       assignmentDate <= currentWeek.endDate &&
-      !countedCurrentWeekShifts.has(currentWeekShiftKey)
+      assignmentDate !== input.date
     ) {
-      countedCurrentWeekShifts.add(currentWeekShiftKey);
-      scheduledHoursThisWeekByEmployee.set(
-        assignment.employeeId,
-        (scheduledHoursThisWeekByEmployee.get(assignment.employeeId) ?? 0) +
-          Number(assignment.taskSlot.shiftBlock.paidHours),
-      );
-
-      if (assignment.taskSlot.shiftBlock.startMinute <= 7 * 60) {
-        scheduledEarlyStartsThisWeekByEmployee.set(
+      if (!countedCurrentWeekShifts.has(currentWeekShiftKey)) {
+        countedCurrentWeekShifts.add(currentWeekShiftKey);
+        scheduledHoursThisWeekByEmployee.set(
           assignment.employeeId,
-          (scheduledEarlyStartsThisWeekByEmployee.get(assignment.employeeId) ?? 0) +
+          (scheduledHoursThisWeekByEmployee.get(assignment.employeeId) ?? 0) +
+            Number(assignment.taskSlot.shiftBlock.paidHours),
+        );
+
+        if (assignment.taskSlot.shiftBlock.startMinute <= 7 * 60) {
+          scheduledEarlyStartsThisWeekByEmployee.set(
+            assignment.employeeId,
+            (scheduledEarlyStartsThisWeekByEmployee.get(assignment.employeeId) ?? 0) +
+              1,
+          );
+        }
+      }
+
+      if (assignment.taskSlot.taskType.isBackground) {
+        scheduledBackgroundAssignmentsThisWeekByEmployee.set(
+          assignment.employeeId,
+          (scheduledBackgroundAssignmentsThisWeekByEmployee.get(assignment.employeeId) ?? 0) +
             1,
         );
       }
@@ -961,6 +983,8 @@ export async function generateScheduleForDate(input: {
         }),
         scheduledHoursThisWeek:
           scheduledHoursThisWeekByEmployee.get(employee.id) ?? 0,
+        scheduledBackgroundAssignmentsThisWeek:
+          scheduledBackgroundAssignmentsThisWeekByEmployee.get(employee.id) ?? 0,
         scheduledEarlyStartShiftsThisWeek:
           scheduledEarlyStartsThisWeekByEmployee.get(employee.id) ?? 0,
         workPattern,
@@ -1472,7 +1496,7 @@ function taskExposureGroup(code: string) {
     return "ALLERGY";
   }
 
-  if (code === "FOLLOWUP") {
+  if (code === "PCP" || code === "FOLLOWUP") {
     return "PCP";
   }
 

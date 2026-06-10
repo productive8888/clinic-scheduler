@@ -21,7 +21,9 @@ versioned migrations in `prisma/migrations`.
 - `TaskType`: configurable clinic task catalog with skill requirements,
   difficulty, sort order, scenario-default flags, optional/manual-only flags,
   patient-facing/clinical/background/skilled/endoscopy/float/closure-candidate
-  classification flags, and interchangeable task group keys.
+  classification flags, and interchangeable task group keys. July Easton
+  spreadsheet PCP demand maps to the real `PCP` task type; legacy `FOLLOWUP`
+  remains available for older/manual data.
 - `TaskSkillRequirement`: required skill mapping per task type.
 - `WeeklyAvailability`: recurring employee normal working schedule by weekday,
   start/end minute, effective date range, and active state. Days without an
@@ -92,9 +94,9 @@ versioned migrations in `prisma/migrations`.
   July Easton groups, target weekly hours, required Saturday shift category,
   Saturday paid hours, and configured extra-hour weekdays. Generation validates
   the exact group weekdays, including Monday's early-or-late 5-hour equivalence,
-  before ordinary BG/hour top-off is allowed to fill remaining gaps. Legacy
-  generic Easton Saturday patterns are archived and ignored by active July
-  generation.
+  and range generation assigns the required Saturday block before ordinary
+  weekday clinic or BG/hour top-off work. Legacy generic Easton Saturday
+  patterns are archived and ignored by active July generation.
 - `SchedulePattern` and `SchedulePatternSlot`: editable/reference weekly
   schedule pattern storage. The active July Easton import uses
   `SchedulePattern` only as an employee-target container and does not create

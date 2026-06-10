@@ -68,12 +68,14 @@ export type BackgroundTopOffSummary = {
     employeeName: string;
     assigned: number;
     required: number;
+    reason: string;
   }>;
   employeesUnderExpectedHours: Array<{
     employeeId: string;
     employeeName: string;
     scheduledHours: number;
     expectedHours: number;
+    reason: string;
   }>;
   configurationWarnings: string[];
 };
@@ -469,6 +471,15 @@ export async function topOffBackgroundAssignmentsForRange(input: {
 
   for (const employee of employees) {
     const state = states.get(employee.id)!;
+    const blockerReason = explainTopOffBlocker({
+      employee,
+      state,
+      hasMissingWorkPattern:
+        hasMissingWorkPatternByEmployeeId.get(employee.id) ?? false,
+      shiftBlocks,
+      backgroundTask,
+      allAssignments,
+    });
 
     if (
       state.backgroundAssignments >= employee.requiredBackgroundAssignments &&
@@ -483,6 +494,7 @@ export async function topOffBackgroundAssignmentsForRange(input: {
         employeeName: employee.fullName,
         assigned: state.backgroundAssignments,
         required: employee.requiredBackgroundAssignments,
+        reason: blockerReason,
       });
     }
 
@@ -492,6 +504,7 @@ export async function topOffBackgroundAssignmentsForRange(input: {
         employeeName: employee.fullName,
         scheduledHours: state.hours,
         expectedHours: employee.expectedHours,
+        reason: blockerReason,
       });
     }
   }
@@ -694,6 +707,97 @@ function canAssignTopOffSlot(
   return (
     getConstraintRejections(employee, slot.taskType, slot, allAssignments).length === 0
   );
+}
+
+function explainTopOffBlocker(input: {
+  employee: TopOffEmployee;
+  state: TopOffEmployeeState;
+  hasMissingWorkPattern: boolean;
+  shiftBlocks: TopOffShiftBlock[];
+  backgroundTask: TopOffTaskType;
+  allAssignments: ExistingAssignment[];
+}) {
+  if (input.employee.active === false) {
+    return "Employee is inactive.";
+  }
+
+  if (input.hasMissingWorkPattern) {
+    return "Missing required Saturday or extra-hour work-pattern shift; BG/hour top-off waits for hard pattern repair.";
+  }
+
+  if (
+    input.state.backgroundAssignments < input.employee.requiredBackgroundAssignments &&
+    input.state.hours >= input.employee.expectedHours
+  ) {
+    return "BG minimum is unmet, but the employee is already at expected weekly hours; manager review or reassignment is required.";
+  }
+
+  const legalBlock = findLegalShiftBlockForNewSlot({
+    employee: input.employee,
+    shiftBlocks: input.shiftBlocks,
+    backgroundTask: input.backgroundTask,
+    allAssignments: input.allAssignments,
+    state: input.state,
+  });
+
+  if (legalBlock) {
+    return "A legal background top-off window was available but generation stopped before assigning it.";
+  }
+
+  const candidateReasons = input.shiftBlocks
+    .map((shiftBlock) => {
+      const slot = slotForTopOffExplanation(input.backgroundTask, shiftBlock);
+      const wouldAddHours = input.state.shiftKeys.has(shiftKeyForSlot(slot))
+        ? 0
+        : shiftBlock.paidHours;
+
+      if (input.state.hours + wouldAddHours > input.employee.expectedHours) {
+        return "Would exceed expected weekly hours";
+      }
+
+      return getConstraintRejections(
+        input.employee,
+        input.backgroundTask,
+        slot,
+        input.allAssignments,
+      )[0];
+    })
+    .filter((reason): reason is string => Boolean(reason));
+  const uniqueReasons = [...new Set(candidateReasons)];
+
+  return uniqueReasons.length > 0
+    ? `No legal background top-off window: ${uniqueReasons.join(", ")}.`
+    : "No legal background top-off window was available.";
+}
+
+function slotForTopOffExplanation(
+  backgroundTask: TopOffTaskType,
+  shiftBlock: TopOffShiftBlock,
+): TopOffSlot {
+  return {
+    id: `explain:${shiftBlock.date}:${shiftBlock.id}`,
+    date: shiftBlock.date,
+    scheduleDayId: shiftBlock.scheduleDayId,
+    shiftBlockId: shiftBlock.id,
+    shiftTemplateId: shiftBlock.shiftTemplateId,
+    shiftCategory: shiftBlock.shiftCategory,
+    shiftName: shiftBlock.name,
+    paidHours: shiftBlock.paidHours,
+    taskTypeId: backgroundTask.id,
+    slotIndex: 1,
+    requirementLevel: "OPTIONAL",
+    startMinute: shiftBlock.startMinute,
+    endMinute: shiftBlock.endMinute,
+    minStaff: 0,
+    requiredStaff: 1,
+    requiredSkillIds: [],
+    eligibleEmployeeIds: [],
+    canBePulledForClinic: true,
+    protectedFromPull: false,
+    taskType: backgroundTask,
+    source: GENERATED_BACKGROUND_TOP_OFF_SOURCE,
+    currentAssignmentCount: 0,
+  };
 }
 
 async function createTopOffSlot(input: {
