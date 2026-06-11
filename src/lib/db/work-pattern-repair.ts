@@ -674,6 +674,14 @@ async function satisfySaturdayRequirement(input: {
     return { type: "SWAP" as const };
   }
 
+  if (input.requirement.requiredSaturdayShiftCategory === "ENDO") {
+    return {
+      type: "NONE" as const,
+      reason:
+        "Could not assign required Saturday 0600-1400 Endoscopy shift. Endoscopy work-pattern employees cannot be satisfied with generated Saturday background while Endoscopy coverage is unresolved.",
+    };
+  }
+
   const block = input.shiftBlocks
     .filter(
       (shiftBlock) =>

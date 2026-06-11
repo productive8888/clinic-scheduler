@@ -29,6 +29,10 @@ export function generateSchedule(input: GenerateScheduleInput) {
       ...(slot.lockedEmployeeIds ?? []),
       ...(slot.lockedEmployeeId ? [slot.lockedEmployeeId] : []),
     ];
+    const reservedEmployeeIds = dedupeEmployeeIds(
+      slot.reservedEmployeeIds ?? [],
+      lockedEmployeeIds,
+    );
 
     if (!taskType) {
       continue;
@@ -46,6 +50,22 @@ export function generateSchedule(input: GenerateScheduleInput) {
 
       assignments.push(lockedAssignment);
       occupiedAssignments.push(toExistingAssignment(lockedAssignment, slot, taskType));
+    }
+
+    for (const reservedEmployeeId of reservedEmployeeIds) {
+      const reservedAssignment: ScheduleAssignment = {
+        slotId: slot.id,
+        employeeId: reservedEmployeeId,
+        taskTypeId: taskType.id,
+        date: slot.date,
+        source: "GENERATED",
+        score: Number.MAX_SAFE_INTEGER,
+      };
+
+      assignments.push(reservedAssignment);
+      occupiedAssignments.push(
+        toExistingAssignment(reservedAssignment, slot, taskType),
+      );
     }
   }
 
@@ -67,9 +87,17 @@ export function generateSchedule(input: GenerateScheduleInput) {
       ...(slot.lockedEmployeeIds ?? []),
       ...(slot.lockedEmployeeId ? [slot.lockedEmployeeId] : []),
     ];
+    const reservedEmployeeIds = dedupeEmployeeIds(
+      slot.reservedEmployeeIds ?? [],
+      lockedEmployeeIds,
+    );
+    const prefilledEmployeeIds = [...lockedEmployeeIds, ...reservedEmployeeIds];
 
     const requiredStaff = Math.max(1, slot.requiredStaff ?? 1);
-    const remainingStaffNeeded = Math.max(0, requiredStaff - lockedEmployeeIds.length);
+    const remainingStaffNeeded = Math.max(
+      0,
+      requiredStaff - prefilledEmployeeIds.length,
+    );
 
     for (let staffIndex = 0; staffIndex < remainingStaffNeeded; staffIndex += 1) {
       const selection = selectAssignment({
@@ -136,7 +164,7 @@ export function generateSchedule(input: GenerateScheduleInput) {
           reason:
             staffIndex === 0
               ? "No compatible available employee"
-              : `Only filled ${staffIndex + lockedEmployeeIds.length} of ${requiredStaff} required staff`,
+              : `Only filled ${staffIndex + prefilledEmployeeIds.length} of ${requiredStaff} required staff`,
           rejectedCandidates: selection.rejectedCandidates,
         });
         break;
@@ -233,6 +261,20 @@ function requirementPriority(slot: SchedulerTaskSlot) {
     default:
       return 0;
   }
+}
+
+function dedupeEmployeeIds(employeeIds: string[], excludedEmployeeIds: string[] = []) {
+  const excluded = new Set(excludedEmployeeIds);
+  const seen = new Set<string>();
+
+  return employeeIds.filter((employeeId) => {
+    if (excluded.has(employeeId) || seen.has(employeeId)) {
+      return false;
+    }
+
+    seen.add(employeeId);
+    return true;
+  });
 }
 
 function sortAssignments(assignments: ScheduleAssignment[]) {

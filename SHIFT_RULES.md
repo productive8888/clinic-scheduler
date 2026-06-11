@@ -90,6 +90,10 @@ Week generation assigns and repairs Saturday work-pattern requirements first:
 the Saturday/endoscopy group uses the 6:00 AM-2:00 PM block, and all
 non-endoscopy July groups use the 8:00 AM-2:00 PM block. Weekday 5-hour group
 repair then runs after the ordinary weekday schedules have been generated.
+Endoscopy/Saturday employees are reserved into real Saturday Endoscopy task
+slots before ordinary scoring, background assignment, or BG/hour top-off. If
+that real Endoscopy placement is infeasible, the schedule stays unresolved
+rather than satisfying the employee with Saturday background work.
 
 Generation summaries explicitly report total, AM, PM, Saturday, 0700 early AM,
 0800 regular AM, 1300-1700 PM, Monday 1300-1800 PM, Saturday endoscopy, and

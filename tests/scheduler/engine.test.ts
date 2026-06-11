@@ -40,6 +40,7 @@ import {
   isExtraHourShiftForWeekday,
   validateEmployeeWeekPattern,
 } from "../../src/lib/schedule/work-pattern-requirements";
+import { buildJulySaturdayReservationPlan } from "../../src/lib/schedule/july-saturday-reservations";
 import { weekdayShortName } from "../../src/lib/easton-import/work-patterns";
 import {
   invalidatedScheduleDayData,
@@ -3025,6 +3026,183 @@ describe("Easton July hard requirements", () => {
     });
 
     assert.equal(result.assignments[0]?.employeeId, "endo");
+  });
+
+  it("reserves Easton Saturday/Endoscopy targets into real Endoscopy slots before normal skill scoring", () => {
+    const employees: SchedulerEmployee[] = [
+      {
+        id: "angela",
+        fullName: "Angela",
+        skillIds: [],
+        availability: [{ weekday: 6, startMinute: 6 * 60, endMinute: 14 * 60 }],
+        workPattern: {
+          kind: "ENDOSCOPY_SATURDAY",
+          saturdayPaidHours: 8,
+          requiredSaturdayShiftCategory: "ENDO",
+          extraHourWeekdays: [],
+        },
+        targetTaskAssignments: {
+          endoscopy: 1,
+        },
+      },
+      {
+        id: "regular",
+        fullName: "Regular Saturday Worker",
+        skillIds: ["procedure-skill"],
+        availability: [{ weekday: 6, startMinute: 6 * 60, endMinute: 14 * 60 }],
+        workPattern: {
+          kind: "NON_ENDOSCOPY_SATURDAY",
+          saturdayPaidHours: 6,
+          requiredSaturdayShiftCategory: "SATURDAY",
+          extraHourWeekdays: [1, 4],
+        },
+      },
+    ];
+    const taskTypes: SchedulerTaskType[] = [
+      {
+        id: "endoscopy",
+        code: "ENDOSCOPY",
+        name: "Endoscopy",
+        requiredSkillIds: ["procedure-skill"],
+        isPatientFacing: true,
+        isClinical: true,
+        isSkilled: true,
+        isEndoscopy: true,
+      },
+    ];
+    const baseSlots: SchedulerTaskSlot[] = [
+      {
+        id: "sat-endo-3",
+        date: "2026-07-11",
+        shiftBlockId: "sat-endo",
+        shiftCategory: "ENDO",
+        paidHours: 8,
+        taskTypeId: "endoscopy",
+        slotIndex: 3,
+        startMinute: 6 * 60,
+        endMinute: 14 * 60,
+        requirementLevel: "REQUIRED",
+      },
+    ];
+    const reservationPlan = buildJulySaturdayReservationPlan({
+      date: "2026-07-11",
+      employees,
+      slots: baseSlots,
+      taskTypes,
+    });
+    const slots = baseSlots.map((slot) => ({
+      ...slot,
+      reservedEmployeeIds: reservationPlan.reservationsBySlotId.get(slot.id),
+    }));
+    const result = generateSchedule({
+      seed: "july-endo-reservation",
+      employees,
+      taskTypes,
+      slots,
+    });
+
+    assert.deepEqual(reservationPlan.unresolved, []);
+    assert.deepEqual(reservationPlan.reservations, [
+      {
+        slotId: "sat-endo-3",
+        employeeId: "angela",
+        reason: "EASTON_ENDOSCOPY_SATURDAY",
+      },
+    ]);
+    assert.equal(result.assignments.length, 1);
+    assert.equal(result.assignments[0]?.employeeId, "angela");
+    assert.equal(result.assignments[0]?.source, "GENERATED");
+    assert.equal(result.conflicts.length, 0);
+  });
+
+  it("keeps regular Saturday employees out of Endoscopy and reserves them into 0800-1400 work", () => {
+    const employees: SchedulerEmployee[] = [
+      {
+        id: "endo",
+        fullName: "Endoscopy Worker",
+        skillIds: [],
+        availability: [{ weekday: 6, startMinute: 6 * 60, endMinute: 14 * 60 }],
+        workPattern: {
+          kind: "ENDOSCOPY_SATURDAY",
+          saturdayPaidHours: 8,
+          requiredSaturdayShiftCategory: "ENDO",
+          extraHourWeekdays: [],
+        },
+      },
+      {
+        id: "non-endo",
+        fullName: "Non Endoscopy Worker",
+        skillIds: [],
+        availability: [{ weekday: 6, startMinute: 8 * 60, endMinute: 14 * 60 }],
+        workPattern: {
+          kind: "NON_ENDOSCOPY_SATURDAY",
+          saturdayPaidHours: 6,
+          requiredSaturdayShiftCategory: "SATURDAY",
+          extraHourWeekdays: [2, 4],
+        },
+      },
+    ];
+    const taskTypes: SchedulerTaskType[] = [
+      {
+        id: "endoscopy",
+        code: "ENDOSCOPY",
+        name: "Endoscopy",
+        requiredSkillIds: [],
+        isEndoscopy: true,
+        isClinical: true,
+      },
+      {
+        id: "allergy",
+        code: "ALLERGY",
+        name: "Allergy",
+        requiredSkillIds: [],
+        isClinical: true,
+        isPatientFacing: true,
+      },
+    ];
+    const slots: SchedulerTaskSlot[] = [
+      {
+        id: "sat-endo",
+        date: "2026-07-11",
+        shiftBlockId: "sat-endo",
+        shiftCategory: "ENDO",
+        paidHours: 8,
+        taskTypeId: "endoscopy",
+        slotIndex: 1,
+        startMinute: 6 * 60,
+        endMinute: 14 * 60,
+        requirementLevel: "REQUIRED",
+      },
+      {
+        id: "sat-allergy",
+        date: "2026-07-11",
+        shiftBlockId: "sat-short",
+        shiftCategory: "SATURDAY",
+        paidHours: 6,
+        taskTypeId: "allergy",
+        slotIndex: 1,
+        startMinute: 8 * 60,
+        endMinute: 14 * 60,
+        requirementLevel: "REQUIRED",
+      },
+    ];
+    const reservationPlan = buildJulySaturdayReservationPlan({
+      date: "2026-07-11",
+      employees,
+      slots,
+      taskTypes,
+    });
+
+    assert.deepEqual(
+      reservationPlan.reservations.map((reservation) => [
+        reservation.slotId,
+        reservation.employeeId,
+      ]),
+      [
+        ["sat-endo", "endo"],
+        ["sat-allergy", "non-endo"],
+      ],
+    );
   });
 
   it("prioritizes employees below their required BG minimum for background slots", () => {

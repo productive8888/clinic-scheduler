@@ -71,6 +71,7 @@ export type SchedulerTaskSlot = {
   requiredStaff?: number;
   lockedEmployeeId?: string | null;
   lockedEmployeeIds?: string[];
+  reservedEmployeeIds?: string[];
   patternPreferredEmployeeIds?: string[];
   requiredSkillIds?: string[];
   eligibleEmployeeIds?: string[];

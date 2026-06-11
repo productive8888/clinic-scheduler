@@ -141,6 +141,11 @@ not contain scheduling decisions.
   background, fairness, or top-off assignment. Locked/manual overrides are
   preserved and published dates are skipped unless a manager explicitly confirms
   overwrite.
+- During Saturday generation, active July `Saturday`/Endoscopy employees and
+  employees with imported Endoscopy targets are reserved into real
+  Saturday 6:00 AM-2:00 PM Endoscopy task slots before normal skill scoring or
+  background assignment. This reservation is generated, not a manual override,
+  and still respects PTO/NPTO, availability, and overlap constraints.
 - Day/week/month/range generation is one operation: it prepares dated shift
   blocks, reconciles clinic and period-linked background slots, invokes the
   shared scheduler, repairs hard July work-pattern requirements, runs a
@@ -152,6 +157,10 @@ not contain scheduling decisions.
   7:00 AM-12:00 PM or 1:00 PM-6:00 PM. Saturday endoscopy employees must use
   the 6:00 AM-2:00 PM Saturday block and have no weekday extra-hour requirement.
   Non-endoscopy Saturday employees must use the 8:00 AM-2:00 PM Saturday block.
+- A generated Saturday background slot can never satisfy an Endoscopy Saturday
+  work-pattern requirement while the employee has not been placed into the real
+  Endoscopy block. If Endoscopy cannot be filled, the week remains visibly
+  unresolved instead of being patched with BG/hour filler.
 - Active July work-pattern groups derive generation-time availability of Monday
   through Friday 7:00 AM-6:00 PM and Saturday 6:00 AM-2:00 PM so stale
   8:00 AM-5:00 PM recurring availability does not make 7:00 AM, Monday 6:00

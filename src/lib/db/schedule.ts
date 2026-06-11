@@ -25,6 +25,7 @@ import {
 } from "@/lib/scheduler";
 import { overlaps } from "@/lib/scheduler/constraints";
 import { isShortNoticeScheduleChange } from "@/lib/schedule/short-notice";
+import { buildJulySaturdayReservationPlan } from "@/lib/schedule/july-saturday-reservations";
 import { patternPreferredEmployeeIdsForSlot } from "@/lib/schedule/pattern-preferences";
 import { getSchedulePublishIssues } from "@/lib/schedule/publish-validation";
 import { clinicWeekRange } from "@/lib/schedule/range";
@@ -998,7 +999,8 @@ export async function generateScheduleForDate(input: {
     })
     .sort((left, right) => left.id.localeCompare(right.id));
 
-  const slots: SchedulerTaskSlot[] = scheduleDay.taskSlots.map((slot) => ({
+  const existingAssignments: ExistingAssignment[] = [];
+  let slots: SchedulerTaskSlot[] = scheduleDay.taskSlots.map((slot) => ({
     id: slot.id,
     date: input.date,
     shiftBlockId: slot.shiftBlockId,
@@ -1039,7 +1041,31 @@ export async function generateScheduleForDate(input: {
       .sort(),
   }));
 
-  const existingAssignments: ExistingAssignment[] = [];
+  const saturdayReservationPlan = buildJulySaturdayReservationPlan({
+    date: input.date,
+    employees: schedulerEmployees,
+    slots,
+    taskTypes: [...taskTypes.values()],
+    existingAssignments,
+  });
+
+  if (saturdayReservationPlan.reservations.length > 0) {
+    slots = slots.map((slot) => {
+      const reservedEmployeeIds =
+        saturdayReservationPlan.reservationsBySlotId.get(slot.id);
+
+      return reservedEmployeeIds?.length
+        ? {
+            ...slot,
+            reservedEmployeeIds: [
+              ...(slot.reservedEmployeeIds ?? []),
+              ...reservedEmployeeIds,
+            ].sort(),
+          }
+        : slot;
+    });
+  }
+
   const pullCandidates = selectBackgroundPullCandidates({
     assignments: scheduleDay.taskSlots.flatMap((slot) =>
       slot.assignments.map((assignment) => ({
@@ -1128,6 +1154,8 @@ export async function generateScheduleForDate(input: {
     requiredSlotCount: slots.filter(
       (slot) => slot.requirementLevel === "REQUIRED",
     ).length,
+    saturdayReservations: saturdayReservationPlan.reservations.length,
+    saturdayReservationUnresolved: saturdayReservationPlan.unresolved,
     firstConflictReasons: result.conflicts.slice(0, 5).map((conflict) => ({
       slotId: conflict.slotId,
       reason: conflict.reason,

@@ -73,6 +73,10 @@ create optional `GENERATED_WORK_PATTERN_TOP_OFF` Background slots on the exact
 5-hour shift needed for a missing group extra-hour day. These are not ordinary
 BG minimum slots; they exist so the scheduler can expose and satisfy the
 configured 40-hour group math.
+The exception is Endoscopy Saturday: an employee whose July group or imported
+target requires Saturday Endoscopy must be placed in the real
+6:00 AM-2:00 PM Endoscopy block. Generated background cannot satisfy that
+requirement while Endoscopy coverage remains unresolved.
 
 After work-pattern repair, generation runs the deterministic BG/hour top-off
 pass. Any background-class role counts toward an employee's required BG minimum,
