@@ -72,6 +72,9 @@ plus 5-hour make-up shifts on the listed weekdays. The active sheet's BG value
 is copied to the matched employee profile as
 `requiredWeeklyBackgroundShifts`; the imported target row remains a snapshot,
 but the employee field drives current generation and publish validation.
+That BG value means literal BG only; Front Background, Booking, Research,
+Float, IT, PA / Prior Authorization, and other background-labeled roles are
+tracked as separate role-mix categories.
 
 Active target rows are classified during import. `ACTIVE_SCHEDULED` employees
 participate in ordinary July generation. `SPECIAL_EXCLUDED` rows, such as

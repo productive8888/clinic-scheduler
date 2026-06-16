@@ -3384,7 +3384,7 @@ describe("Easton July hard requirements", () => {
           startMinute: 420,
           endMinute: 720,
           paidHours: 5,
-          taskTypeCode: "RESEARCH",
+          taskTypeCode: "BACKGROUND",
           isBackground: true,
         },
         {
@@ -3403,6 +3403,78 @@ describe("Easton July hard requirements", () => {
 
     assert.equal(result.canPublish, true);
     assert.equal(result.issues.length, 0);
+  });
+
+  it("counts only literal BACKGROUND assignments toward imported BG minimums", () => {
+    const nonLiteralCodes = [
+      "FRONT_BACKGROUND",
+      "BOOKING",
+      "RESEARCH",
+      "FLOAT",
+      "IT",
+      "PRIOR_AUTHORIZATION",
+    ];
+
+    for (const taskTypeCode of nonLiteralCodes) {
+      const result = evaluateWeeklyHardRequirements({
+        targets: [
+          {
+            employeeId: "giulia",
+            employeeName: "Giulia",
+            workPatternCode: null,
+            requiredBackgroundAssignments: 1,
+            extraHourWeekdays: [],
+            expectedWeeklyHours: 0,
+          },
+        ],
+        assignments: [
+          {
+            employeeId: "giulia",
+            date: "2026-07-07",
+            shiftBlockId: `${taskTypeCode}-slot`,
+            shiftCategory: "AM",
+            startMinute: 480,
+            endMinute: 720,
+            paidHours: 4,
+            taskTypeCode,
+            isBackground: true,
+          },
+        ],
+      });
+
+      assert.equal(
+        result.bgMinimumIssues[0]?.message,
+        "Giulia has 0/1 required BG assignments.",
+      );
+    }
+
+    const literal = evaluateWeeklyHardRequirements({
+      targets: [
+        {
+          employeeId: "giulia",
+          employeeName: "Giulia",
+          workPatternCode: null,
+          requiredBackgroundAssignments: 1,
+          extraHourWeekdays: [],
+          expectedWeeklyHours: 0,
+        },
+      ],
+      assignments: [
+        {
+          employeeId: "giulia",
+          date: "2026-07-07",
+          shiftBlockId: "literal-bg",
+          shiftCategory: "AM",
+          startMinute: 480,
+          endMinute: 720,
+          paidHours: 4,
+          taskTypeCode: "BACKGROUND",
+          isBackground: true,
+        },
+      ],
+    });
+
+    assert.equal(literal.bgMinimumIssues.length, 0);
   });
 
   it("maps Easton BG target onto the editable employee BG field", () => {
@@ -3777,9 +3849,9 @@ describe("Easton July hard requirements", () => {
       ],
       taskTypes: [
         {
-          id: "research",
-          code: "RESEARCH",
-          name: "Research",
+          id: "background",
+          code: "BACKGROUND",
+          name: "Background",
           requiredSkillIds: [],
           isBackground: true,
         },
@@ -3791,7 +3863,7 @@ describe("Easton July hard requirements", () => {
           shiftBlockId: "tue-bg",
           shiftCategory: "AM",
           paidHours: 5,
-          taskTypeId: "research",
+          taskTypeId: "background",
           slotIndex: 1,
           startMinute: 7 * 60,
           endMinute: 12 * 60,
@@ -3851,10 +3923,10 @@ describe("Easton July hard requirements", () => {
     };
     const supportTask = {
       id: "support",
-      code: "FRONT_DESK",
-      name: "Front Desk",
+      code: "BOOKING",
+      name: "Booking",
       requiredSkillIds: [],
-      isBackground: false,
+      isBackground: true,
       isPatientFacing: false,
       isClinical: false,
       isSkilled: false,
@@ -3984,13 +4056,109 @@ describe("Easton July hard requirements", () => {
           paidHours: 4,
           isPatientFacing: false,
           isClinical: false,
-          isBackground: false,
+          isBackground: true,
         },
       ],
     } as never);
 
     assert.equal(candidate?.sourceSlot.id, "flex-support");
     assert.equal(candidate?.backgroundSlot?.id, "pm-background");
+  });
+
+  it("does not convert Saturday Endoscopy to satisfy literal BG minimums", () => {
+    const employee = {
+      id: "giulia",
+      fullName: "Giulia-like Employee",
+      active: true,
+      skillIds: [],
+      availability: [{ weekday: 6, startMinute: 0, endMinute: 24 * 60 }],
+      expectedHours: 40,
+      requiredBackgroundAssignments: 3,
+    };
+    const backgroundTask = {
+      id: "background",
+      code: "BACKGROUND",
+      name: "Background",
+      requiredSkillIds: [],
+      isBackground: true,
+      isPatientFacing: false,
+      isClinical: false,
+      isSkilled: false,
+      isEndoscopy: false,
+      isFloat: false,
+    };
+    const endoscopyTask = {
+      id: "endoscopy",
+      code: "ENDOSCOPY",
+      name: "Endoscopy",
+      requiredSkillIds: [],
+      isBackground: false,
+      isPatientFacing: true,
+      isClinical: true,
+      isSkilled: true,
+      isEndoscopy: true,
+      isFloat: false,
+    };
+    const candidate = selectBackgroundMinimumConversionCandidate({
+      employee,
+      taskSlots: [
+        {
+          id: "sat-endo",
+          date: "2026-07-11",
+          scheduleDayId: "day",
+          shiftBlockId: "sat-endo",
+          shiftCategory: "ENDO",
+          shiftName: "Saturday 0600-1400",
+          paidHours: 8,
+          taskTypeId: "endoscopy",
+          slotIndex: 1,
+          requirementLevel: "DESIRED",
+          startMinute: 6 * 60,
+          endMinute: 14 * 60,
+          minStaff: 0,
+          requiredStaff: 1,
+          requiredSkillIds: [],
+          eligibleEmployeeIds: [],
+          taskType: endoscopyTask,
+          source: "STAFFING_RULE",
+          currentAssignmentCount: 1,
+          assignments: [{ id: "endo-assignment", employeeId: "giulia", locked: false }],
+        },
+      ],
+      shiftBlocks: [
+        {
+          id: "sat-endo",
+          scheduleDayId: "day",
+          date: "2026-07-11",
+          name: "Saturday 0600-1400",
+          shiftTemplateId: null,
+          shiftCategory: "ENDO",
+          startMinute: 6 * 60,
+          endMinute: 14 * 60,
+          paidHours: 8,
+        },
+      ],
+      backgroundTask,
+      allAssignments: [
+        {
+          slotId: "sat-endo",
+          employeeId: "giulia",
+          date: "2026-07-11",
+          taskTypeId: "endoscopy",
+          startMinute: 6 * 60,
+          endMinute: 14 * 60,
+          shiftBlockId: "sat-endo",
+          shiftCategory: "ENDO",
+          paidHours: 8,
+          isPatientFacing: true,
+          isClinical: true,
+          isBackground: false,
+          isEndoscopy: true,
+        },
+      ],
+    } as never);
+
+    assert.equal(candidate, null);
   });
 
   it("does not convert required clinic coverage to satisfy BG minimums", () => {

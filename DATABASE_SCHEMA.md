@@ -6,13 +6,13 @@ versioned migrations in `prisma/migrations`.
 ## Core Tables
 
 - `Employee`: staff profile, Auth.js user link, role, status, PTO balance,
-  expected weekly hours, required weekly BG/background shift minimum,
+  expected weekly hours, required weekly literal BG shift minimum,
   schedule eligibility for ordinary generation, comp-time balance display field,
   weekly assignment limit, work pattern, start/end dates. Employee role/status
   remains the source of truth for authorization, `scheduleEligible` controls
   whether active staff participate in ordinary generated schedules, and
   `requiredWeeklyBackgroundShifts` is the live source of truth for weekly
-  BG/background minimums.
+  literal BG minimums.
 - `User`, `Account`, `Session`, and `VerificationToken`: Auth.js-owned
   authentication tables for magic-link users, persistent sessions, and email
   verification tokens.
@@ -112,7 +112,7 @@ versioned migrations in `prisma/migrations`.
   work-pattern code, extra-hour weekdays, exposure goals, and 40-hour weekly
   targets. These rows remain historical and auditable; current generation and
   publish validation read active scheduled targets only and use the editable
-  employee profile field for required weekly BG/background shifts.
+  employee profile field for required weekly literal BG shifts.
 - `BackgroundPullRule`: employee-specific pull order and max-pull caps for
   pullable, non-protected background work.
 - `BackgroundTaskCategory`, `BackgroundTaskDefinition`, and

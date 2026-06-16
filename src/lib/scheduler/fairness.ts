@@ -1,5 +1,6 @@
 import { dateToWeekday } from "./constraints";
 import { isExtraHourShiftForWeekday } from "@/lib/schedule/work-pattern-requirements";
+import { isCanonicalBgTaskType } from "@/lib/schedule/bg-role";
 import type {
   ExistingAssignment,
   SchedulerEmployee,
@@ -177,8 +178,9 @@ function getTargetTaskScore(input: {
   }
 
   const target = input.employee.targetTaskAssignments?.[input.taskType.id];
+  const isLiteralBgTask = isCanonicalBgTaskType(input.taskType);
   const requiredBackgroundTarget =
-    input.taskType.isBackground
+    isLiteralBgTask
       ? input.employee.requiredBackgroundAssignments
       : null;
   const effectiveTarget =
@@ -194,14 +196,14 @@ function getTargetTaskScore(input: {
     return 0;
   }
 
-  const count = input.taskType.isBackground
+  const count = isLiteralBgTask
     ? (input.employee.scheduledBackgroundAssignmentsThisWeek ?? 0) +
-      getCurrentBackgroundCount(input.employee.id, input.assignments)
+      getCurrentTaskCount(input.employee.id, input.taskType.id, input.assignments)
     : getTaskAssignmentCount(input.employee, input.taskType.id) +
       getCurrentTaskCount(input.employee.id, input.taskType.id, input.assignments);
 
   if (count < effectiveTarget) {
-    const multiplier = input.taskType.isBackground ? 4 : 1;
+    const multiplier = isLiteralBgTask ? 4 : 1;
 
     return (
       (effectiveTarget - count) *
@@ -211,15 +213,6 @@ function getTargetTaskScore(input: {
   }
 
   return -(count - effectiveTarget + 1) * input.settings.skillRoleBalanceWeight;
-}
-
-function getCurrentBackgroundCount(
-  employeeId: string,
-  assignments: ExistingAssignment[],
-) {
-  return assignments.filter(
-    (assignment) => assignment.employeeId === employeeId && assignment.isBackground,
-  ).length;
 }
 
 function getExposureGoalScore(input: {

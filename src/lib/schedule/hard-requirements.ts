@@ -5,6 +5,7 @@ import {
   validateEmployeeWeekPattern,
   type WorkPatternValidation,
 } from "@/lib/schedule/work-pattern-requirements";
+import { isCanonicalBgTaskCode } from "@/lib/schedule/bg-role";
 
 export type WeeklyHardRequirementTarget = {
   employeeId: string | null;
@@ -109,8 +110,7 @@ export function evaluateWeeklyHardRequirements(input: {
 
     const employeeAssignments = assignmentsByEmployeeId.get(target.employeeId) ?? [];
     const backgroundAssignments = employeeAssignments.filter(
-      (assignment) =>
-        assignment.taskTypeCode === "BACKGROUND" || assignment.isBackground,
+      (assignment) => isCanonicalBgTaskCode(assignment.taskTypeCode),
     ).length;
     const scheduledHours = uniqueScheduledHours(employeeAssignments);
     const pattern = target.workPatternCode

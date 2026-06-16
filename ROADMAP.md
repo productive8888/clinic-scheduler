@@ -141,11 +141,13 @@
   Endoscopy slots before ordinary Saturday/BG/top-off logic; the current
   workbook's eight ENDO target employees fill the eight Endoscopy slots when no
   hard blocker exists.
-- Employee-owned required weekly BG/background minimums, imported from the
-  active Easton target sheet but editable in employee profiles, plus
-  deterministic BG/hour top-off and flexible in-skeleton BG conversion after
-  clinic coverage generation. BG minimums are validated as hard role-mix
-  requirements, not just under-hour filler.
+- Employee-owned required weekly literal BG minimums, imported from the active
+  Easton target sheet but editable in employee profiles, plus deterministic
+  BG/hour top-off and flexible in-skeleton BG conversion after clinic coverage
+  generation. Front Background, Booking, Research, Float, IT, and PA / Prior
+  Authorization remain separate role categories and do not satisfy the `BG`
+  column. BG minimums are validated as hard role-mix requirements, not just
+  under-hour filler.
 - Soft week-to-week consistency preference from the previous published matching
   weekday/shift/task assignment.
 - Task type classification flags are manager-editable from the staffing admin

@@ -146,11 +146,11 @@ not contain scheduling decisions.
   for weekly, biweekly, monthly, or custom windows. Required count takes
   precedence over hours-based slot sizing. Definition-level required skills and
   eligible employees are hard constraints.
-- Each employee profile stores an editable required weekly BG/background shift
-  minimum. Easton `Shifts by GY` imports write the spreadsheet BG value into
-  this employee field and keep `EmployeeScheduleTarget` as a historical import
-  snapshot. Generation and publish validation use the employee field as the
-  current source of truth.
+- Each employee profile stores an editable required weekly literal BG shift
+  minimum. The active Easton target sheet imports the spreadsheet `BG` value
+  into this employee field and keeps `EmployeeScheduleTarget` as a historical
+  import snapshot. Generation and publish validation use the employee field as
+  the current source of truth.
 - Easton employee target matching accepts exact full-name matches and unique
   first-name matches, because the workbook uses first names while the app stores
   full employee names. Ambiguous first-name matches stay unmatched for manager
@@ -202,23 +202,26 @@ not contain scheduling decisions.
   creates optional `GENERATED_WORK_PATTERN_TOP_OFF` Background slots on the
   exact required shift when that is the only safe way to expose the missing
   hour. These slots are separate from ordinary BG minimum filler.
-- Required weekly BG/background minimums are scored against any background-class
-  role, including BG, Front Background, Booking, Research, Float, and generated
-  Background slots. The BG/hour top-off pass fills existing open
-  background-class slots first, then creates optional
-  `GENERATED_BACKGROUND_TOP_OFF` Background slots when needed. It tries to meet
-  required weekly BG/background minimums and move employees toward expected
-  weekly hours without exceeding those hours, but only inside the employee's
-  July work skeleton. It runs after Saturday and July group repair and does not
-  mask missing group extra-hour days. If an employee is already at their
-  40-hour target while still below their BG minimum, the pass can convert a
-  flexible generated non-required, non-locked, non-background assignment into a
-  generated BG assignment on the same shift block. Required clinic coverage and
-  locked/manual assignments are preserved; infeasible cases report the exact
-  blocker instead of adding hours over 40. It still
-  enforces skills, derived/saved availability, PTO/NPTO, no overlapping shifts,
-  work skeleton rules, published-date skip rules, and locked/manual
-  overrides. Infeasible gaps remain visible as hard weekly issues.
+- Required weekly BG minimums are scored and validated only against the
+  canonical literal BG role (`TaskType.code === "BACKGROUND"`). Front
+  Background, Booking, Research, Float, PA/Prior Authorization, IT, and other
+  background-labeled work are separate role categories and do not satisfy the
+  imported `BG` column. The BG/hour top-off pass fills existing open literal BG
+  slots first, then creates optional `GENERATED_BACKGROUND_TOP_OFF` Background
+  slots when needed. It tries to meet required weekly literal BG minimums and
+  move employees toward expected weekly hours without exceeding those hours,
+  but only inside the employee's July work skeleton. It runs after Saturday
+  and July group repair and does not mask missing group extra-hour days. If an
+  employee is already at their 40-hour target while still below their literal
+  BG minimum, the pass can convert a flexible generated non-required,
+  non-locked assignment into a generated BG assignment on the same shift block,
+  including flexible non-literal background work such as Booking or Research.
+  Required clinic coverage, Endoscopy/Saturday hard placements, and
+  locked/manual/protected assignments are preserved; infeasible cases report
+  the exact blocker instead of adding hours over 40. It still enforces skills,
+  derived/saved availability, PTO/NPTO, no overlapping shifts, work skeleton
+  rules, published-date skip rules, and locked/manual overrides. Infeasible
+  gaps remain visible as hard weekly issues.
 - Generation summaries report total, AM, PM, Saturday, 7:00 AM early,
   8:00 AM regular, 1:00-5:00 PM regular, Monday 1:00-6:00 PM long, Saturday
   endoscopy, and Saturday regular shift blocks, plus clinic/background slots,
@@ -227,7 +230,7 @@ not contain scheduling decisions.
   work-pattern employee counts, required/satisfied extra-hour day counts, and
   employees still missing exact extra-hour days.
 - Weekly target hours influence scoring and top-off, while imported July
-  work-pattern groups and employee-required BG/background minimums are hard
+  work-pattern groups and employee-required literal BG minimums are hard
   publish checks. The scheduler strongly
   prefers the required 5-hour make-up weekdays and correct Saturday block while
   still respecting skills, availability, PTO/NPTO, and overlap rules. If a week

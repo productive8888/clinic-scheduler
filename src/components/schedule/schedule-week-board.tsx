@@ -276,6 +276,10 @@ function StaffSummaryTable({
   data: WeekData;
   weekDates: string[];
 }) {
+  const hasLiteralBgMinimum = data.staffRows.some(
+    (row) => row.requiredBackgroundAssignments > 0,
+  );
+
   return (
     <section className="overflow-hidden rounded-md border border-slate-200 bg-white shadow-sm">
       <div className="border-b border-slate-200 px-4 py-3">
@@ -283,6 +287,12 @@ function StaffSummaryTable({
         <p className="mt-1 text-xs text-slate-500">
           Employee assignments by shift block, with workload and exposure totals.
         </p>
+        {hasLiteralBgMinimum ? (
+          <p className="mt-1 text-xs text-slate-500">
+            Literal BG minimums count only Background/BG assignments; Front BG,
+            Booking, Research, Float, IT, and PA are separate role targets.
+          </p>
+        ) : null}
       </div>
       <div className="overflow-x-auto">
         <table className="min-w-[1500px] border-collapse text-left text-xs">
@@ -398,14 +408,16 @@ function StaffSummaryTable({
                     <strong>{row.patientFacingShiftCount}</strong>
                     <span>Background shifts</span>
                     <strong>{row.backgroundShiftCount}</strong>
-                    <span>BG/background min</span>
+                    <span>Literal BG min</span>
                     <strong>
-                      {row.backgroundAssignmentCount}/
+                      {row.literalBackgroundAssignmentCount}/
                       {row.requiredBackgroundAssignments}
                       {row.missingBackgroundAssignments > 0
                         ? ` missing ${row.missingBackgroundAssignments}`
                         : ""}
                     </strong>
+                    <span>All background-class</span>
+                    <strong>{row.backgroundAssignmentCount}</strong>
                     <span>Required extra</span>
                     <strong>
                       {row.extraHourWeekdays.length

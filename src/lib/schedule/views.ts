@@ -1,3 +1,5 @@
+import { isCanonicalBgTaskCode } from "@/lib/schedule/bg-role";
+
 export function buildWholeDayShiftGroups<
   TShiftBlock extends { id: string },
   TTaskSlot extends { shiftBlockId: string },
@@ -218,6 +220,9 @@ export function buildWeekStaffSummary(input: {
       backgroundAssignmentCount: assignments.filter(
         (assignment) =>
           assignment.taskTypeCode === "BACKGROUND" || assignment.isBackground,
+      ).length,
+      literalBackgroundAssignmentCount: assignments.filter((assignment) =>
+        isCanonicalBgTaskCode(assignment.taskTypeCode),
       ).length,
       saturdayEndoscopyCount: uniqueShifts.filter(
         (shift) => shift.saturdayOrEndoscopy,

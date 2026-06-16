@@ -82,26 +82,31 @@ target requires Saturday Endoscopy must be placed in the real
 requirement while Endoscopy coverage remains unresolved.
 
 After work-pattern repair, generation runs the deterministic BG/hour top-off
-pass. Any background-class role counts toward an employee's required BG minimum,
-including BG, Front Background, Booking, Research, Float, and generated
-Background slots. The pass fills existing open background-class slots first,
+pass. The active target sheet `BG` column is satisfied only by the canonical
+literal BG role, currently `TaskType.code === "BACKGROUND"`. Front Background,
+Booking, Research, Float, PA / Prior Authorization, IT, and other
+background-labeled work remain separate role categories and do not count toward
+the imported BG minimum. The pass fills existing open literal BG slots first,
 then creates optional `GENERATED_BACKGROUND_TOP_OFF` Background slots as needed
-to meet employee BG/background minimums and move employees toward expected
-weekly hours without overfilling them. Role-mix BG minimums are reserved and
-validated before arbitrary clinic over-assignment, so a person with a high BG
-minimum should not be filled with random clinic roles until their required BG
-mix becomes impossible. The pass can only use shift blocks in the
-employee's July work skeleton, so Group Saturday/Endoscopy employees cannot be
-topped off with weekday 7:00 AM starts or Monday 6:00 PM endings. The pass
-also repairs employees who are already at 40 hours but below their BG minimum
-by converting flexible generated non-required work into BG on the same shift
-block. This keeps paid hours unchanged, protects required clinic coverage, and
-does not touch locked/manual assignments. It respects skills, derived/saved
-availability, PTO/NPTO, no overlap, published-date skipping, work-pattern
-rules, and locked/manual overrides. It does not hide an unmet group extra-hour
-requirement. If the minimum is infeasible, the week view reports the unmet
-employee requirement and the specific blockers, and a manager must record an
-override reason before publishing.
+to meet employee literal BG minimums and move employees toward expected weekly
+hours without overfilling them. Role-mix BG minimums are reserved and validated
+before arbitrary clinic over-assignment, so a person with a high BG minimum
+should not be filled with random clinic roles until their required literal BG
+mix becomes impossible. The pass can only use shift blocks in the employee's
+July work skeleton, so Group Saturday/Endoscopy employees cannot be topped off
+with weekday 7:00 AM starts or Monday 6:00 PM endings. The pass also repairs
+employees who are already at 40 hours but below their literal BG minimum by
+converting flexible generated non-required work into BG on the same shift
+block. A flexible non-literal background assignment, such as Booking or
+Research, may be converted when it is not required, locked, manual, protected,
+or needed for Endoscopy/Saturday. This keeps paid hours unchanged, protects
+required clinic coverage, and does not touch locked/manual assignments. It
+respects skills, derived/saved availability, PTO/NPTO, no overlap,
+published-date skipping, work-pattern rules, and locked/manual overrides. It
+does not hide an unmet group extra-hour requirement. If the minimum is
+infeasible, the week view reports the unmet employee requirement and the
+specific blockers, and a manager must record an override reason before
+publishing.
 
 Period-based `BackgroundTaskDefinition` records remain available for obligations
 that truly recur weekly, biweekly, monthly, or over a custom window. The June

@@ -38,6 +38,7 @@ import {
   getEffectiveWorkPattern,
 } from "@/lib/schedule/easton-work-pattern-resolution";
 import { withEastonDerivedAvailability } from "@/lib/schedule/easton-derived-availability";
+import { isCanonicalBgTaskType } from "@/lib/schedule/bg-role";
 import { shouldPreserveSlotOutsideStaffingRequirements } from "@/lib/schedule/slot-reconciliation";
 import { buildShiftBlockSnapshot } from "@/lib/shifts/templates";
 import { LEGACY_SHIFT_TEMPLATE_ID } from "@/lib/shifts/legacy";
@@ -927,7 +928,7 @@ export async function generateScheduleForDate(input: {
         }
       }
 
-      if (assignment.taskSlot.taskType.isBackground) {
+      if (isCanonicalBgTaskType(assignment.taskSlot.taskType)) {
         scheduledBackgroundAssignmentsThisWeekByEmployee.set(
           assignment.employeeId,
           (scheduledBackgroundAssignmentsThisWeekByEmployee.get(assignment.employeeId) ?? 0) +
