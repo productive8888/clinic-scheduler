@@ -27,6 +27,7 @@ export type EmployeeScheduleTargetSource = {
   extraHourWeekdays?: unknown;
   targetTotalHours?: unknown;
   requiredBackgroundAssignments?: number | null;
+  targetTaskCounts?: unknown;
 } | null;
 
 export type EffectiveWorkPattern = NonNullable<SchedulerEmployee["workPattern"]> & {

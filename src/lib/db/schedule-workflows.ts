@@ -93,6 +93,7 @@ export type BulkGenerationSummary = {
   backgroundSlotsCreated: number;
   backgroundTopOffSlotsCreated: number;
   backgroundTopOffAssignmentsCreated: number;
+  backgroundRoleMixSwapsMade: number;
   backgroundTopOffIncompleteEmployees: number;
   workPatternTopOffSlotsCreated: number;
   workPatternAssignmentsCreated: number;
@@ -180,6 +181,7 @@ export async function generateScheduleRange(input: {
     backgroundSlotsCreated: 0,
     backgroundTopOffSlotsCreated: 0,
     backgroundTopOffAssignmentsCreated: 0,
+    backgroundRoleMixSwapsMade: 0,
     backgroundTopOffIncompleteEmployees: 0,
     workPatternTopOffSlotsCreated: 0,
     workPatternAssignmentsCreated: 0,
@@ -311,6 +313,7 @@ export async function generateScheduleRange(input: {
 
     summary.backgroundTopOffSlotsCreated = topOffSummary.slotsCreated;
     summary.backgroundTopOffAssignmentsCreated = topOffSummary.assignmentsCreated;
+    summary.backgroundRoleMixSwapsMade = topOffSummary.roleMixSwapsMade;
     summary.backgroundTopOffIncompleteEmployees =
       topOffSummary.employeesMissingBackground.length +
       topOffSummary.employeesUnderExpectedHours.length;

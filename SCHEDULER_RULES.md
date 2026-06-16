@@ -216,6 +216,12 @@ not contain scheduling decisions.
   BG minimum, the pass can convert a flexible generated non-required,
   non-locked assignment into a generated BG assignment on the same shift block,
   including flexible non-literal background work such as Booking or Research.
+  If direct conversion is not possible because the displaced role must remain
+  covered, the role-mix repair can swap with another generated employee who has
+  excess literal BG beyond their target/minimum. The swap keeps both employees'
+  paid hours unchanged, moves the displaced role to the excess-BG employee, and
+  only proceeds when skills, PTO/NPTO, no-overlap, July work-pattern, and
+  manual/locked protections still pass.
   Required clinic coverage, Endoscopy/Saturday hard placements, and
   locked/manual/protected assignments are preserved; infeasible cases report
   the exact blocker instead of adding hours over 40. It still enforces skills,

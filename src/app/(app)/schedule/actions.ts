@@ -187,6 +187,7 @@ export async function bulkGenerateScheduleAction(formData: FormData) {
     missingExtraHourEmployees: String(summary.missingExtraHourEmployees),
     topOffSlots: String(summary.backgroundTopOffSlotsCreated),
     topOffAssignments: String(summary.backgroundTopOffAssignmentsCreated),
+    roleMixSwaps: String(summary.backgroundRoleMixSwapsMade),
     topOffIncomplete: String(summary.backgroundTopOffIncompleteEmployees),
     filled: String(summary.assignmentsFilled),
     requiredUnfilled: String(summary.requiredSlotsUnfilled),

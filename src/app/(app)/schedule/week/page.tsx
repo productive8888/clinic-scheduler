@@ -72,6 +72,7 @@ export default async function ScheduleWeekPage({
         missingExtraHourEmployees: stringParam(params.missingExtraHourEmployees),
         topOffSlots: stringParam(params.topOffSlots),
         topOffAssignments: stringParam(params.topOffAssignments),
+        roleMixSwaps: stringParam(params.roleMixSwaps),
         topOffIncomplete: stringParam(params.topOffIncomplete),
         filled: stringParam(params.filled),
         requiredUnfilled: stringParam(params.requiredUnfilled),

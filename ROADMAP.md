@@ -147,7 +147,9 @@
   generation. Front Background, Booking, Research, Float, IT, and PA / Prior
   Authorization remain separate role categories and do not satisfy the `BG`
   column. BG minimums are validated as hard role-mix requirements, not just
-  under-hour filler.
+  under-hour filler, and generation can rebalance excess literal BG through
+  safe generated-assignment swaps while preserving required coverage and 40-hour
+  work patterns.
 - Soft week-to-week consistency preference from the previous published matching
   weekday/shift/task assignment.
 - Task type classification flags are manager-editable from the staffing admin

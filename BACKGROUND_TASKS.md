@@ -101,6 +101,12 @@ block. A flexible non-literal background assignment, such as Booking or
 Research, may be converted when it is not required, locked, manual, protected,
 or needed for Endoscopy/Saturday. This keeps paid hours unchanged, protects
 required clinic coverage, and does not touch locked/manual assignments. It
+also performs a role-mix swap when one generated employee is short literal BG
+and another generated employee has excess literal BG. In that case the
+excess-BG employee takes the displaced role, the short-BG employee takes the
+literal BG slot, and the swap is allowed only when both sides preserve 40
+hours, skills, PTO/NPTO, no-overlap, July work-pattern requirements, required
+clinic coverage, and manual/locked protections. It
 respects skills, derived/saved availability, PTO/NPTO, no overlap,
 published-date skipping, work-pattern rules, and locked/manual overrides. It
 does not hide an unmet group extra-hour requirement. If the minimum is

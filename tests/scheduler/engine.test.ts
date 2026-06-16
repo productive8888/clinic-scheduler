@@ -27,7 +27,11 @@ import {
   eastonEmployeeProfileUpdateFromTarget,
   eastonShiftTemplateDataFromShift,
 } from "../../src/lib/db/easton-import";
-import { selectBackgroundMinimumConversionCandidate } from "../../src/lib/db/background-top-off";
+import {
+  buildLiteralBgRoleMixDiagnostics,
+  selectBackgroundMinimumConversionCandidate,
+  selectLiteralBgSwapCandidate,
+} from "../../src/lib/db/background-top-off";
 import {
   getEffectiveRequiredBackgroundAssignments,
   getEffectiveWorkPattern,
@@ -2441,9 +2445,237 @@ describe("Easton policy helpers", () => {
     );
     assert.equal(preview.sampleAssignments.length, 0);
   });
+
+  it("uses the latest workbook targets and demand totals when available", async () => {
+    const workbookPath = path.join(
+      process.cwd(),
+      "private",
+      "Easton Scheduling 6-16.xlsx",
+    );
+
+    try {
+      await fs.access(workbookPath);
+    } catch {
+      return;
+    }
+
+    const preview = await parseEastonWorkbook(workbookPath);
+    const totalGeneratedDemand = preview.roleDemand
+      .filter((demand) => !demand.aggregate)
+      .reduce((total, demand) => total + demand.count, 0);
+    const targetByName = new Map(
+      preview.employeeTargets.map((target) => [target.employeeName, target]),
+    );
+
+    assert.equal(preview.activeEmployeeTargetSheetName, "NEW NEW Shifts by GY");
+    assert.equal(totalGeneratedDemand, 198);
+    assert.equal(targetByName.get("Angela")?.requiredBackgroundAssignments, 2);
+    assert.equal(targetByName.get("Giulia")?.requiredBackgroundAssignments, 3);
+    assert.equal(targetByName.get("Nicole")?.requiredBackgroundAssignments, 3);
+    assert.equal(
+      preview.employeeTargets
+        .filter((target) => target.scheduleEligibility === "ACTIVE_SCHEDULED")
+        .filter((target) => Number(target.targetTaskCounts.ENDOSCOPY ?? 0) > 0)
+        .length,
+      8,
+    );
+    assert.equal(
+      preview.roleDemand
+        .filter((demand) => !demand.aggregate)
+        .some((demand) => demand.roleCode === "PATIENTS"),
+      false,
+    );
+  });
 });
 
 describe("Easton July hard requirements", () => {
+  type TestTopOffTaskType = {
+    id: string;
+    code: string;
+    name: string;
+    requiredSkillIds: string[];
+    isBackground: boolean;
+    isPatientFacing: boolean;
+    isClinical: boolean;
+    isSkilled: boolean;
+    isEndoscopy: boolean;
+    isFloat: boolean;
+  };
+
+  type TestTopOffAssignment = {
+    id: string;
+    employeeId: string;
+    locked: boolean;
+    source: string;
+  };
+
+  type TestTopOffSlot = {
+    id: string;
+    date: string;
+    scheduleDayId: string;
+    shiftBlockId: string;
+    shiftCategory: string;
+    shiftName: string;
+    paidHours: number;
+    taskTypeId: string;
+    slotIndex: number;
+    requirementLevel: string;
+    startMinute: number;
+    endMinute: number;
+    minStaff: number;
+    requiredStaff: number;
+    requiredSkillIds: string[];
+    eligibleEmployeeIds: string[];
+    taskType: TestTopOffTaskType;
+    source: string;
+    currentAssignmentCount: number;
+    assignments: TestTopOffAssignment[];
+  };
+
+  type TestExistingAssignment = {
+    slotId: string;
+    employeeId: string;
+    date: string;
+    taskTypeId: string;
+    shiftBlockId: string;
+    shiftCategory: string;
+    startMinute: number;
+    endMinute: number;
+    paidHours: number;
+    isPatientFacing?: boolean;
+    isClinical?: boolean;
+    isBackground?: boolean;
+    isEndoscopy?: boolean;
+    locked: boolean;
+  };
+
+  type TestTopOffState = {
+    hours: number;
+    backgroundAssignments: number;
+    shiftKeys: Set<string>;
+  };
+
+  function topOffEmployee(input: {
+    id: string;
+    fullName: string;
+    required: number;
+    assignedBg: number;
+    skillIds?: string[];
+  }) {
+    return {
+      id: input.id,
+      fullName: input.fullName,
+      active: true,
+      skillIds: input.skillIds ?? ["clinic"],
+      availability: [1, 2, 3, 4, 5, 6].map((weekday) => ({
+        weekday,
+        startMinute: 0,
+        endMinute: 24 * 60,
+      })),
+      unavailable: [],
+      expectedHours: 40,
+      targetWeeklyHours: 40,
+      requiredBackgroundAssignments: input.required,
+      targetTaskCounts: { BACKGROUND: input.required },
+      workPattern: null,
+      assignedBg: input.assignedBg,
+    };
+  }
+
+  function bgTaskType(): TestTopOffTaskType {
+    return {
+      id: "background",
+      code: "BACKGROUND",
+      name: "Background",
+      requiredSkillIds: [],
+      isBackground: true,
+      isPatientFacing: false,
+      isClinical: false,
+      isSkilled: false,
+      isEndoscopy: false,
+      isFloat: false,
+    };
+  }
+
+  function topOffSlot(input: {
+    id: string;
+    date: string;
+    shiftBlockId: string;
+    shiftName: string;
+    taskType: TestTopOffTaskType;
+    requirementLevel: string;
+    requiredStaff?: number;
+  }): TestTopOffSlot {
+    return {
+      id: input.id,
+      date: input.date,
+      scheduleDayId: `${input.id}-day`,
+      shiftBlockId: input.shiftBlockId,
+      shiftCategory: "AM",
+      shiftName: input.shiftName,
+      paidHours: 4,
+      taskTypeId: String(input.taskType.id),
+      slotIndex: 1,
+      requirementLevel: input.requirementLevel,
+      startMinute: 8 * 60,
+      endMinute: 12 * 60,
+      minStaff: input.requiredStaff ?? 0,
+      requiredStaff: input.requiredStaff ?? 1,
+      requiredSkillIds: [],
+      eligibleEmployeeIds: [],
+      taskType: input.taskType,
+      source: "STAFFING_RULE",
+      currentAssignmentCount: 0,
+      assignments: [],
+    };
+  }
+
+  function topOffAssignment(employeeId: string, id: string): TestTopOffAssignment {
+    return { id, employeeId, locked: false, source: "GENERATED" };
+  }
+
+  function existingFromTopOffSlot(
+    slot: TestTopOffSlot,
+    employeeId: string,
+  ): TestExistingAssignment {
+    return {
+      slotId: slot.id,
+      employeeId,
+      date: slot.date,
+      taskTypeId: slot.taskTypeId,
+      startMinute: slot.startMinute,
+      endMinute: slot.endMinute,
+      shiftBlockId: slot.shiftBlockId,
+      shiftCategory: slot.shiftCategory,
+      paidHours: slot.paidHours,
+      isPatientFacing: slot.taskType.isPatientFacing,
+      isClinical: slot.taskType.isClinical,
+      isBackground: slot.taskType.isBackground,
+      isEndoscopy: slot.taskType.isEndoscopy,
+      locked: false,
+    };
+  }
+
+  function fillerAssignments(
+    employeeId: string,
+    prefix: string,
+    hours: number,
+  ): TestExistingAssignment[] {
+    return Array.from({ length: hours / 4 }, (_, index) => ({
+      slotId: `${prefix}-filler-${index}`,
+      employeeId,
+      date: `2026-07-${String(20 + index).padStart(2, "0")}`,
+      taskTypeId: "filler",
+      shiftBlockId: `${prefix}-filler-block-${index}`,
+      shiftCategory: "PM",
+      startMinute: 13 * 60,
+      endMinute: 17 * 60,
+      paidHours: 4,
+      isBackground: false,
+      locked: false,
+    }));
+  }
+
   it("matches first-name Easton targets to unique active full-name employees", () => {
     const employees = [
       { id: "alice-id", fullName: "Alice Huang" },
@@ -4063,6 +4295,226 @@ describe("Easton July hard requirements", () => {
 
     assert.equal(candidate?.sourceSlot.id, "flex-support");
     assert.equal(candidate?.backgroundSlot?.id, "pm-background");
+  });
+
+  it("finds feasible role-mix swaps for Angela, Giulia, and Nicole style BG deficits", () => {
+    const backgroundTask = bgTaskType();
+    const clinicTask = {
+      id: "clinic",
+      code: "NEW_GI",
+      name: "New GI",
+      requiredSkillIds: ["clinic"],
+      isBackground: false,
+      isPatientFacing: true,
+      isClinical: true,
+      isSkilled: false,
+      isEndoscopy: false,
+      isFloat: false,
+    };
+    const missingEmployees = [
+      { id: "angela", fullName: "Angela Jiao", required: 2, assignedBg: 1 },
+      {
+        id: "giulia",
+        fullName: "Giulia Martins Cavalcante",
+        required: 3,
+        assignedBg: 2,
+      },
+      { id: "nicole", fullName: "Nicole Pedicini", required: 3, assignedBg: 2 },
+    ].map((employee) => topOffEmployee(employee));
+    const excessEmployees = [
+      { id: "extra-a", fullName: "Extra BG A", required: 1, assignedBg: 2 },
+      { id: "extra-b", fullName: "Extra BG B", required: 1, assignedBg: 2 },
+      { id: "extra-c", fullName: "Extra BG C", required: 1, assignedBg: 2 },
+    ].map((employee) => topOffEmployee(employee));
+    const employees = [...missingEmployees, ...excessEmployees];
+    const taskSlots: TestTopOffSlot[] = [];
+    const allAssignments: TestExistingAssignment[] = [];
+    const states = new Map<string, TestTopOffState>();
+
+    employees.forEach((employee, employeeIndex) => {
+      states.set(employee.id, {
+        hours: 40,
+        backgroundAssignments: employee.assignedBg,
+        shiftKeys: new Set<string>(),
+      });
+
+      for (let bgIndex = 0; bgIndex < employee.assignedBg; bgIndex += 1) {
+        const isMissingBgEmployee = missingEmployees.some(
+          (missingEmployee) => missingEmployee.id === employee.id,
+        );
+        const bgDateDay = isMissingBgEmployee
+          ? 6 + bgIndex
+          : 10 + employeeIndex + bgIndex;
+        const slot = topOffSlot({
+          id: `${employee.id}-bg-${bgIndex}`,
+          date: `2026-07-${String(bgDateDay).padStart(2, "0")}`,
+          shiftBlockId: `${employee.id}-bg-block-${bgIndex}`,
+          shiftName: `${employee.fullName} BG ${bgIndex}`,
+          taskType: backgroundTask,
+          requirementLevel: "DESIRED",
+        });
+        const assignment = topOffAssignment(employee.id, `${slot.id}-assignment`);
+        slot.assignments = [assignment];
+        slot.currentAssignmentCount = 1;
+        taskSlots.push(slot);
+        allAssignments.push(existingFromTopOffSlot(slot, employee.id));
+      }
+
+      const isMissingBgEmployee = missingEmployees.some(
+        (missingEmployee) => missingEmployee.id === employee.id,
+      );
+
+      if (isMissingBgEmployee) {
+        const sourceSlot = topOffSlot({
+          id: `${employee.id}-clinic`,
+          date: "2026-07-09",
+          shiftBlockId: `${employee.id}-clinic-block`,
+          shiftName: `${employee.fullName} clinic`,
+          taskType: clinicTask,
+          requirementLevel: "REQUIRED",
+          requiredStaff: 1,
+        });
+        const sourceAssignment = topOffAssignment(
+          employee.id,
+          `${sourceSlot.id}-assignment`,
+        );
+        sourceSlot.assignments = [sourceAssignment];
+        sourceSlot.currentAssignmentCount = 1;
+        taskSlots.push(sourceSlot);
+        allAssignments.push(existingFromTopOffSlot(sourceSlot, employee.id));
+      }
+
+      allAssignments.push(
+        ...fillerAssignments(
+          employee.id,
+          `${employee.id}-${employeeIndex}`,
+          40 - (employee.assignedBg + (isMissingBgEmployee ? 1 : 0)) * 4,
+        ),
+      );
+    });
+
+    for (const missingEmployee of missingEmployees) {
+      const candidate = selectLiteralBgSwapCandidate({
+        missingEmployee,
+        employees,
+        states,
+        taskSlots,
+        allAssignments,
+      } as never);
+
+      assert.equal(candidate?.missingEmployee.fullName, missingEmployee.fullName);
+      assert.equal(candidate?.sourceSlot.requirementLevel, "REQUIRED");
+      assert.equal(candidate?.backgroundSlot.taskType.code, "BACKGROUND");
+    }
+
+    const diagnostics = buildLiteralBgRoleMixDiagnostics({
+      employees,
+      states,
+      taskSlots,
+      allAssignments,
+    } as never);
+
+    for (const name of [
+      "Angela Jiao",
+      "Giulia Martins Cavalcante",
+      "Nicole Pedicini",
+    ]) {
+      const diagnostic = diagnostics.find(
+        (candidate) => candidate.employeeName === name,
+      );
+
+      assert.equal(diagnostic?.literalBgMissing, 1);
+      assert.match(diagnostic?.swapConclusion ?? "", /Feasible swap found/);
+    }
+  });
+
+  it("reports a specific blocker when excess BG cannot cover the displaced role", () => {
+    const backgroundTask = bgTaskType();
+    const clinicTask = {
+      id: "clinic",
+      code: "PROCEDURE",
+      name: "Procedure",
+      requiredSkillIds: ["procedure"],
+      isBackground: false,
+      isPatientFacing: true,
+      isClinical: true,
+      isSkilled: true,
+      isEndoscopy: false,
+      isFloat: false,
+    };
+    const missingEmployee = topOffEmployee({
+      id: "giulia",
+      fullName: "Giulia Martins Cavalcante",
+      required: 3,
+      assignedBg: 2,
+      skillIds: ["procedure"],
+    });
+    const excessEmployee = topOffEmployee({
+      id: "extra-bg",
+      fullName: "Extra BG",
+      required: 1,
+      assignedBg: 2,
+      skillIds: [],
+    });
+    const sourceSlot = topOffSlot({
+      id: "giulia-procedure",
+      date: "2026-07-09",
+      shiftBlockId: "giulia-procedure-block",
+      shiftName: "Giulia procedure",
+      taskType: clinicTask,
+      requirementLevel: "REQUIRED",
+      requiredStaff: 1,
+    });
+    sourceSlot.assignments = [topOffAssignment(missingEmployee.id, "source")];
+    sourceSlot.currentAssignmentCount = 1;
+    const backgroundSlot = topOffSlot({
+      id: "extra-bg-slot",
+      date: "2026-07-09",
+      shiftBlockId: "extra-bg-block",
+      shiftName: "Extra BG",
+      taskType: backgroundTask,
+      requirementLevel: "DESIRED",
+    });
+    backgroundSlot.assignments = [topOffAssignment(excessEmployee.id, "bg")];
+    backgroundSlot.currentAssignmentCount = 1;
+    const employees = [missingEmployee, excessEmployee];
+    const states = new Map<string, TestTopOffState>([
+      [
+        missingEmployee.id,
+        { hours: 40, backgroundAssignments: 2, shiftKeys: new Set<string>() },
+      ],
+      [
+        excessEmployee.id,
+        { hours: 40, backgroundAssignments: 2, shiftKeys: new Set<string>() },
+      ],
+    ]);
+    const taskSlots = [sourceSlot, backgroundSlot];
+    const allAssignments = [
+      existingFromTopOffSlot(sourceSlot, missingEmployee.id),
+      existingFromTopOffSlot(backgroundSlot, excessEmployee.id),
+      ...fillerAssignments(missingEmployee.id, "missing", 36),
+      ...fillerAssignments(excessEmployee.id, "excess", 36),
+    ];
+
+    const candidate = selectLiteralBgSwapCandidate({
+      missingEmployee,
+      employees,
+      states,
+      taskSlots,
+      allAssignments,
+    } as never);
+    const diagnostic = buildLiteralBgRoleMixDiagnostics({
+      employees,
+      states,
+      taskSlots,
+      allAssignments,
+    } as never).find((item) => item.employeeId === missingEmployee.id);
+
+    assert.equal(candidate, null);
+    assert.match(
+      diagnostic?.swapConclusion ?? "",
+      /Impossible because .*Missing required skill/,
+    );
   });
 
   it("does not convert Saturday Endoscopy to satisfy literal BG minimums", () => {
