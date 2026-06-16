@@ -1,5 +1,6 @@
 import { getConstraintRejections } from "./constraints";
 import { scoreCandidate } from "./scoring";
+import { isJulyPatientShiftTaskType } from "@/lib/schedule/patient-shifts";
 import type {
   CandidateRejection,
   ExistingAssignment,
@@ -98,7 +99,7 @@ export function toExistingAssignment(
     shiftBlockId: slot.shiftBlockId,
     shiftCategory: slot.shiftCategory,
     paidHours: slot.paidHours,
-    isPatientFacing: taskType?.isPatientFacing,
+    isPatientFacing: isJulyPatientShiftTaskType(taskType),
     isClinical: taskType?.isClinical,
     isBackground: taskType?.isBackground,
     isFloat: taskType?.isFloat,

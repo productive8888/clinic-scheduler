@@ -28,6 +28,10 @@ import { isShortNoticeScheduleChange } from "@/lib/schedule/short-notice";
 import { buildJulySaturdayReservationPlan } from "@/lib/schedule/july-saturday-reservations";
 import { buildJulyWeekSkeletons } from "@/lib/schedule/july-week-planner";
 import { patternPreferredEmployeeIdsForSlot } from "@/lib/schedule/pattern-preferences";
+import {
+  isJulyPatientShiftTaskType,
+  julyPatientShiftGroupFromTaskCode,
+} from "@/lib/schedule/patient-shifts";
 import { getSchedulePublishIssues } from "@/lib/schedule/publish-validation";
 import { clinicWeekRange } from "@/lib/schedule/range";
 import { getWeeklyHardRequirementSummary } from "@/lib/db/weekly-hard-requirements";
@@ -870,7 +874,7 @@ export async function generateScheduleForDate(input: {
       );
     }
 
-    if (assignment.taskSlot.taskType.isPatientFacing) {
+    if (isJulyPatientShiftTaskType(assignment.taskSlot.taskType)) {
       historicalPatientFacingCountByEmployee.set(
         assignment.employeeId,
         (historicalPatientFacingCountByEmployee.get(assignment.employeeId) ?? 0) + 1,
@@ -1561,19 +1565,7 @@ function targetInputsForEmployee(input: {
 }
 
 function taskExposureGroup(code: string) {
-  if (code.includes("GI")) {
-    return "GI";
-  }
-
-  if (code.includes("ALLERGY")) {
-    return "ALLERGY";
-  }
-
-  if (code === "PCP" || code === "FOLLOWUP") {
-    return "PCP";
-  }
-
-  return null;
+  return julyPatientShiftGroupFromTaskCode(code);
 }
 
 function jsonNumberRecord(value: Prisma.JsonValue) {

@@ -31,6 +31,7 @@ import {
   summarizeShiftBlocks,
 } from "@/lib/schedule/views";
 import { getSchedulePublishIssues } from "@/lib/schedule/publish-validation";
+import { isJulyPatientShiftTaskType } from "@/lib/schedule/patient-shifts";
 import { LEGACY_SHIFT_TEMPLATE_ID } from "@/lib/shifts/legacy";
 import { enumerateIsoDates, parseIsoDate, toIsoDate } from "@/lib/utils/date";
 import { getWeeklyHardRequirementSummary } from "@/lib/db/weekly-hard-requirements";
@@ -942,7 +943,7 @@ export async function getScheduleWeekData(anchorDate: string) {
           paidHours: Number(slot.shiftBlock.paidHours),
           taskTypeCode: slot.taskType.code,
           taskTypeName: slot.taskType.name,
-          isPatientFacing: slot.taskType.isPatientFacing,
+          isPatientFacing: isJulyPatientShiftTaskType(slot.taskType),
           isBackground: slot.taskType.isBackground,
           isEndoscopy: slot.taskType.isEndoscopy,
           locked: assignment.locked,

@@ -1,6 +1,7 @@
 import { dateToWeekday } from "./constraints";
 import { isExtraHourShiftForWeekday } from "@/lib/schedule/work-pattern-requirements";
 import { isCanonicalBgTaskType } from "@/lib/schedule/bg-role";
+import { isJulyPatientShiftTaskType } from "@/lib/schedule/patient-shifts";
 import type {
   ExistingAssignment,
   SchedulerEmployee,
@@ -48,7 +49,7 @@ export function getFairnessScore(
   const currentEndoscopy = getCurrentEndoscopyCount(employee.id, assignments);
 
   const nextClinical = taskType?.isClinical ? 1 : 0;
-  const nextPatientFacing = taskType?.isPatientFacing ? 1 : 0;
+  const nextPatientFacing = isJulyPatientShiftTaskType(taskType) ? 1 : 0;
   const nextHours = slot?.paidHours ?? 0;
   const nextSaturday =
     slot?.shiftCategory === "SATURDAY" || (slot ? dateToWeekday(slot.date) === 6 : false)

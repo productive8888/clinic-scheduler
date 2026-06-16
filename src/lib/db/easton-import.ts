@@ -810,6 +810,35 @@ export async function applyEastonDefaultsFromWorkbook(input: {
           where: { id: employeeId },
           data: eastonEmployeeProfileUpdateFromTarget(target, workPatternId),
         });
+
+        const existingSkillCodes = (
+          await tx.employeeSkill.findMany({
+            where: { employeeId },
+            select: { skill: { select: { code: true } } },
+          })
+        ).map((employeeSkill) => employeeSkill.skill.code);
+        const mergedSkillCodes = mergeImportedEmployeeSkillCodes(
+          existingSkillCodes,
+          target.importedSkillCodes,
+        );
+
+        for (const skillCode of mergedSkillCodes) {
+          if (existingSkillCodes.includes(skillCode)) {
+            continue;
+          }
+
+          const skillId = configurableSkillIdByCode.get(skillCode);
+
+          if (!skillId) {
+            continue;
+          }
+
+          await tx.employeeSkill.upsert({
+            where: { employeeId_skillId: { employeeId, skillId } },
+            update: {},
+            create: { employeeId, skillId },
+          });
+        }
       }
 
       await tx.employeeScheduleTarget.create({
@@ -831,6 +860,7 @@ export async function applyEastonDefaultsFromWorkbook(input: {
           source: "EASTON_SPREADSHEET",
           notes:
             [
+              target.skillLabel ? `Skills ${target.skillLabel}` : null,
               target.roleLabel,
               target.groupLabel,
               target.scheduleEligibility !== "ACTIVE_SCHEDULED"
@@ -994,6 +1024,13 @@ export function eastonEmployeeProfileUpdateFromTarget(
     requiredWeeklyBackgroundShifts: target.requiredBackgroundAssignments,
     ...(workPatternId ? { workPatternId } : {}),
   };
+}
+
+export function mergeImportedEmployeeSkillCodes(
+  existingSkillCodes: string[],
+  importedSkillCodes: string[],
+) {
+  return [...new Set([...existingSkillCodes, ...importedSkillCodes])].sort();
 }
 
 function countTargetEligibility(targets: EastonEmployeeTarget[]) {

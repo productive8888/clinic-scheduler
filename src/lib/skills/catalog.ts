@@ -1,5 +1,10 @@
 export const REQUIRED_CONFIGURABLE_SKILLS = [
   {
+    code: "FRONT",
+    name: "Front",
+    description: "Required for Front Desk and Front Background assignments.",
+  },
+  {
     code: "IT",
     name: "IT",
     description: "Required for IT support assignments.",
@@ -18,6 +23,8 @@ export const REQUIRED_CONFIGURABLE_SKILLS = [
 ] as const;
 
 export const REQUIRED_TASK_SKILL_CODES = {
+  FRONT_DESK: ["FRONT"],
+  FRONT_BACKGROUND: ["FRONT"],
   IT: ["IT"],
   PRIOR_AUTHORIZATION: ["PRIOR_AUTHORIZATION"],
   RESEARCH: ["RESEARCH"],

@@ -148,6 +148,10 @@ Multi-person staffing is modeled by multiple `TaskSlot` records for the same
 With shift blocks, the same `TaskType` can appear more than once on the same
 date by attaching each `TaskSlot` to a different `ShiftBlock`.
 
+Front Desk and Front Background remain separate `TaskType` records so their
+role counts stay distinct. Both task types share one required `Skill` code,
+`FRONT`; the model does not use separate front-desk and front-background skills.
+
 ## Clinic Scenarios
 
 Schedule days support `Routine`, `Clinic Closed`, `Doctor Off / Reduced

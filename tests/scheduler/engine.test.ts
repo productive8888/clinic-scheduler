@@ -18,7 +18,10 @@ import {
   type SchedulerTaskSlot,
   type SchedulerTaskType,
 } from "../../src/lib/scheduler";
-import { parseEastonWorkbook } from "../../src/lib/easton-import/parser";
+import {
+  parseEastonSkillCodes,
+  parseEastonWorkbook,
+} from "../../src/lib/easton-import/parser";
 import {
   findEastonTargetForEmployee,
   findEmployeeForEastonTarget,
@@ -26,6 +29,7 @@ import {
 import {
   eastonEmployeeProfileUpdateFromTarget,
   eastonShiftTemplateDataFromShift,
+  mergeImportedEmployeeSkillCodes,
 } from "../../src/lib/db/easton-import";
 import {
   buildLiteralBgRoleMixDiagnostics,
@@ -86,6 +90,10 @@ import {
   summarizeShiftBlocks,
 } from "../../src/lib/schedule/views";
 import { shouldPreserveSlotOutsideStaffingRequirements } from "../../src/lib/schedule/slot-reconciliation";
+import {
+  isJulyPatientShiftTaskCode,
+  julyPatientShiftGroupFromTaskCode,
+} from "../../src/lib/schedule/patient-shifts";
 import {
   isShortNoticeForDateRange,
   isShortNoticeScheduleChange,
@@ -2280,7 +2288,7 @@ describe("Easton policy helpers", () => {
     ];
     targets.getRow(2).values = [
       1,
-      "GI + Allergy",
+      "FRONT _ ENDO",
       "Yvonne",
       "PCP",
       "T + Th",
@@ -2383,6 +2391,8 @@ describe("Easton policy helpers", () => {
       true,
     );
     assert.equal(preview.employeeTargets[0].employeeName, "Yvonne");
+    assert.equal(preview.employeeTargets[0].skillLabel, "FRONT _ ENDO");
+    assert.deepEqual(preview.employeeTargets[0].importedSkillCodes, ["FRONT"]);
     assert.equal(preview.employeeTargets[0].activeTargetSheetName, "NEW NEW Shifts by GY");
     assert.equal(preview.employeeTargets[0].scheduleEligibility, "ACTIVE_SCHEDULED");
     assert.equal(preview.employeeTargets[0].workPatternCode, "EASTON_GROUP_T_TH");
@@ -2446,6 +2456,15 @@ describe("Easton policy helpers", () => {
     assert.equal(preview.sampleAssignments.length, 0);
   });
 
+  it("parses FRONT from Easton skill indicator labels", () => {
+    assert.deepEqual(parseEastonSkillCodes("FRONT"), ["FRONT"]);
+    assert.deepEqual(parseEastonSkillCodes("FRONT + ENDO"), ["FRONT"]);
+    assert.deepEqual(parseEastonSkillCodes("FRONT _ ENDO"), ["FRONT"]);
+    assert.deepEqual(parseEastonSkillCodes("IT + FRONT"), ["FRONT"]);
+    assert.deepEqual(parseEastonSkillCodes("FRONT_ENDO"), ["FRONT"]);
+    assert.deepEqual(parseEastonSkillCodes("ENDO"), []);
+  });
+
   it("uses the latest workbook targets and demand totals when available", async () => {
     const workbookPath = path.join(
       process.cwd(),
@@ -2470,6 +2489,7 @@ describe("Easton policy helpers", () => {
     assert.equal(preview.activeEmployeeTargetSheetName, "NEW NEW Shifts by GY");
     assert.equal(totalGeneratedDemand, 198);
     assert.equal(targetByName.get("Angela")?.requiredBackgroundAssignments, 2);
+    assert.deepEqual(targetByName.get("Angela")?.importedSkillCodes, ["FRONT"]);
     assert.equal(targetByName.get("Giulia")?.requiredBackgroundAssignments, 3);
     assert.equal(targetByName.get("Nicole")?.requiredBackgroundAssignments, 3);
     assert.equal(
@@ -4953,14 +4973,30 @@ describe("staffing analytics aggregation", () => {
 });
 
 describe("automated scheduling workflow foundations", () => {
-  it("defines distinct IT, prior authorization, and Research skills", () => {
+  it("defines shared Front plus distinct IT, prior authorization, and Research skills", () => {
     assert.deepEqual(
       REQUIRED_CONFIGURABLE_SKILLS.map((skill) => skill.code),
-      ["IT", "PRIOR_AUTHORIZATION", "RESEARCH"],
+      ["FRONT", "IT", "PRIOR_AUTHORIZATION", "RESEARCH"],
     );
+    assert.deepEqual(REQUIRED_TASK_SKILL_CODES.FRONT_DESK, ["FRONT"]);
+    assert.deepEqual(REQUIRED_TASK_SKILL_CODES.FRONT_BACKGROUND, ["FRONT"]);
     assert.deepEqual(REQUIRED_TASK_SKILL_CODES.PRIOR_AUTHORIZATION, [
       "PRIOR_AUTHORIZATION",
     ]);
+  });
+
+  it("preserves manual skill assignments while adding imported Easton skills", () => {
+    assert.deepEqual(
+      mergeImportedEmployeeSkillCodes(
+        ["CIVIL_SURGEON", "RESEARCH"],
+        ["FRONT"],
+      ),
+      ["CIVIL_SURGEON", "FRONT", "RESEARCH"],
+    );
+    assert.deepEqual(
+      mergeImportedEmployeeSkillCodes(["FRONT", "IT"], ["FRONT"]),
+      ["FRONT", "IT"],
+    );
   });
 
   it("parses required weekly BG shifts from the employee form", () => {
@@ -5033,6 +5069,114 @@ describe("automated scheduling workflow foundations", () => {
       assert.equal(result.assignments[0].employeeId, "skilled");
     });
   }
+
+  it("uses one FRONT skill for separate Front Desk and Front Background task types", () => {
+    const frontDesk = {
+      id: "front-desk",
+      code: "FRONT_DESK",
+      name: "Front Desk",
+      requiredSkillIds: ["FRONT"],
+      isPatientFacing: true,
+      isClinical: false,
+      isBackground: false,
+    };
+    const frontBackground = {
+      id: "front-background",
+      code: "FRONT_BACKGROUND",
+      name: "Front Background",
+      requiredSkillIds: ["FRONT"],
+      isPatientFacing: false,
+      isClinical: false,
+      isBackground: true,
+    };
+    const taskTypes = [frontDesk, frontBackground];
+    const slots = [
+      {
+        id: "front-desk-slot",
+        date: monday,
+        taskTypeId: frontDesk.id,
+        slotIndex: 1,
+        startMinute: 8 * 60,
+        endMinute: 12 * 60,
+        requirementLevel: "REQUIRED" as const,
+      },
+      {
+        id: "front-background-slot",
+        date: monday,
+        taskTypeId: frontBackground.id,
+        slotIndex: 1,
+        startMinute: 13 * 60,
+        endMinute: 17 * 60,
+        requirementLevel: "DESIRED" as const,
+      },
+    ];
+
+    const result = generateSchedule({
+      seed: "front-shared-skill",
+      employees: [
+        {
+          id: "unskilled",
+          fullName: "Unskilled",
+          skillIds: [],
+          availability: allDayMonday,
+        },
+        {
+          id: "front-skilled",
+          fullName: "Front Skilled",
+          skillIds: ["FRONT"],
+          availability: allDayMonday,
+        },
+      ],
+      taskTypes,
+      slots,
+    });
+
+    assert.deepEqual(
+      result.assignments
+        .map((assignment) => [
+          assignment.slotId,
+          assignment.taskTypeId,
+          assignment.employeeId,
+        ])
+        .sort((left, right) => left[0].localeCompare(right[0])),
+      [
+        ["front-background-slot", "front-background", "front-skilled"],
+        ["front-desk-slot", "front-desk", "front-skilled"],
+      ],
+    );
+    assert.deepEqual(
+      taskTypes.map((taskType) => taskType.code),
+      ["FRONT_DESK", "FRONT_BACKGROUND"],
+    );
+
+    const noFrontSkill = generateSchedule({
+      seed: "front-shared-skill-missing",
+      employees: [
+        {
+          id: "unskilled",
+          fullName: "Unskilled",
+          skillIds: [],
+          availability: allDayMonday,
+        },
+      ],
+      taskTypes,
+      slots,
+    });
+
+    assert.equal(noFrontSkill.assignments.length, 0);
+    assert.deepEqual(
+      noFrontSkill.conflicts.map((conflict) => conflict.slotId),
+      ["front-desk-slot", "front-background-slot"],
+    );
+    assert.equal(
+      noFrontSkill.conflicts.every((conflict) =>
+        conflict.rejectedCandidates.some((candidate) =>
+          candidate.reasons.includes("Missing required skill"),
+        ),
+      ),
+      true,
+    );
+  });
 
   it("plans deterministic week and month ranges and skips published dates", () => {
     assert.deepEqual(clinicWeekRange("2026-06-04"), {
@@ -5403,6 +5547,80 @@ describe("automated scheduling workflow foundations", () => {
     assert.equal(rows[0].patientFacingShiftCount, 1);
     assert.equal(rows[0].backgroundShiftCount, 1);
     assert.equal(rows[0].exposure.GI, 1);
+  });
+
+  it("counts July patient shifts only from GI, Allergy, and PCP roles", () => {
+    assert.equal(julyPatientShiftGroupFromTaskCode("NEW_GI"), "GI");
+    assert.equal(julyPatientShiftGroupFromTaskCode("VIRTUAL_GI"), "GI");
+    assert.equal(julyPatientShiftGroupFromTaskCode("GI"), "GI");
+    assert.equal(julyPatientShiftGroupFromTaskCode("NEW_ALLERGY"), "ALLERGY");
+    assert.equal(julyPatientShiftGroupFromTaskCode("VIRTUAL_ALLERGY"), "ALLERGY");
+    assert.equal(julyPatientShiftGroupFromTaskCode("ALLERGY"), "ALLERGY");
+    assert.equal(julyPatientShiftGroupFromTaskCode("PCP"), "PCP");
+
+    for (const code of [
+      "PROCEDURE",
+      "CIVIL_SURGEON",
+      "FRONT_DESK",
+      "FRONT_BACKGROUND",
+      "ENDOSCOPY",
+      "ALLERGY_SHOTS",
+      "BOOKING",
+      "RESEARCH",
+      "FLOAT",
+      "BACKGROUND",
+      "PRIOR_AUTHORIZATION",
+      "FOLLOWUP",
+    ]) {
+      assert.equal(isJulyPatientShiftTaskCode(code), false, code);
+    }
+  });
+
+  it("keeps patient shifts equal to GI plus Allergy plus PCP in week totals", () => {
+    const assignment = (
+      taskTypeCode: string,
+      taskTypeName: string,
+      index: number,
+      isBackground = false,
+    ) => ({
+      employeeId: "alice",
+      date: `2026-07-${String(6 + index).padStart(2, "0")}`,
+      shiftBlockId: `shift-${index}`,
+      shiftName: `Shift ${index}`,
+      shiftCategory: "AM",
+      startMinute: 8 * 60,
+      endMinute: 12 * 60,
+      paidHours: 4,
+      taskTypeCode,
+      taskTypeName,
+      isPatientFacing: true,
+      isBackground,
+      isEndoscopy: taskTypeCode === "ENDOSCOPY",
+      locked: false,
+    });
+    const rows = buildWeekStaffSummary({
+      employees: [{ id: "alice", fullName: "Alice Huang", targetHours: 40 }],
+      assignments: [
+        assignment("PROCEDURE", "Procedure", 0),
+        assignment("BACKGROUND", "Background", 1, true),
+        assignment("PCP", "PCP", 2),
+        assignment("BACKGROUND", "Background", 3, true),
+        assignment("NEW_GI", "New GI", 4),
+        assignment("BACKGROUND", "Background", 5, true),
+        assignment("PCP", "PCP", 6),
+        assignment("BACKGROUND", "Background", 7, true),
+        assignment("NEW_ALLERGY", "New Allergy", 8),
+      ],
+    });
+    const row = rows[0];
+
+    assert.deepEqual(row.exposure, { GI: 1, ALLERGY: 1, PCP: 2 });
+    assert.equal(row.patientFacingShiftCount, 4);
+    assert.equal(
+      row.patientFacingShiftCount,
+      row.exposure.GI + row.exposure.ALLERGY + row.exposure.PCP,
+    );
+    assert.equal(row.roleCounts.PROCEDURE, 1);
   });
 
   it("hides migration-only legacy full-day blocks from manager workflow", () => {

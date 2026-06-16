@@ -104,6 +104,11 @@ not contain scheduling decisions.
   become desired staffing slots on the exact AM, PM, or Saturday block where
   they appear. July patient-facing clinical demand is GI, Allergy, and PCP.
   `Patients` is a validation aggregate only and never creates task slots.
+  July `Patient shifts` means only GI, Allergy, and PCP assignments:
+  `NEW_GI`/`VIRTUAL_GI`/`GI`, `NEW_ALLERGY`/`VIRTUAL_ALLERGY`/`ALLERGY`, and
+  `PCP`. Procedure, Civil Surgeon, Front Desk, Front Background, IT,
+  Endoscopy, Booking, Research, Float, Background/BG, Prior Authorization,
+  Followup, and Allergy Shots do not count toward the July patient-shift total.
   Allergy Shots is deprecated for July generation; historical task records may
   remain, but the importer ignores any legacy Allergy Shots row and active July
   defaults deactivate Allergy Shots staffing rules. June sheets are ignored for
@@ -319,9 +324,15 @@ Optional/background task types:
 
 - Research
 - Background
+- Front Background
 - Booking
 - Float
 - Extra
+
+Front Desk and Front Background are separate task types and role-count buckets,
+but both require the same employee skill: `FRONT`. Easton imports assign the
+`FRONT` skill when the active employee target sheet's skill indicator contains
+`FRONT`, including combined labels such as `FRONT + ENDO` or `IT + FRONT`.
 - PA / Prior Authorization
 
 Historical/deprecated for active July generation:

@@ -2,6 +2,7 @@ import fs from "node:fs";
 import path from "node:path";
 import ExcelJS from "exceljs";
 import { resolveEastonWorkPatternGroup } from "@/lib/easton-import/work-patterns";
+import { julyPatientShiftGroupFromTaskCode } from "@/lib/schedule/patient-shifts";
 
 export type EastonParsedShift = {
   sheetName: string;
@@ -30,6 +31,7 @@ export type EastonRoleDemand = {
 
 export type EastonEmployeeTarget = {
   employeeName: string;
+  skillLabel: string | null;
   roleLabel: string | null;
   groupLabel: string | null;
   workPatternCode: string | null;
@@ -38,6 +40,7 @@ export type EastonEmployeeTarget = {
   scheduleEligibilityReason: string | null;
   requiredBackgroundAssignments: number;
   extraHourWeekdays: number[];
+  importedSkillCodes: string[];
   targetTaskCounts: Record<string, number>;
   targetPatientShifts: number | null;
   targetTotalHours: number | null;
@@ -109,16 +112,11 @@ const ROLE_CODE_ALIASES: Record<string, string> = {
   PATIENTS: "PATIENTS",
 };
 
-const DEPRECATED_JULY_ROLE_CODES = new Set(["ALLERGY_SHOTS"]);
-
-const EXPOSURE_BY_ROLE_CODE: Record<string, string> = {
-  NEW_GI: "GI",
-  VIRTUAL_GI: "GI",
-  NEW_ALLERGY: "ALLERGY",
-  VIRTUAL_ALLERGY: "ALLERGY",
-  PCP: "PCP",
-  FOLLOWUP: "PCP",
+const SKILL_CODE_ALIASES: Record<string, string> = {
+  FRONT: "FRONT",
 };
+
+const DEPRECATED_JULY_ROLE_CODES = new Set(["ALLERGY_SHOTS"]);
 
 export function resolveEastonWorkbookPath(explicitPath?: string | null) {
   const configuredCandidates =
@@ -210,6 +208,31 @@ export function normalizeEastonRoleCode(roleName: string) {
     .toUpperCase();
 
   return ROLE_CODE_ALIASES[normalized] ?? normalized.replace(/\s+/g, "_");
+}
+
+export function parseEastonSkillCodes(skillLabel?: string | null) {
+  if (!skillLabel) {
+    return [];
+  }
+
+  const normalized = skillLabel
+    .toUpperCase()
+    .replace(/[_/,&]+/g, " ")
+    .replace(/\+/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+  const tokens = normalized.split(" ").filter(Boolean);
+  const skillCodes = new Set<string>();
+
+  for (const token of tokens) {
+    const skillCode = SKILL_CODE_ALIASES[token];
+
+    if (skillCode) {
+      skillCodes.add(skillCode);
+    }
+  }
+
+  return [...skillCodes].sort();
 }
 
 export function isDeprecatedEastonJulyRoleCode(roleCode: string) {
@@ -402,6 +425,7 @@ function parseEmployeeTargetsSheet(worksheet: ExcelJS.Worksheet) {
 
     targets.push({
       employeeName,
+      skillLabel: nullableText(row.getCell(2)),
       roleLabel: nullableText(row.getCell(4)),
       groupLabel,
       workPatternCode: workPatternGroup?.code ?? null,
@@ -410,6 +434,7 @@ function parseEmployeeTargetsSheet(worksheet: ExcelJS.Worksheet) {
       scheduleEligibilityReason: eligibility.reason,
       requiredBackgroundAssignments,
       extraHourWeekdays: workPatternGroup?.extraHourWeekdays ?? [],
+      importedSkillCodes: parseEastonSkillCodes(nullableText(row.getCell(2))),
       targetTaskCounts,
       targetPatientShifts,
       targetTotalHours:
@@ -533,7 +558,8 @@ function inferShiftCategory(input: {
 
 function hasExposureTarget(goal: string, counts: Record<string, number>) {
   return Object.entries(counts).some(
-    ([roleCode, count]) => count > 0 && EXPOSURE_BY_ROLE_CODE[roleCode] === goal,
+    ([roleCode, count]) =>
+      count > 0 && julyPatientShiftGroupFromTaskCode(roleCode) === goal,
   );
 }
 
@@ -543,13 +569,6 @@ function validatePatientTotals(
   roleDemand: EastonRoleDemand[],
 ) {
   const warnings: string[] = [];
-  const patientFacingCodes = new Set([
-    "NEW_GI",
-    "NEW_ALLERGY",
-    "PCP",
-    "FOLLOWUP",
-  ]);
-
   for (const shift of shifts) {
     const shiftDemand = roleDemand.filter(
       (demand) =>
@@ -559,7 +578,7 @@ function validatePatientTotals(
         demand.paidHours === shift.paidHours,
     );
     const expected = shiftDemand
-      .filter((demand) => patientFacingCodes.has(demand.roleCode))
+      .filter((demand) => julyPatientShiftGroupFromTaskCode(demand.roleCode))
       .reduce((total, demand) => total + demand.count, 0);
     const patients = shiftDemand.find((demand) => demand.roleCode === "PATIENTS");
 

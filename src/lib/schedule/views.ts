@@ -1,4 +1,8 @@
 import { isCanonicalBgTaskCode } from "@/lib/schedule/bg-role";
+import {
+  julyPatientShiftCountFromExposure,
+  julyPatientShiftGroupFromTaskCode,
+} from "@/lib/schedule/patient-shifts";
 
 export function buildWholeDayShiftGroups<
   TShiftBlock extends { id: string },
@@ -168,7 +172,6 @@ export function buildWeekStaffSummary(input: {
       string,
       {
         paidHours: number;
-        patientFacing: boolean;
         background: boolean;
         saturdayOrEndoscopy: boolean;
       }
@@ -185,11 +188,9 @@ export function buildWeekStaffSummary(input: {
       const shiftKey = `${assignment.date}:${assignment.shiftBlockId}`;
       const shift = shifts.get(shiftKey) ?? {
         paidHours: assignment.paidHours,
-        patientFacing: false,
         background: false,
         saturdayOrEndoscopy: false,
       };
-      shift.patientFacing ||= assignment.isPatientFacing;
       shift.background ||= assignment.isBackground;
       shift.saturdayOrEndoscopy ||=
         assignment.isEndoscopy ||
@@ -214,8 +215,7 @@ export function buildWeekStaffSummary(input: {
       fullName: employee.fullName,
       targetHours: employee.targetHours,
       totalHours: uniqueShifts.reduce((total, shift) => total + shift.paidHours, 0),
-      patientFacingShiftCount: uniqueShifts.filter((shift) => shift.patientFacing)
-        .length,
+      patientFacingShiftCount: julyPatientShiftCountFromExposure(exposure),
       backgroundShiftCount: uniqueShifts.filter((shift) => shift.background).length,
       backgroundAssignmentCount: assignments.filter(
         (assignment) =>
@@ -235,17 +235,5 @@ export function buildWeekStaffSummary(input: {
 }
 
 export function taskExposureGroup(taskTypeCode: string) {
-  if (taskTypeCode.includes("GI")) {
-    return "GI" as const;
-  }
-
-  if (taskTypeCode.includes("ALLERGY")) {
-    return "ALLERGY" as const;
-  }
-
-  if (taskTypeCode === "FOLLOWUP" || taskTypeCode.includes("PCP")) {
-    return "PCP" as const;
-  }
-
-  return null;
+  return julyPatientShiftGroupFromTaskCode(taskTypeCode);
 }

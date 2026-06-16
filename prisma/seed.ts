@@ -7,7 +7,8 @@ const skills = [
   {
     code: "FRONT_BACKGROUND",
     name: "Front Background",
-    description: "Supports Front Background assignments when configured.",
+    description:
+      "Legacy front-background-specific skill retained for older data. New front tasks use FRONT.",
   },
   {
     code: "CIVIL_SURGEON",
@@ -138,7 +139,23 @@ const taskTypes = [
     isSkilled: false,
     isEndoscopy: false,
     isFloat: false,
-    requiredSkillCodes: [],
+    requiredSkillCodes: ["FRONT"],
+  },
+  {
+    code: "FRONT_BACKGROUND",
+    name: "Front Background",
+    interchangeableGroup: null,
+    difficultyWeight: 0,
+    sortOrder: 65,
+    optional: true,
+    defaultForRoutine: false,
+    defaultForReduced: false,
+    isClinical: false,
+    isBackground: true,
+    isSkilled: false,
+    isEndoscopy: false,
+    isFloat: false,
+    requiredSkillCodes: ["FRONT"],
   },
   {
     code: "CIVIL_SURGEON",
