@@ -1,5 +1,6 @@
 import { eastonWorkPatternGroups, weekdayShortName } from "@/lib/easton-import/work-patterns";
 import {
+  isExtraHourShiftForWeekday,
   uniqueScheduledHours,
   validateEmployeeWeekPattern,
   type WorkPatternValidation,
@@ -36,8 +37,10 @@ export type WeeklyHardRequirementIssue = {
     | "WORK_PATTERN_MISSING"
     | "BG_MINIMUM_UNMET"
     | "BELOW_EXPECTED_HOURS"
+    | "ABOVE_EXPECTED_HOURS"
     | "SATURDAY_PATTERN_UNMET"
-    | "EXTRA_HOUR_DAY_UNMET";
+    | "EXTRA_HOUR_DAY_UNMET"
+    | "FORBIDDEN_WORK_PATTERN_SHIFT";
   employeeId: string | null;
   employeeName: string;
   message: string;
@@ -160,8 +163,33 @@ export function evaluateWeeklyHardRequirements(input: {
       });
     }
 
+    if (target.expectedWeeklyHours > 0 && scheduledHours > target.expectedWeeklyHours) {
+      issues.push({
+        code: "ABOVE_EXPECTED_HOURS",
+        employeeId: target.employeeId,
+        employeeName: target.employeeName,
+        message: `${target.employeeName} has ${formatHours(scheduledHours)}/${formatHours(target.expectedWeeklyHours)} expected weekly hours scheduled and is above target.`,
+      });
+    }
+
     if (!workPatternValidation.requirement) {
       continue;
+    }
+
+    for (const assignment of employeeAssignments) {
+      const forbiddenReason = forbiddenPatternAssignmentReason({
+        assignment,
+        workPattern: workPatternValidation,
+      });
+
+      if (forbiddenReason) {
+        issues.push({
+          code: "FORBIDDEN_WORK_PATTERN_SHIFT",
+          employeeId: target.employeeId,
+          employeeName: target.employeeName,
+          message: `${target.employeeName} is assigned outside their July work pattern: ${forbiddenReason}.`,
+        });
+      }
     }
 
     if (!workPatternValidation.hasRequiredSaturday) {
@@ -196,13 +224,53 @@ export function evaluateWeeklyHardRequirements(input: {
       (issue) =>
         issue.code === "WORK_PATTERN_MISSING" ||
         issue.code === "SATURDAY_PATTERN_UNMET" ||
-        issue.code === "EXTRA_HOUR_DAY_UNMET",
+        issue.code === "EXTRA_HOUR_DAY_UNMET" ||
+        issue.code === "FORBIDDEN_WORK_PATTERN_SHIFT",
     ),
     unmatchedTargetIssues: issues.filter(
       (issue) => issue.code === "UNMATCHED_TARGET_EMPLOYEE",
     ),
     canPublish: issues.length === 0,
   };
+}
+
+function forbiddenPatternAssignmentReason(input: {
+  assignment: WeeklyHardRequirementAssignment;
+  workPattern: WorkPatternValidation;
+}) {
+  const requirement = input.workPattern.requirement;
+
+  if (!requirement) {
+    return null;
+  }
+
+  const weekday = new Date(`${input.assignment.date}T00:00:00.000Z`).getUTCDay();
+
+  if (
+    requirement.kind === "ENDOSCOPY_SATURDAY" &&
+    weekday >= 1 &&
+    weekday <= 5 &&
+    isExtraHourShiftForWeekday(input.assignment, weekday)
+  ) {
+    return `${weekdayFullName(weekday)} ${formatMinute(input.assignment.startMinute)}-${formatMinute(input.assignment.endMinute)} is a weekday extra-hour shift for an Endoscopy/Saturday employee`;
+  }
+
+  if (
+    weekday === 6 &&
+    requirement.requiredSaturdayShiftCategory &&
+    input.assignment.shiftCategory !== requirement.requiredSaturdayShiftCategory
+  ) {
+    return `Saturday ${input.assignment.shiftCategory} does not match required ${requirement.requiredSaturdayShiftCategory}`;
+  }
+
+  return null;
+}
+
+function formatMinute(value: number) {
+  const hours = Math.floor(value / 60);
+  const minutes = value % 60;
+
+  return `${String(hours).padStart(2, "0")}${String(minutes).padStart(2, "0")}`;
 }
 
 function formatHours(value: number) {

@@ -95,6 +95,14 @@ slots before ordinary scoring, background assignment, or BG/hour top-off. If
 that real Endoscopy placement is infeasible, the schedule stays unresolved
 rather than satisfying the employee with Saturday background work.
 
+The July week planner now creates an employee work skeleton before task
+assignment. Group `Saturday` employees get Saturday 6:00 AM-2:00 PM plus four
+normal weekday full days, and weekday 7:00 AM starts or Monday 6:00 PM endings
+are forbidden for them. Non-endoscopy groups get Saturday 8:00 AM-2:00 PM plus
+four weekday full days, with only the two group weekdays using a 5-hour block.
+The scheduler, repair pass, and BG/hour top-off can only assign inside those
+planned shift blocks unless a manager later makes an explicit manual override.
+
 Generation summaries explicitly report total, AM, PM, Saturday, 0700 early AM,
 0800 regular AM, 1300-1700 PM, Monday 1300-1800 PM, Saturday endoscopy, and
 Saturday regular block counts plus generated work-pattern and BG/hour top-off

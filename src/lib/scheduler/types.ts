@@ -22,7 +22,9 @@ export type SchedulerEmployee = {
   scheduledEarlyStartShiftsThisWeek?: number;
   requiredBackgroundAssignments?: number;
   workPattern?: {
+    code?: string | null;
     kind?: "CUSTOM" | "ENDOSCOPY_SATURDAY" | "NON_ENDOSCOPY_SATURDAY";
+    targetWeeklyHours?: number | null;
     worksTuesdayThroughSaturday?: boolean;
     saturdayPaidHours?: number | null;
     requiredSaturdayShiftCategory?: "AM" | "PM" | "SATURDAY" | "ENDO" | "FLOAT" | "OTHER" | null;
@@ -34,6 +36,29 @@ export type SchedulerEmployee = {
   targetTaskAssignments?: Record<string, number>;
   targetPatientFacingAssignments?: number | null;
   exposureGoals?: string[];
+  julyWeekSkeleton?: EmployeeWeekSkeleton | null;
+};
+
+export type EmployeeWeekSkeleton = {
+  employeeId: string;
+  groupLabel: string;
+  targetHours: number;
+  allowedShiftBlockIds: string[];
+  requiredShiftBlockIds: string[];
+  forbiddenShiftBlockIds: string[];
+  requiredSaturdayShiftBlockId: string | null;
+  requiredExtraHourWeekdays: number[];
+  plannedDays: Array<{
+    date: string;
+    kind:
+      | "NORMAL_FULL_DAY"
+      | "EXTENDED_FULL_DAY"
+      | "SATURDAY_ENDO"
+      | "SATURDAY_REGULAR"
+      | "OFF";
+    allowedShiftBlockIds: string[];
+    requiredShiftBlockIds: string[];
+  }>;
 };
 
 export type SchedulerTaskType = {

@@ -26,6 +26,7 @@ import {
 import { overlaps } from "@/lib/scheduler/constraints";
 import { isShortNoticeScheduleChange } from "@/lib/schedule/short-notice";
 import { buildJulySaturdayReservationPlan } from "@/lib/schedule/july-saturday-reservations";
+import { buildJulyWeekSkeletons } from "@/lib/schedule/july-week-planner";
 import { patternPreferredEmployeeIdsForSlot } from "@/lib/schedule/pattern-preferences";
 import { getSchedulePublishIssues } from "@/lib/schedule/publish-validation";
 import { clinicWeekRange } from "@/lib/schedule/range";
@@ -639,6 +640,7 @@ export async function generateScheduleForDate(input: {
     patternSlots,
     previousWeekPatternSlots,
     scheduleTargets,
+    weekScheduleDays,
   ] = await Promise.all([
     getScheduleBoard(input.date),
     getDb().employee.findMany({
@@ -779,6 +781,28 @@ export async function generateScheduleForDate(input: {
       },
       orderBy: [{ employeeName: "asc" }, { id: "asc" }],
     }),
+    getDb().scheduleDay.findMany({
+      where: {
+        date: {
+          gte: parseIsoDate(currentWeek.startDate),
+          lte: parseIsoDate(currentWeek.endDate),
+        },
+      },
+      include: {
+        shiftBlocks: {
+          where: {
+            active: true,
+            source: { notIn: ["MIGRATION", "FALLBACK"] },
+            OR: [
+              { shiftTemplateId: null },
+              { shiftTemplateId: { not: LEGACY_SHIFT_TEMPLATE_ID } },
+            ],
+          },
+          orderBy: [{ startMinute: "asc" }, { id: "asc" }],
+        },
+      },
+      orderBy: { date: "asc" },
+    }),
   ]);
 
   if (!scheduleDay) {
@@ -912,7 +936,7 @@ export async function generateScheduleForDate(input: {
     }
   }
 
-  const schedulerEmployees: SchedulerEmployee[] = employees
+  const baseSchedulerEmployees: SchedulerEmployee[] = employees
     .map((employee) => {
       const scheduleTarget = findEastonTargetForEmployee(employee, scheduleTargets);
       const workPattern = getEffectiveWorkPattern({
@@ -998,6 +1022,25 @@ export async function generateScheduleForDate(input: {
       } satisfies SchedulerEmployee);
     })
     .sort((left, right) => left.id.localeCompare(right.id));
+  const weekSkeletons = buildJulyWeekSkeletons({
+    employees: baseSchedulerEmployees,
+    shiftBlocks: weekScheduleDays.flatMap((day) => {
+      const date = toIsoDate(day.date);
+
+      return day.shiftBlocks.map((block) => ({
+        id: block.id,
+        date,
+        shiftCategory: block.shiftCategory,
+        startMinute: block.startMinute,
+        endMinute: block.endMinute,
+        paidHours: Number(block.paidHours),
+      }));
+    }),
+  });
+  const schedulerEmployees = baseSchedulerEmployees.map((employee) => ({
+    ...employee,
+    julyWeekSkeleton: weekSkeletons.get(employee.id) ?? null,
+  }));
 
   const existingAssignments: ExistingAssignment[] = [];
   let slots: SchedulerTaskSlot[] = scheduleDay.taskSlots.map((slot) => ({

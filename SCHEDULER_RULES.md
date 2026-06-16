@@ -136,10 +136,12 @@ not contain scheduling decisions.
   generation when no exact `Shifts by GY` group is present.
 - Bulk generation prepares every included date's shift blocks and staffing-rule
   slots before assignment, then prepares period-based background instances.
-  Within each week, Saturday dates are generated and repaired first so the hard
-  Saturday work-pattern block is reserved before ordinary weekday clinic,
-  background, fairness, or top-off assignment. Locked/manual overrides are
-  preserved and published dates are skipped unless a manager explicitly confirms
+  Before the shared slot engine runs, the July week planner builds an employee
+  work skeleton from the active `Shifts by GY` group and the dated shift blocks.
+  The skeleton is a hard eligibility envelope: the engine, repair pass, manual
+  warning helper, and BG/hour top-off all reject generated assignments outside
+  the employee's allowed shift block IDs. Locked/manual overrides are preserved
+  and published dates are skipped unless a manager explicitly confirms
   overwrite.
 - During Saturday generation, active July `Saturday`/Endoscopy employees and
   employees with imported Endoscopy targets are reserved into real
@@ -157,6 +159,10 @@ not contain scheduling decisions.
   7:00 AM-12:00 PM or 1:00 PM-6:00 PM. Saturday endoscopy employees must use
   the 6:00 AM-2:00 PM Saturday block and have no weekday extra-hour requirement.
   Non-endoscopy Saturday employees must use the 8:00 AM-2:00 PM Saturday block.
+- Endoscopy/Saturday skeletons forbid weekday 7:00 AM-12:00 PM make-up blocks,
+  Monday 1:00 PM-6:00 PM, and Saturday 8:00 AM-2:00 PM. Non-endoscopy
+  skeletons forbid Saturday 6:00 AM-2:00 PM and forbid 5-hour weekday blocks
+  outside the employee's configured group days.
 - A generated Saturday background slot can never satisfy an Endoscopy Saturday
   work-pattern requirement while the employee has not been placed into the real
   Endoscopy block. If Endoscopy cannot be filled, the week remains visibly
@@ -180,10 +186,11 @@ not contain scheduling decisions.
   background-class slots first, then creates optional
   `GENERATED_BACKGROUND_TOP_OFF` Background slots when needed. It tries to meet
   required weekly BG/background minimums and move employees toward expected
-  weekly hours without exceeding those hours. It runs after Saturday and July
-  group repair and does not mask missing group extra-hour days. It still
+  weekly hours without exceeding those hours, but only inside the employee's
+  July work skeleton. It runs after Saturday and July group repair and does not
+  mask missing group extra-hour days. It still
   enforces skills, derived/saved availability, PTO/NPTO, no overlapping shifts,
-  work-pattern Saturday rules, published-date skip rules, and locked/manual
+  work skeleton rules, published-date skip rules, and locked/manual
   overrides. Infeasible gaps remain visible as hard weekly issues.
 - Generation summaries report total, AM, PM, Saturday, 7:00 AM early,
   8:00 AM regular, 1:00-5:00 PM regular, Monday 1:00-6:00 PM long, Saturday

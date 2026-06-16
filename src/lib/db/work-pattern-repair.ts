@@ -24,6 +24,7 @@ import {
   type EmployeeScheduleTargetSource,
 } from "@/lib/schedule/easton-work-pattern-resolution";
 import { withEastonDerivedAvailability } from "@/lib/schedule/easton-derived-availability";
+import { buildJulyWeekSkeletons } from "@/lib/schedule/july-week-planner";
 import { parseIsoDate, toIsoDate } from "@/lib/utils/date";
 
 export const GENERATED_WORK_PATTERN_TOP_OFF_SOURCE =
@@ -219,10 +220,9 @@ export async function enforceWorkPatternRequirementsForRange(input: {
     return summary;
   }
 
-  const employees = rawEmployees.map((employee) =>
+  let employees = rawEmployees.map((employee) =>
     toRepairEmployee(employee, findEastonTargetForEmployee(employee, scheduleTargets)),
   );
-  const employeeById = new Map(employees.map((employee) => [employee.id, employee]));
   const taskTypes = new Map<string, RepairTaskType>();
   const slots: RepairSlot[] = [];
   const shiftBlocks: RepairShiftBlock[] = [];
@@ -309,6 +309,16 @@ export async function enforceWorkPatternRequirementsForRange(input: {
       }
     }
   }
+
+  const weekSkeletons = buildJulyWeekSkeletons({
+    employees,
+    shiftBlocks,
+  });
+  employees = employees.map((employee) => ({
+    ...employee,
+    julyWeekSkeleton: weekSkeletons.get(employee.id) ?? null,
+  }));
+  const employeeById = new Map(employees.map((employee) => [employee.id, employee]));
 
   const backgroundTask: RepairTaskType = {
     id: backgroundTaskType.id,

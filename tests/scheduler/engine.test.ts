@@ -40,6 +40,7 @@ import {
   isExtraHourShiftForWeekday,
   validateEmployeeWeekPattern,
 } from "../../src/lib/schedule/work-pattern-requirements";
+import { buildJulyWeekSkeletons } from "../../src/lib/schedule/july-week-planner";
 import { buildJulySaturdayReservationPlan } from "../../src/lib/schedule/july-saturday-reservations";
 import { weekdayShortName } from "../../src/lib/easton-import/work-patterns";
 import {
@@ -156,6 +157,46 @@ function shift(
     date,
     shiftBlockId,
     shiftCategory,
+    startMinute,
+    endMinute,
+    paidHours,
+  };
+}
+
+function julyWeekShiftBlocks() {
+  return [
+    block("mon-early", "2026-07-06", "AM", 420, 720, 5),
+    block("mon-am", "2026-07-06", "AM", 480, 720, 4),
+    block("mon-long-pm", "2026-07-06", "PM", 780, 1080, 5),
+    block("mon-pm", "2026-07-06", "PM", 780, 1020, 4),
+    block("tue-early", "2026-07-07", "AM", 420, 720, 5),
+    block("tue-am", "2026-07-07", "AM", 480, 720, 4),
+    block("tue-pm", "2026-07-07", "PM", 780, 1020, 4),
+    block("wed-early", "2026-07-08", "AM", 420, 720, 5),
+    block("wed-am", "2026-07-08", "AM", 480, 720, 4),
+    block("wed-pm", "2026-07-08", "PM", 780, 1020, 4),
+    block("thu-early", "2026-07-09", "AM", 420, 720, 5),
+    block("thu-am", "2026-07-09", "AM", 480, 720, 4),
+    block("thu-pm", "2026-07-09", "PM", 780, 1020, 4),
+    block("fri-am", "2026-07-10", "AM", 480, 720, 4),
+    block("fri-pm", "2026-07-10", "PM", 780, 1020, 4),
+    block("sat-endo", "2026-07-11", "ENDO", 360, 840, 8),
+    block("sat-short", "2026-07-11", "SATURDAY", 480, 840, 6),
+  ];
+}
+
+function block(
+  id: string,
+  date: string,
+  shiftCategory: string,
+  startMinute: number,
+  endMinute: number,
+  paidHours: number,
+) {
+  return {
+    id,
+    date,
+    shiftCategory: shiftCategory as SchedulerTaskSlot["shiftCategory"],
     startMinute,
     endMinute,
     paidHours,
@@ -2743,6 +2784,241 @@ describe("Easton July hard requirements", () => {
     assert.equal(validation.totalHours, 40);
   });
 
+  it("builds a Group Saturday skeleton with no weekday early-start or long-PM shifts", () => {
+    const employee: SchedulerEmployee = {
+      id: "angela",
+      fullName: "Angela Jiao",
+      skillIds: [],
+      availability: mondayThroughFriday.concat(allDaySaturday),
+      targetWeeklyHours: 40,
+      workPattern: {
+        code: "EASTON_GROUP_SATURDAY",
+        kind: "ENDOSCOPY_SATURDAY",
+        requiredSaturdayShiftCategory: "ENDO",
+        saturdayPaidHours: 8,
+        extraHourWeekdays: [],
+      },
+    };
+    const skeleton = buildJulyWeekSkeletons({
+      employees: [employee],
+      shiftBlocks: julyWeekShiftBlocks(),
+    }).get("angela");
+
+    assert.ok(skeleton);
+    assert.equal(skeleton.requiredSaturdayShiftBlockId, "sat-endo");
+    assert.equal(skeleton.allowedShiftBlockIds.includes("sat-short"), false);
+    assert.equal(skeleton.allowedShiftBlockIds.includes("mon-early"), false);
+    assert.equal(skeleton.allowedShiftBlockIds.includes("mon-long-pm"), false);
+    assert.equal(skeleton.allowedShiftBlockIds.includes("tue-early"), false);
+    assert.deepEqual(
+      skeleton.plannedDays.map((day) => [day.date, day.kind]),
+      [
+        ["2026-07-06", "OFF"],
+        ["2026-07-07", "NORMAL_FULL_DAY"],
+        ["2026-07-08", "NORMAL_FULL_DAY"],
+        ["2026-07-09", "NORMAL_FULL_DAY"],
+        ["2026-07-10", "NORMAL_FULL_DAY"],
+        ["2026-07-11", "SATURDAY_ENDO"],
+      ],
+    );
+    assert.equal(
+      skeleton.requiredShiftBlockIds
+        .map(
+          (id) => julyWeekShiftBlocks().find((shiftBlock) => shiftBlock.id === id)
+            ?.paidHours ?? 0,
+        )
+        .reduce((total, hours) => total + hours, 0),
+      40,
+    );
+  });
+
+  it("rejects Group Saturday assignments outside the July skeleton", () => {
+    const baseEmployee: SchedulerEmployee = {
+      id: "angela",
+      fullName: "Angela Jiao",
+      skillIds: [],
+      availability: [
+        { weekday: 1, startMinute: 0, endMinute: 24 * 60 },
+        { weekday: 2, startMinute: 0, endMinute: 24 * 60 },
+        { weekday: 6, startMinute: 0, endMinute: 24 * 60 },
+      ],
+      targetWeeklyHours: 40,
+      workPattern: {
+        code: "EASTON_GROUP_SATURDAY",
+        kind: "ENDOSCOPY_SATURDAY",
+        requiredSaturdayShiftCategory: "ENDO",
+        saturdayPaidHours: 8,
+        extraHourWeekdays: [],
+      },
+    };
+    const skeleton = buildJulyWeekSkeletons({
+      employees: [baseEmployee],
+      shiftBlocks: julyWeekShiftBlocks(),
+    }).get("angela");
+    const employee = { ...baseEmployee, julyWeekSkeleton: skeleton };
+    const result = generateSchedule({
+      seed: "reject-endo-extra-hours",
+      employees: [employee],
+      taskTypes: [
+        {
+          id: "background",
+          code: "BACKGROUND",
+          name: "Background",
+          requiredSkillIds: [],
+          isBackground: true,
+        },
+      ],
+      slots: [
+        {
+          id: "mon-long-pm",
+          date: "2026-07-06",
+          shiftBlockId: "mon-long-pm",
+          shiftCategory: "PM",
+          paidHours: 5,
+          taskTypeId: "background",
+          slotIndex: 1,
+          startMinute: 780,
+          endMinute: 1080,
+          requirementLevel: "REQUIRED",
+        },
+        {
+          id: "tue-early",
+          date: "2026-07-07",
+          shiftBlockId: "tue-early",
+          shiftCategory: "AM",
+          paidHours: 5,
+          taskTypeId: "background",
+          slotIndex: 2,
+          startMinute: 420,
+          endMinute: 720,
+          requirementLevel: "REQUIRED",
+        },
+      ],
+    });
+
+    assert.equal(result.assignments.length, 0);
+    assert.equal(result.conflicts.length, 2);
+    assert.equal(
+      result.conflicts.every((conflict) =>
+        conflict.rejectedCandidates.some((candidate) =>
+          candidate.reasons.includes("Outside July work skeleton"),
+        ),
+      ),
+      true,
+    );
+  });
+
+  it("uses only the configured extra weekdays for a T + Th skeleton", () => {
+    const employee: SchedulerEmployee = {
+      id: "yvonne",
+      fullName: "Yvonne Kuo",
+      skillIds: [],
+      availability: mondayThroughFriday.concat(allDaySaturday),
+      targetWeeklyHours: 40,
+      workPattern: {
+        code: "EASTON_GROUP_T_TH",
+        kind: "NON_ENDOSCOPY_SATURDAY",
+        requiredSaturdayShiftCategory: "SATURDAY",
+        saturdayPaidHours: 6,
+        extraHourWeekdays: [2, 4],
+      },
+    };
+    const skeleton = buildJulyWeekSkeletons({
+      employees: [employee],
+      shiftBlocks: julyWeekShiftBlocks(),
+    }).get("yvonne");
+
+    assert.ok(skeleton);
+    assert.equal(skeleton.requiredSaturdayShiftBlockId, "sat-short");
+    assert.equal(skeleton.allowedShiftBlockIds.includes("sat-endo"), false);
+    assert.equal(skeleton.allowedShiftBlockIds.includes("tue-early"), true);
+    assert.equal(skeleton.allowedShiftBlockIds.includes("thu-early"), true);
+    assert.equal(skeleton.allowedShiftBlockIds.includes("wed-early"), false);
+    assert.equal(skeleton.allowedShiftBlockIds.includes("mon-long-pm"), false);
+    assert.equal(
+      skeleton.requiredShiftBlockIds
+        .map(
+          (id) => julyWeekShiftBlocks().find((shiftBlock) => shiftBlock.id === id)
+            ?.paidHours ?? 0,
+        )
+        .reduce((total, hours) => total + hours, 0),
+      40,
+    );
+  });
+
+  it("keeps BG top-off inside skeleton and below the 40-hour cap", () => {
+    const baseEmployee: SchedulerEmployee = {
+      id: "angela",
+      fullName: "Angela Jiao",
+      skillIds: [],
+      availability: [{ weekday: 2, startMinute: 0, endMinute: 24 * 60 }],
+      targetWeeklyHours: 40,
+      scheduledHoursThisWeek: 36,
+      workPattern: {
+        code: "EASTON_GROUP_SATURDAY",
+        kind: "ENDOSCOPY_SATURDAY",
+        requiredSaturdayShiftCategory: "ENDO",
+        saturdayPaidHours: 8,
+        extraHourWeekdays: [],
+      },
+    };
+    const skeleton = buildJulyWeekSkeletons({
+      employees: [baseEmployee],
+      shiftBlocks: julyWeekShiftBlocks(),
+    }).get("angela");
+    const result = generateSchedule({
+      seed: "bg-inside-skeleton-only",
+      employees: [{ ...baseEmployee, julyWeekSkeleton: skeleton }],
+      taskTypes: [
+        {
+          id: "background",
+          code: "BACKGROUND",
+          name: "Background",
+          requiredSkillIds: [],
+          isBackground: true,
+        },
+      ],
+      slots: [
+        {
+          id: "tue-early",
+          date: "2026-07-07",
+          shiftBlockId: "tue-early",
+          shiftCategory: "AM",
+          paidHours: 5,
+          taskTypeId: "background",
+          slotIndex: 1,
+          startMinute: 420,
+          endMinute: 720,
+          requirementLevel: "REQUIRED",
+        },
+        {
+          id: "tue-am",
+          date: "2026-07-07",
+          shiftBlockId: "tue-am",
+          shiftCategory: "AM",
+          paidHours: 4,
+          taskTypeId: "background",
+          slotIndex: 2,
+          startMinute: 480,
+          endMinute: 720,
+          requirementLevel: "REQUIRED",
+        },
+      ],
+    });
+
+    assert.deepEqual(
+      result.assignments.map((assignment) => assignment.slotId),
+      ["tue-am"],
+    );
+    assert.equal(result.conflicts[0]?.slotId, "tue-early");
+    assert.equal(
+      result.conflicts[0]?.rejectedCandidates[0]?.reasons.includes(
+        "Outside July work skeleton",
+      ),
+      true,
+    );
+  });
+
   it("reports missing BG minimums and work-pattern shifts", () => {
     const result = evaluateWeeklyHardRequirements({
       targets: [
@@ -2890,6 +3166,53 @@ describe("Easton July hard requirements", () => {
     assert.equal(
       result.issues.some((issue) => issue.code === "EXTRA_HOUR_DAY_UNMET"),
       false,
+    );
+  });
+
+  it("blocks Group Saturday over-target and forbidden weekday extra-hour assignments", () => {
+    const result = evaluateWeeklyHardRequirements({
+      targets: [
+        {
+          employeeId: "angela",
+          employeeName: "Angela Jiao",
+          workPatternCode: "EASTON_GROUP_SATURDAY",
+          workPatternKind: "ENDOSCOPY_SATURDAY",
+          requiredSaturdayShiftCategory: "ENDO",
+          saturdayPaidHours: 8,
+          requiredBackgroundAssignments: 0,
+          extraHourWeekdays: [],
+          expectedWeeklyHours: 40,
+        },
+      ],
+      assignments: [
+        shift("2026-07-07", "tue-am", "AM", 480, 720, 4),
+        shift("2026-07-07", "tue-pm", "PM", 780, 1020, 4),
+        shift("2026-07-08", "wed-am", "AM", 480, 720, 4),
+        shift("2026-07-08", "wed-pm", "PM", 780, 1020, 4),
+        shift("2026-07-09", "thu-am", "AM", 480, 720, 4),
+        shift("2026-07-09", "thu-pm", "PM", 780, 1020, 4),
+        shift("2026-07-10", "fri-am", "AM", 480, 720, 4),
+        shift("2026-07-10", "fri-pm", "PM", 780, 1020, 4),
+        shift("2026-07-11", "sat-endo", "ENDO", 360, 840, 8),
+        shift("2026-07-06", "mon-long-pm", "PM", 780, 1080, 5),
+      ].map((assignment) => ({
+        employeeId: "angela",
+        taskTypeCode: "BACKGROUND",
+        isBackground: true,
+        ...assignment,
+      })),
+    });
+
+    assert.equal(result.canPublish, false);
+    assert.equal(
+      result.issues.some((issue) => issue.code === "ABOVE_EXPECTED_HOURS"),
+      true,
+    );
+    assert.equal(
+      result.workPatternIssues.some(
+        (issue) => issue.code === "FORBIDDEN_WORK_PATTERN_SHIFT",
+      ),
+      true,
     );
   });
 

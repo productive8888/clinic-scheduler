@@ -84,12 +84,14 @@ including BG, Front Background, Booking, Research, Float, and generated
 Background slots. The pass fills existing open background-class slots first,
 then creates optional `GENERATED_BACKGROUND_TOP_OFF` Background slots as needed
 to meet employee BG/background minimums and move employees toward expected
-weekly hours without overfilling them. The pass respects skills,
-derived/saved availability, PTO/NPTO, no overlap, published-date skipping,
-work-pattern rules, and locked/manual overrides. It does not hide an unmet
-group extra-hour requirement. If the minimum is infeasible, the week view
-reports the unmet employee requirement and a manager must record an override
-reason before publishing.
+weekly hours without overfilling them. It can only use shift blocks in the
+employee's July work skeleton, so Group Saturday/Endoscopy employees cannot be
+topped off with weekday 7:00 AM starts or Monday 6:00 PM endings. The pass
+respects skills, derived/saved availability, PTO/NPTO, no overlap,
+published-date skipping, work-pattern rules, and locked/manual overrides. It
+does not hide an unmet group extra-hour requirement. If the minimum is
+infeasible, the week view reports the unmet employee requirement and a manager
+must record an override reason before publishing.
 
 Period-based `BackgroundTaskDefinition` records remain available for obligations
 that truly recur weekly, biweekly, monthly, or over a custom window. The June

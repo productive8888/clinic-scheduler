@@ -18,6 +18,7 @@ import {
   type EmployeeScheduleTargetSource,
 } from "@/lib/schedule/easton-work-pattern-resolution";
 import { withEastonDerivedAvailability } from "@/lib/schedule/easton-derived-availability";
+import { buildJulyWeekSkeletons } from "@/lib/schedule/july-week-planner";
 import { parseIsoDate, toIsoDate } from "@/lib/utils/date";
 
 export const GENERATED_BACKGROUND_TOP_OFF_SOURCE =
@@ -224,7 +225,7 @@ export async function topOffBackgroundAssignmentsForRange(input: {
     return summary;
   }
 
-  const employees = rawEmployees.map((employee) =>
+  let employees = rawEmployees.map((employee) =>
     toTopOffEmployee(employee, findEastonTargetForEmployee(employee, scheduleTargets)),
   );
   const allAssignments: ExistingAssignment[] = [];
@@ -345,6 +346,15 @@ export async function topOffBackgroundAssignmentsForRange(input: {
       }
     }
   }
+
+  const weekSkeletons = buildJulyWeekSkeletons({
+    employees,
+    shiftBlocks,
+  });
+  employees = employees.map((employee) => ({
+    ...employee,
+    julyWeekSkeleton: weekSkeletons.get(employee.id) ?? null,
+  }));
 
   const backgroundTask: TopOffTaskType = {
     id: backgroundTaskType.id,

@@ -181,11 +181,68 @@ export function getConstraintRejections(
     reasons.push("Weekly assignment limit reached");
   }
 
+  if (violatesJulyWeekSkeleton(employee, slot)) {
+    reasons.push("Outside July work skeleton");
+  }
+
+  if (wouldExceedJulySkeletonTargetHours(employee, slot, assignments)) {
+    reasons.push("Would exceed July skeleton target hours");
+  }
+
   if (violatesSaturdayWorkPattern(employee, slot)) {
     reasons.push("Wrong Saturday work-pattern shift");
   }
 
   return reasons;
+}
+
+function violatesJulyWeekSkeleton(
+  employee: SchedulerEmployee,
+  slot: SchedulerTaskSlot,
+) {
+  if (!employee.julyWeekSkeleton || !slot.shiftBlockId) {
+    return false;
+  }
+
+  return !employee.julyWeekSkeleton.allowedShiftBlockIds.includes(slot.shiftBlockId);
+}
+
+function wouldExceedJulySkeletonTargetHours(
+  employee: SchedulerEmployee,
+  slot: SchedulerTaskSlot,
+  assignments: ExistingAssignment[],
+) {
+  const skeleton = employee.julyWeekSkeleton;
+
+  if (!skeleton || !slot.shiftBlockId || skeleton.targetHours <= 0) {
+    return false;
+  }
+
+  const existingShiftHours = new Map<string, number>();
+
+  for (const assignment of assignments) {
+    if (assignment.employeeId !== employee.id) {
+      continue;
+    }
+
+    existingShiftHours.set(
+      `${assignment.date}:${assignment.shiftBlockId ?? assignment.slotId}`,
+      assignment.paidHours ?? 0,
+    );
+  }
+
+  const slotKey = `${slot.date}:${slot.shiftBlockId}`;
+  const generatedCurrentDayHours = [...existingShiftHours.values()].reduce(
+    (total, hours) => total + hours,
+    0,
+  );
+  const alreadyHasShift = existingShiftHours.has(slotKey);
+  const projectedHours =
+    (employee.scheduledHoursThisWeek ?? 0) +
+    generatedCurrentDayHours +
+    (alreadyHasShift ? 0 : slot.paidHours ?? 0);
+
+  return projectedHours > skeleton.targetHours;
 }
 
 function violatesSaturdayWorkPattern(

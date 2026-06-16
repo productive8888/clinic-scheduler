@@ -3,6 +3,7 @@ export { resolveDirectReplacement } from "./coverage";
 export { isUnavailableForSlot } from "./constraints";
 export type {
   AvailabilityWindow,
+  EmployeeWeekSkeleton,
   ExistingAssignment,
   GenerateScheduleInput,
   IsoDate,
