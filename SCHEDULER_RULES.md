@@ -98,9 +98,13 @@ not contain scheduling decisions.
   staffing demand. Its counts are per shift block, never whole-day totals.
   Background, Front Background, Booking, Research, and Float counts therefore
   become desired staffing slots on the exact AM, PM, or Saturday block where
-  they appear. `Patients` is a validation aggregate only and never creates task
-  slots. June sheets are ignored for active generation so applying the workbook
-  does not double-count demand or hardcode a single historical week.
+  they appear. July patient-facing clinical demand is GI, Allergy, and PCP.
+  `Patients` is a validation aggregate only and never creates task slots.
+  Allergy Shots is deprecated for July generation; historical task records may
+  remain, but the importer ignores any legacy Allergy Shots row and active July
+  defaults deactivate Allergy Shots staffing rules. June sheets are ignored for
+  active generation so applying the workbook does not double-count demand or
+  hardcode a single historical week.
 - For deployed databases, run `npm run review:easton` and then
   `npm run apply:easton` locally against the target `DATABASE_URL`; the workbook
   remains private and is not required on Vercel.
@@ -188,7 +192,12 @@ not contain scheduling decisions.
   required weekly BG/background minimums and move employees toward expected
   weekly hours without exceeding those hours, but only inside the employee's
   July work skeleton. It runs after Saturday and July group repair and does not
-  mask missing group extra-hour days. It still
+  mask missing group extra-hour days. If an employee is already at their
+  40-hour target while still below their BG minimum, the pass can convert a
+  flexible generated non-required, non-locked, non-background assignment into a
+  generated BG assignment on the same shift block. Required clinic coverage and
+  locked/manual assignments are preserved; infeasible cases report the exact
+  blocker instead of adding hours over 40. It still
   enforces skills, derived/saved availability, PTO/NPTO, no overlapping shifts,
   work skeleton rules, published-date skip rules, and locked/manual
   overrides. Infeasible gaps remain visible as hard weekly issues.
@@ -272,7 +281,6 @@ not contain scheduling decisions.
 - PCP
 - Front Desk
 - Civil Surgeon
-- Allergy Shots
 - Endoscopy
 - Clinical A
 - Clinical B
@@ -288,6 +296,10 @@ Optional/background task types:
 - Float
 - Extra
 - PA / Prior Authorization
+
+Historical/deprecated for active July generation:
+
+- Allergy Shots
 
 Seed data creates interchangeable groups for Allergy and GI virtual/in-person
 pairs, required skills for Civil Surgeon, Allergy Shots, Procedure, IT,

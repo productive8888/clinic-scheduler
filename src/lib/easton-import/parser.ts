@@ -97,6 +97,8 @@ const ROLE_CODE_ALIASES: Record<string, string> = {
   PATIENTS: "PATIENTS",
 };
 
+const DEPRECATED_JULY_ROLE_CODES = new Set(["ALLERGY_SHOTS"]);
+
 const EXPOSURE_BY_ROLE_CODE: Record<string, string> = {
   NEW_GI: "GI",
   VIRTUAL_GI: "GI",
@@ -165,6 +167,9 @@ export async function parseEastonWorkbook(explicitPath?: string | null) {
     : { shifts: [], roleDemand: [], warnings: [] };
 
   warnings.push(...primaryDemand.warnings);
+  warnings.push(
+    "Allergy Shots is deprecated for July generation; historical records remain, but July staffing demand ignores Allergy Shots.",
+  );
 
   return {
     workbookPath,
@@ -188,6 +193,10 @@ export function normalizeEastonRoleCode(roleName: string) {
   return ROLE_CODE_ALIASES[normalized] ?? normalized.replace(/\s+/g, "_");
 }
 
+export function isDeprecatedEastonJulyRoleCode(roleCode: string) {
+  return DEPRECATED_JULY_ROLE_CODES.has(normalizeEastonRoleCode(roleCode));
+}
+
 function parseShiftDemandSheet(worksheet: ExcelJS.Worksheet) {
   const shifts: EastonParsedShift[] = [];
   const roleDemand: EastonRoleDemand[] = [];
@@ -207,6 +216,13 @@ function parseShiftDemandSheet(worksheet: ExcelJS.Worksheet) {
     const roleCode = normalizeEastonRoleCode(roleName);
 
     if (roleCode === "SHIFT_HOURS") {
+      continue;
+    }
+
+    if (isDeprecatedEastonJulyRoleCode(roleCode)) {
+      warnings.push(
+        `${worksheet.name}: ${roleName} is deprecated for July generation and was ignored.`,
+      );
       continue;
     }
 

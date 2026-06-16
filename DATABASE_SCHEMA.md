@@ -23,7 +23,8 @@ versioned migrations in `prisma/migrations`.
   patient-facing/clinical/background/skilled/endoscopy/float/closure-candidate
   classification flags, and interchangeable task group keys. July Easton
   spreadsheet PCP demand maps to the real `PCP` task type; legacy `FOLLOWUP`
-  remains available for older/manual data.
+  remains available for older/manual data. `ALLERGY_SHOTS` remains available for
+  historical records but is inactive/deprecated for active July generation.
 - `TaskSkillRequirement`: required skill mapping per task type.
 - `WeeklyAvailability`: recurring employee normal working schedule by weekday,
   start/end minute, effective date range, and active state. Days without an
@@ -81,7 +82,8 @@ versioned migrations in `prisma/migrations`.
   type, shift template or shift category, weekday, scenario, effective date
   range, min/desired/max slots, requirement level, active state, and notes.
   Easton `Shifts + Hours` clinic and background counts are applied through these
-  rows against their exact AM, PM, or Saturday shift template.
+  rows against their exact AM, PM, or Saturday shift template. July import and
+  migration defaults deactivate legacy Allergy Shots staffing rules.
 - `FairnessSetting`: singleton scheduler scoring configuration for fairness
   window, clinical/total/hour/Saturday/endoscopy weights, Easton pattern
   consistency, patient-facing, skill/role target, exposure-goal, and background

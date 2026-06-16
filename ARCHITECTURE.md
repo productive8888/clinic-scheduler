@@ -197,6 +197,10 @@ Civil Surgeon
 Allergy Shots
 Procedures
 
+July Easton scheduling supersedes the initial legacy list for active generation:
+patient-facing July demand is GI, Allergy, and PCP. Allergy Shots may remain in
+historical data, but it is not an active July generated staffing role.
+
 TASK RULES
 Interchangeable task groups:
 New Allergy and Virtual Allergy are interchangeable

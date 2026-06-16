@@ -162,9 +162,9 @@ const taskTypes = [
     interchangeableGroup: null,
     difficultyWeight: 2,
     sortOrder: 80,
-    optional: false,
-    defaultForRoutine: true,
-    defaultForReduced: true,
+    optional: true,
+    defaultForRoutine: false,
+    defaultForReduced: false,
     isClinical: true,
     isBackground: false,
     isSkilled: true,
@@ -710,7 +710,7 @@ async function main() {
         isEndoscopy: taskType.isEndoscopy,
         isFloat: taskType.isFloat,
         isClosureCandidate: closureCandidateTaskCodes.has(taskType.code),
-        active: true,
+        active: taskType.code !== "ALLERGY_SHOTS",
       },
       create: {
         code: taskType.code,
@@ -728,6 +728,7 @@ async function main() {
         isEndoscopy: taskType.isEndoscopy,
         isFloat: taskType.isFloat,
         isClosureCandidate: closureCandidateTaskCodes.has(taskType.code),
+        active: taskType.code !== "ALLERGY_SHOTS",
       },
     });
 
@@ -1137,9 +1138,10 @@ async function main() {
         desiredSlots: 2,
         maxSlots: 2,
         requirementLevel: "DESIRED",
-        active: true,
+        active: false,
         createdByEmployeeId: demoAdminId,
-        notes: "Seed: Saturday routine allergy shots can carry a second desired slot.",
+        notes:
+          "Seed archive: Allergy Shots is deprecated for July generation and remains only for historical/manual review.",
       },
     });
   }

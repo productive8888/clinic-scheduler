@@ -56,9 +56,12 @@ whole-day task demand.
 
 `Shifts + Hours` is the active reusable Easton demand source. Every nonzero
 clinic and background count is stored against its exact shift template, so PM
-and Saturday blocks do not depend on the 8:00 AM safe default. June sheets,
-including `June Schedule`, `June Shifts by GY`, and `June Shifts + Hours`, are
-deprecated for active generation and no longer create schedule-pattern slots.
+and Saturday blocks do not depend on the 8:00 AM safe default. July
+patient-facing clinic demand is GI, Allergy, and PCP; `Patients` is
+validation-only, and Allergy Shots is deprecated/ignored for active July
+generation. June sheets, including `June Schedule`, `June Shifts by GY`, and
+`June Shifts + Hours`, are deprecated for active generation and no longer create
+schedule-pattern slots.
 
 `Shifts by GY` is the active Easton employee-target source. Its group column is
 imported as hard July work-pattern metadata: `Saturday` means the 6:00 AM-2:00

@@ -3,7 +3,7 @@ export type PublishValidationSlot = {
   requiredStaff: number;
   status: string;
   label?: string | null;
-  taskType: { name: string };
+  taskType: { name: string; code?: string | null };
   shiftBlock: { name: string; startMinute: number; endMinute: number };
   assignments: unknown[];
 };
@@ -58,6 +58,10 @@ export function getSchedulePublishIssues(input: PublishValidationInput) {
   }
 
   for (const slot of input.taskSlots) {
+    if (slot.taskType.code === "ALLERGY_SHOTS") {
+      continue;
+    }
+
     if (
       slot.requirementLevel !== "REQUIRED" ||
       (slot.status !== "SHORTAGE" &&

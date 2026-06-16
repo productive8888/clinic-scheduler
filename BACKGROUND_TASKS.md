@@ -87,11 +87,15 @@ to meet employee BG/background minimums and move employees toward expected
 weekly hours without overfilling them. It can only use shift blocks in the
 employee's July work skeleton, so Group Saturday/Endoscopy employees cannot be
 topped off with weekday 7:00 AM starts or Monday 6:00 PM endings. The pass
-respects skills, derived/saved availability, PTO/NPTO, no overlap,
-published-date skipping, work-pattern rules, and locked/manual overrides. It
-does not hide an unmet group extra-hour requirement. If the minimum is
-infeasible, the week view reports the unmet employee requirement and a manager
-must record an override reason before publishing.
+also repairs employees who are already at 40 hours but below their BG minimum
+by converting flexible generated non-required work into BG on the same shift
+block. This keeps paid hours unchanged, protects required clinic coverage, and
+does not touch locked/manual assignments. It respects skills, derived/saved
+availability, PTO/NPTO, no overlap, published-date skipping, work-pattern
+rules, and locked/manual overrides. It does not hide an unmet group extra-hour
+requirement. If the minimum is infeasible, the week view reports the unmet
+employee requirement and the specific blockers, and a manager must record an
+override reason before publishing.
 
 Period-based `BackgroundTaskDefinition` records remain available for obligations
 that truly recur weekly, biweekly, monthly, or over a custom window. The June

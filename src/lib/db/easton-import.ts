@@ -2,6 +2,7 @@ import { Prisma } from "@prisma/client";
 import { writeAuditLog } from "@/lib/audit";
 import { getDb } from "@/lib/db";
 import {
+  isDeprecatedEastonJulyRoleCode,
   normalizeEastonRoleCode,
   parseEastonWorkbook,
   type EastonEmployeeTarget,
@@ -17,6 +18,7 @@ import {
 
 const EASTON_STAFFING_NOTE = "Easton spreadsheet default:";
 const EASTON_SHORTAGE_NOTE = "Easton default:";
+const DEPRECATED_JULY_TASK_CODES = ["ALLERGY_SHOTS"] as const;
 
 const REQUIRED_ROLE_CODES = new Set([
   "NEW_GI",
@@ -492,6 +494,32 @@ export async function applyEastonDefaultsFromWorkbook(input: {
       }
     }
 
+    const deprecatedJulyTaskTypes = await tx.taskType.findMany({
+      where: { code: { in: [...DEPRECATED_JULY_TASK_CODES] } },
+      select: { id: true, code: true },
+    });
+    const deprecatedJulyTaskTypeIds = deprecatedJulyTaskTypes.map((taskType) => taskType.id);
+
+    if (deprecatedJulyTaskTypeIds.length > 0) {
+      await tx.taskType.updateMany({
+        where: { id: { in: deprecatedJulyTaskTypeIds } },
+        data: {
+          active: false,
+          defaultForRoutine: false,
+          defaultForReduced: false,
+          optional: true,
+        },
+      });
+      await tx.staffingRequirementRule.updateMany({
+        where: { taskTypeId: { in: deprecatedJulyTaskTypeIds } },
+        data: {
+          active: false,
+          notes:
+            "Archived by July Easton import. Allergy Shots is not an active July generation role.",
+        },
+      });
+    }
+
     const backgroundCategory = await tx.backgroundTaskCategory.upsert({
       where: { code: "EASTON_BACKGROUND" },
       update: {
@@ -570,6 +598,10 @@ export async function applyEastonDefaultsFromWorkbook(input: {
     for (const demand of preview.roleDemand.filter(
       (item) => item.sheetName === "Shifts + Hours" && !item.aggregate,
     )) {
+      if (isDeprecatedEastonJulyRoleCode(demand.roleCode)) {
+        continue;
+      }
+
       const taskTypeId = taskTypeByCode.get(demand.roleCode);
       const shiftTemplateId = shiftTemplateIdByKey.get(
         shiftDemandKey(demand.weekday, demand.startMinute, demand.endMinute, demand.paidHours),
@@ -811,6 +843,7 @@ export async function applyEastonDefaultsFromWorkbook(input: {
         status: "APPLIED",
         summary: previewSummaryJson(preview),
         warnings: [
+          "Allergy Shots is deprecated for July generation; historical records remain, but active generated July staffing uses GI, Allergy, and PCP patient-facing roles.",
           ...preview.warnings,
           ...skippedPullNames.map(
             (name) => `Skipped background pull rule for missing employee: ${name}`,

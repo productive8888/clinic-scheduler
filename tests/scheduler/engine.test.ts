@@ -27,6 +27,7 @@ import {
   eastonEmployeeProfileUpdateFromTarget,
   eastonShiftTemplateDataFromShift,
 } from "../../src/lib/db/easton-import";
+import { selectBackgroundMinimumConversionCandidate } from "../../src/lib/db/background-top-off";
 import {
   getEffectiveRequiredBackgroundAssignments,
   getEffectiveWorkPattern,
@@ -2256,6 +2257,7 @@ describe("Easton policy helpers", () => {
     shifts.getRow(5).values = ["PCP", 1, 0, 0, 2];
     shifts.getRow(6).values = ["BG", 0, 3, 0, 1];
     shifts.getRow(7).values = ["Patients", 2, 2, 0, 3];
+    shifts.getRow(8).values = ["Allergy Shots", 1, 1, 0, 1];
 
     const targets = workbook.addWorksheet("Shifts by GY");
     targets.getRow(1).values = [
@@ -2338,6 +2340,16 @@ describe("Easton policy helpers", () => {
         .filter((demand) => !demand.aggregate)
         .some((demand) => demand.roleCode === "PATIENTS"),
       false,
+    );
+    assert.equal(
+      preview.roleDemand.some((demand) => demand.roleCode === "ALLERGY_SHOTS"),
+      false,
+    );
+    assert.equal(
+      preview.warnings.some((warning) =>
+        warning.includes("Allergy Shots is deprecated for July generation"),
+      ),
+      true,
     );
     assert.equal(preview.sampleAssignments.length, 0);
   });
@@ -3586,6 +3598,279 @@ describe("Easton July hard requirements", () => {
 
     assert.equal(result.assignments[0]?.employeeId, "needs-bg");
   });
+
+  it("selects flexible non-required work for BG minimum conversion inside the same skeleton", () => {
+    const employee = {
+      id: "easton",
+      fullName: "Easton-like Employee",
+      active: true,
+      skillIds: [],
+      availability: [{ weekday: 2, startMinute: 0, endMinute: 24 * 60 }],
+      expectedHours: 40,
+      requiredBackgroundAssignments: 5,
+    };
+    const backgroundTask = {
+      id: "background",
+      code: "BACKGROUND",
+      name: "Background",
+      requiredSkillIds: [],
+      isBackground: true,
+      isPatientFacing: false,
+      isClinical: false,
+      isSkilled: false,
+      isEndoscopy: false,
+      isFloat: false,
+    };
+    const clinicTask = {
+      id: "clinic",
+      code: "PCP",
+      name: "PCP",
+      requiredSkillIds: [],
+      isBackground: false,
+      isPatientFacing: true,
+      isClinical: true,
+      isSkilled: false,
+      isEndoscopy: false,
+      isFloat: false,
+    };
+    const supportTask = {
+      id: "support",
+      code: "FRONT_DESK",
+      name: "Front Desk",
+      requiredSkillIds: [],
+      isBackground: false,
+      isPatientFacing: false,
+      isClinical: false,
+      isSkilled: false,
+      isEndoscopy: false,
+      isFloat: false,
+    };
+    const slots = [
+      {
+        id: "required-clinic",
+        date: "2026-07-07",
+        scheduleDayId: "day",
+        shiftBlockId: "am",
+        shiftCategory: "AM",
+        shiftName: "Tuesday 0800-1200",
+        paidHours: 4,
+        taskTypeId: "clinic",
+        slotIndex: 1,
+        requirementLevel: "REQUIRED",
+        startMinute: 8 * 60,
+        endMinute: 12 * 60,
+        minStaff: 1,
+        requiredStaff: 1,
+        requiredSkillIds: [],
+        eligibleEmployeeIds: [],
+        taskType: clinicTask,
+        source: "STAFFING_RULE",
+        currentAssignmentCount: 1,
+        assignments: [{ id: "clinic-assignment", employeeId: "easton", locked: false }],
+      },
+      {
+        id: "flex-support",
+        date: "2026-07-07",
+        scheduleDayId: "day",
+        shiftBlockId: "pm",
+        shiftCategory: "PM",
+        shiftName: "Tuesday 1300-1700",
+        paidHours: 4,
+        taskTypeId: "support",
+        slotIndex: 1,
+        requirementLevel: "DESIRED",
+        startMinute: 13 * 60,
+        endMinute: 17 * 60,
+        minStaff: 0,
+        requiredStaff: 1,
+        requiredSkillIds: [],
+        eligibleEmployeeIds: [],
+        taskType: supportTask,
+        source: "STAFFING_RULE",
+        currentAssignmentCount: 1,
+        assignments: [{ id: "support-assignment", employeeId: "easton", locked: false }],
+      },
+      {
+        id: "pm-background",
+        date: "2026-07-07",
+        scheduleDayId: "day",
+        shiftBlockId: "pm",
+        shiftCategory: "PM",
+        shiftName: "Tuesday 1300-1700",
+        paidHours: 4,
+        taskTypeId: "background",
+        slotIndex: 1,
+        requirementLevel: "OPTIONAL",
+        startMinute: 13 * 60,
+        endMinute: 17 * 60,
+        minStaff: 0,
+        requiredStaff: 1,
+        requiredSkillIds: [],
+        eligibleEmployeeIds: [],
+        taskType: backgroundTask,
+        source: "GENERATED_BACKGROUND_TOP_OFF",
+        currentAssignmentCount: 0,
+        assignments: [],
+      },
+    ];
+    const candidate = selectBackgroundMinimumConversionCandidate({
+      employee,
+      taskSlots: slots,
+      shiftBlocks: [
+        {
+          id: "am",
+          scheduleDayId: "day",
+          date: "2026-07-07",
+          name: "Tuesday 0800-1200",
+          shiftTemplateId: null,
+          shiftCategory: "AM",
+          startMinute: 8 * 60,
+          endMinute: 12 * 60,
+          paidHours: 4,
+        },
+        {
+          id: "pm",
+          scheduleDayId: "day",
+          date: "2026-07-07",
+          name: "Tuesday 1300-1700",
+          shiftTemplateId: null,
+          shiftCategory: "PM",
+          startMinute: 13 * 60,
+          endMinute: 17 * 60,
+          paidHours: 4,
+        },
+      ],
+      backgroundTask,
+      allAssignments: [
+        {
+          slotId: "required-clinic",
+          employeeId: "easton",
+          date: "2026-07-07",
+          taskTypeId: "clinic",
+          startMinute: 8 * 60,
+          endMinute: 12 * 60,
+          shiftBlockId: "am",
+          shiftCategory: "AM",
+          paidHours: 4,
+          isPatientFacing: true,
+          isClinical: true,
+          isBackground: false,
+        },
+        {
+          slotId: "flex-support",
+          employeeId: "easton",
+          date: "2026-07-07",
+          taskTypeId: "support",
+          startMinute: 13 * 60,
+          endMinute: 17 * 60,
+          shiftBlockId: "pm",
+          shiftCategory: "PM",
+          paidHours: 4,
+          isPatientFacing: false,
+          isClinical: false,
+          isBackground: false,
+        },
+      ],
+    } as never);
+
+    assert.equal(candidate?.sourceSlot.id, "flex-support");
+    assert.equal(candidate?.backgroundSlot?.id, "pm-background");
+  });
+
+  it("does not convert required clinic coverage to satisfy BG minimums", () => {
+    const employee = {
+      id: "giulia",
+      fullName: "Giulia-like Employee",
+      active: true,
+      skillIds: [],
+      availability: [{ weekday: 2, startMinute: 0, endMinute: 24 * 60 }],
+      expectedHours: 40,
+      requiredBackgroundAssignments: 3,
+    };
+    const backgroundTask = {
+      id: "background",
+      code: "BACKGROUND",
+      name: "Background",
+      requiredSkillIds: [],
+      isBackground: true,
+      isPatientFacing: false,
+      isClinical: false,
+      isSkilled: false,
+      isEndoscopy: false,
+      isFloat: false,
+    };
+    const clinicTask = {
+      id: "allergy",
+      code: "NEW_ALLERGY",
+      name: "New Allergy",
+      requiredSkillIds: [],
+      isBackground: false,
+      isPatientFacing: true,
+      isClinical: true,
+      isSkilled: false,
+      isEndoscopy: false,
+      isFloat: false,
+    };
+    const candidate = selectBackgroundMinimumConversionCandidate({
+      employee,
+      taskSlots: [
+        {
+          id: "required-allergy",
+          date: "2026-07-07",
+          scheduleDayId: "day",
+          shiftBlockId: "am",
+          shiftCategory: "AM",
+          shiftName: "Tuesday 0800-1200",
+          paidHours: 4,
+          taskTypeId: "allergy",
+          slotIndex: 1,
+          requirementLevel: "REQUIRED",
+          startMinute: 8 * 60,
+          endMinute: 12 * 60,
+          minStaff: 1,
+          requiredStaff: 1,
+          requiredSkillIds: [],
+          eligibleEmployeeIds: [],
+          taskType: clinicTask,
+          source: "STAFFING_RULE",
+          currentAssignmentCount: 1,
+          assignments: [{ id: "allergy-assignment", employeeId: "giulia", locked: false }],
+        },
+      ],
+      shiftBlocks: [
+        {
+          id: "am",
+          scheduleDayId: "day",
+          date: "2026-07-07",
+          name: "Tuesday 0800-1200",
+          shiftTemplateId: null,
+          shiftCategory: "AM",
+          startMinute: 8 * 60,
+          endMinute: 12 * 60,
+          paidHours: 4,
+        },
+      ],
+      backgroundTask,
+      allAssignments: [
+        {
+          slotId: "required-allergy",
+          employeeId: "giulia",
+          date: "2026-07-07",
+          taskTypeId: "allergy",
+          startMinute: 8 * 60,
+          endMinute: 12 * 60,
+          shiftBlockId: "am",
+          shiftCategory: "AM",
+          paidHours: 4,
+          isPatientFacing: true,
+          isClinical: true,
+          isBackground: false,
+        },
+      ],
+    } as never);
+
+    assert.equal(candidate, null);
+  });
 });
 
 describe("calendar exports", () => {
@@ -4385,6 +4670,20 @@ describe("automated scheduling workflow foundations", () => {
         taskSlots: [requiredSlot],
       }).map((issue) => issue.code),
       ["NO_ASSIGNMENTS", "REQUIRED_UNFILLED"],
+    );
+    assert.deepEqual(
+      getSchedulePublishIssues({
+        scenario: "ROUTINE",
+        status: "GENERATED",
+        taskSlots: [
+          {
+            ...requiredSlot,
+            label: "Allergy Shots #1",
+            taskType: { name: "Allergy Shots", code: "ALLERGY_SHOTS" },
+          },
+        ],
+      }).map((issue) => issue.code),
+      ["NO_ASSIGNMENTS"],
     );
     assert.deepEqual(
       getSchedulePublishIssues({
