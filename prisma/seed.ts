@@ -5,12 +5,6 @@ const prisma = new PrismaClient();
 
 const skills = [
   {
-    code: "FRONT_BACKGROUND",
-    name: "Front Background",
-    description:
-      "Legacy front-background-specific skill retained for older data. New front tasks use FRONT.",
-  },
-  {
     code: "CIVIL_SURGEON",
     name: "Civil Surgeon",
     description: "Required for Civil Surgeon staffing assignments.",

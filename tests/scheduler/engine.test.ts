@@ -2461,6 +2461,7 @@ describe("Easton policy helpers", () => {
     assert.deepEqual(parseEastonSkillCodes("FRONT + ENDO"), ["FRONT"]);
     assert.deepEqual(parseEastonSkillCodes("FRONT _ ENDO"), ["FRONT"]);
     assert.deepEqual(parseEastonSkillCodes("IT + FRONT"), ["FRONT"]);
+    assert.deepEqual(parseEastonSkillCodes("FRONT BG"), ["FRONT"]);
     assert.deepEqual(parseEastonSkillCodes("FRONT_ENDO"), ["FRONT"]);
     assert.deepEqual(parseEastonSkillCodes("ENDO"), []);
   });
@@ -4974,15 +4975,72 @@ describe("staffing analytics aggregation", () => {
 
 describe("automated scheduling workflow foundations", () => {
   it("defines shared Front plus distinct IT, prior authorization, and Research skills", () => {
+    const skillCodes: string[] = REQUIRED_CONFIGURABLE_SKILLS.map(
+      (skill) => skill.code,
+    );
+
     assert.deepEqual(
-      REQUIRED_CONFIGURABLE_SKILLS.map((skill) => skill.code),
+      skillCodes,
       ["FRONT", "IT", "PRIOR_AUTHORIZATION", "RESEARCH"],
     );
+    assert.equal(skillCodes.includes("FRONT_BG"), false);
+    assert.equal(skillCodes.includes("FRONT_BACKGROUND"), false);
     assert.deepEqual(REQUIRED_TASK_SKILL_CODES.FRONT_DESK, ["FRONT"]);
     assert.deepEqual(REQUIRED_TASK_SKILL_CODES.FRONT_BACKGROUND, ["FRONT"]);
+    assert.equal(
+      (Object.values(REQUIRED_TASK_SKILL_CODES).flat() as string[])
+        .some(
+          (skillCode) =>
+            skillCode === "FRONT_BG" || skillCode === "FRONT_BACKGROUND",
+        ),
+      false,
+    );
     assert.deepEqual(REQUIRED_TASK_SKILL_CODES.PRIOR_AUTHORIZATION, [
       "PRIOR_AUTHORIZATION",
     ]);
+  });
+
+  it("does not seed Front BG as an employee skill", async () => {
+    const seed = await fs.readFile(
+      path.join(process.cwd(), "prisma", "seed.ts"),
+      "utf8",
+    );
+    const skillsBlock = seed.slice(
+      seed.indexOf("const skills = ["),
+      seed.indexOf("const taskTypes = ["),
+    );
+
+    assert.equal(skillsBlock.includes("FRONT_BACKGROUND"), false);
+    assert.equal(skillsBlock.includes("FRONT_BG"), false);
+  });
+
+  it("migrates legacy Front BG skill references into Front", async () => {
+    const migration = await fs.readFile(
+      path.join(
+        process.cwd(),
+        "prisma",
+        "migrations",
+        "202606160003_merge_front_bg_skill",
+        "migration.sql",
+      ),
+      "utf8",
+    );
+
+    assert.match(migration, /INSERT INTO "Skill"[\s\S]*'FRONT'/);
+    assert.match(
+      migration,
+      /INSERT INTO "EmployeeSkill"[\s\S]*legacy_employee_skills/,
+    );
+    assert.match(
+      migration,
+      /INSERT INTO "TaskSkillRequirement"[\s\S]*legacy_task_requirements/,
+    );
+    assert.match(
+      migration,
+      /DELETE FROM "TaskSkillRequirement"[\s\S]*legacy_skills/,
+    );
+    assert.match(migration, /DELETE FROM "EmployeeSkill"[\s\S]*legacy_skills/);
+    assert.match(migration, /DELETE FROM "Skill"[\s\S]*'FRONT_BACKGROUND'/);
   });
 
   it("preserves manual skill assignments while adding imported Easton skills", () => {
