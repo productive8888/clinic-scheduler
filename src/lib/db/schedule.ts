@@ -644,7 +644,7 @@ export async function generateScheduleForDate(input: {
   ] = await Promise.all([
     getScheduleBoard(input.date),
     getDb().employee.findMany({
-      where: { status: "ACTIVE" },
+      where: { status: "ACTIVE", scheduleEligible: true },
       include: {
         skills: true,
         availability: { where: { active: true } },
@@ -774,6 +774,7 @@ export async function generateScheduleForDate(input: {
     getPreviousPublishedWeekPatternSlots(input.date),
     getDb().employeeScheduleTarget.findMany({
       where: {
+        scheduleEligibility: "ACTIVE_SCHEDULED",
         pattern: {
           code: "EASTON_JULY_ACTIVE_TARGETS",
           active: true,

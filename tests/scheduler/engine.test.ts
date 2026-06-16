@@ -2259,7 +2259,7 @@ describe("Easton policy helpers", () => {
     shifts.getRow(7).values = ["Patients", 2, 2, 0, 3];
     shifts.getRow(8).values = ["Allergy Shots", 1, 1, 0, 1];
 
-    const targets = workbook.addWorksheet("Shifts by GY");
+    const targets = workbook.addWorksheet("NEW NEW Shifts by GY");
     targets.getRow(1).values = [
       "",
       "",
@@ -2270,6 +2270,8 @@ describe("Easton policy helpers", () => {
       "ALLERGY (1)",
       "PCP (1)",
       "Patients (3)",
+      "FRONT (1)",
+      "ENDO (8)",
       "BG",
     ];
     targets.getRow(2).values = [
@@ -2282,7 +2284,58 @@ describe("Easton policy helpers", () => {
       1,
       1,
       3,
+      0,
+      0,
       2,
+    ];
+    const endoNames = [
+      "Angela",
+      "Easton",
+      "Gisella",
+      "Giulia",
+      "Josh",
+      "Maryn",
+      "Nicole",
+      "Rowan",
+    ];
+
+    endoNames.forEach((name, index) => {
+      targets.getRow(index + 3).values = [
+        index + 2,
+        "Endo",
+        name,
+        "Endo",
+        "Saturday",
+        name === "Easton" ? 1 : 0,
+        name === "Easton" ? 1 : 0,
+        0,
+        name === "Easton" ? 2 : 0,
+        name === "Easton" ? 1 : 0,
+        1,
+        name === "Easton" ? 5 : name === "Giulia" ? 3 : 0,
+      ];
+    });
+    targets.getRow(11).values = [10, "Special", "Krishi", "IT"];
+    targets.getRow(12).values = [11, "Special", "Ibrahim", "Research"];
+
+    const legacyTargets = workbook.addWorksheet("Shifts by GY");
+    legacyTargets.getRow(1).values = [
+      "",
+      "",
+      "Gap year",
+      "Role",
+      "Group",
+      "GI (1)",
+      "BG",
+    ];
+    legacyTargets.getRow(2).values = [
+      1,
+      "Legacy",
+      "Legacy Person",
+      "PCP",
+      "M + W",
+      1,
+      9,
     ];
 
     const june = workbook.addWorksheet("June Schedule");
@@ -2294,6 +2347,7 @@ describe("Easton policy helpers", () => {
 
     const preview = await parseEastonWorkbook(workbookPath);
 
+    assert.equal(preview.activeEmployeeTargetSheetName, "NEW NEW Shifts by GY");
     assert.equal(preview.shifts[0].startMinute, 7 * 60);
     assert.equal(preview.shifts[0].endMinute, 12 * 60);
     assert.equal(preview.shifts[0].paidHours, 5);
@@ -2325,10 +2379,44 @@ describe("Easton policy helpers", () => {
       true,
     );
     assert.equal(preview.employeeTargets[0].employeeName, "Yvonne");
+    assert.equal(preview.employeeTargets[0].activeTargetSheetName, "NEW NEW Shifts by GY");
+    assert.equal(preview.employeeTargets[0].scheduleEligibility, "ACTIVE_SCHEDULED");
     assert.equal(preview.employeeTargets[0].workPatternCode, "EASTON_GROUP_T_TH");
     assert.deepEqual(preview.employeeTargets[0].extraHourWeekdays, [2, 4]);
     assert.equal(preview.employeeTargets[0].requiredBackgroundAssignments, 2);
     assert.equal(preview.employeeTargets[0].targetTotalHours, 40);
+    assert.equal(
+      preview.employeeTargets.some((target) => target.employeeName === "Legacy Person"),
+      false,
+    );
+    assert.equal(
+      preview.employeeTargets.filter(
+        (target) =>
+          target.scheduleEligibility === "ACTIVE_SCHEDULED" &&
+          Number(target.targetTaskCounts.ENDOSCOPY ?? 0) > 0,
+      ).length,
+      8,
+    );
+    assert.equal(
+      preview.employeeTargets.find((target) => target.employeeName === "Krishi")
+        ?.scheduleEligibility,
+      "SPECIAL_EXCLUDED",
+    );
+    assert.equal(
+      preview.employeeTargets.find((target) => target.employeeName === "Ibrahim")
+        ?.scheduleEligibility,
+      "SPECIAL_EXCLUDED",
+    );
+    assert.equal(
+      preview.employeeTargets.find((target) => target.employeeName === "Easton")
+        ?.requiredBackgroundAssignments,
+      5,
+    );
+    assert.equal(
+      preview.employeeTargets.find((target) => target.employeeName === "Giulia")
+        ?.requiredBackgroundAssignments,
+      3,
+    );
     assert.equal(
       preview.roleDemand
         .filter((demand) => demand.roleCode === "PATIENTS")
@@ -2381,6 +2469,20 @@ describe("Easton July hard requirements", () => {
     const target = { employeeId: null, employeeName: "Alice" };
 
     assert.equal(findEmployeeForEastonTarget(target, employees), null);
+  });
+
+  it("does not match special excluded Easton targets to employees", () => {
+    const employees = [{ id: "krishi", fullName: "Krishi Patel" }];
+    const targets = [
+      {
+        employeeId: null,
+        employeeName: "Krishi",
+        scheduleEligibility: "SPECIAL_EXCLUDED",
+      },
+    ];
+
+    assert.equal(findEastonTargetForEmployee(employees[0], targets), null);
+    assert.equal(findEmployeeForEastonTarget(targets[0], employees), null);
   });
 
   it("uses exact July target groups ahead of old generic Easton work patterns", () => {
@@ -3113,6 +3215,28 @@ describe("Easton July hard requirements", () => {
     assert.equal(result.workPatternIssues[0]?.code, "WORK_PATTERN_MISSING");
   });
 
+  it("ignores special excluded Easton targets in hard requirement validation", () => {
+    const result = evaluateWeeklyHardRequirements({
+      targets: [
+        {
+          employeeId: "krishi",
+          employeeName: "Krishi",
+          scheduleEligibility: "SPECIAL_EXCLUDED",
+          scheduleEligibilityReason: "Special role row",
+          workPatternCode: null,
+          requiresWorkPattern: true,
+          requiredBackgroundAssignments: 5,
+          extraHourWeekdays: [],
+          expectedWeeklyHours: 40,
+        },
+      ],
+      assignments: [],
+    });
+
+    assert.equal(result.canPublish, true);
+    assert.equal(result.issues.length, 0);
+  });
+
   it("validates BG minimum separately from 40-hour work-pattern math", () => {
     const result = evaluateWeeklyHardRequirements({
       targets: [
@@ -3285,13 +3409,28 @@ describe("Easton July hard requirements", () => {
     const update = eastonEmployeeProfileUpdateFromTarget(
       {
         requiredBackgroundAssignments: 3,
+        scheduleEligibility: "ACTIVE_SCHEDULED",
       },
       "work-pattern-id",
     );
 
-    assert.equal(update.expectedWeeklyHours, 40);
+    assert.equal("expectedWeeklyHours" in update ? update.expectedWeeklyHours : null, 40);
     assert.equal(update.requiredWeeklyBackgroundShifts, 3);
     assert.equal(update.workPatternId, "work-pattern-id");
+  });
+
+  it("marks special Easton rows ineligible for ordinary scheduling", () => {
+    const update = eastonEmployeeProfileUpdateFromTarget(
+      {
+        requiredBackgroundAssignments: 5,
+        scheduleEligibility: "SPECIAL_EXCLUDED",
+      },
+      "work-pattern-id",
+    );
+
+    assert.equal(update.scheduleEligible, false);
+    assert.equal(update.requiredWeeklyBackgroundShifts, 0);
+    assert.equal(update.workPatternId, null);
   });
 
   it("uses the editable employee BG minimum ahead of the imported snapshot", () => {
@@ -3447,6 +3586,83 @@ describe("Easton July hard requirements", () => {
     assert.equal(result.assignments.length, 1);
     assert.equal(result.assignments[0]?.employeeId, "angela");
     assert.equal(result.assignments[0]?.source, "GENERATED");
+    assert.equal(result.conflicts.length, 0);
+  });
+
+  it("reserves all eight imported Easton Endoscopy targets into Saturday 0600-1400 slots", () => {
+    const endoscopyNames = [
+      "Angela",
+      "Easton",
+      "Gisella",
+      "Giulia",
+      "Josh",
+      "Maryn",
+      "Nicole",
+      "Rowan",
+    ];
+    const employees: SchedulerEmployee[] = endoscopyNames.map((name) => ({
+      id: name.toLowerCase(),
+      fullName: name,
+      skillIds: [],
+      availability: [{ weekday: 6, startMinute: 6 * 60, endMinute: 14 * 60 }],
+      workPattern: {
+        kind: "ENDOSCOPY_SATURDAY",
+        saturdayPaidHours: 8,
+        requiredSaturdayShiftCategory: "ENDO",
+        extraHourWeekdays: [],
+      },
+      targetTaskAssignments: {
+        endoscopy: 1,
+      },
+    }));
+    const taskTypes: SchedulerTaskType[] = [
+      {
+        id: "endoscopy",
+        code: "ENDOSCOPY",
+        name: "Endoscopy",
+        requiredSkillIds: ["procedure-skill"],
+        isPatientFacing: true,
+        isClinical: true,
+        isSkilled: true,
+        isEndoscopy: true,
+      },
+    ];
+    const baseSlots: SchedulerTaskSlot[] = Array.from({ length: 8 }, (_, index) => ({
+      id: `sat-endo-${index + 1}`,
+      date: "2026-07-11",
+      shiftBlockId: "sat-endo",
+      shiftCategory: "ENDO",
+      paidHours: 8,
+      taskTypeId: "endoscopy",
+      slotIndex: index + 1,
+      startMinute: 6 * 60,
+      endMinute: 14 * 60,
+      requirementLevel: "REQUIRED",
+    }));
+    const reservationPlan = buildJulySaturdayReservationPlan({
+      date: "2026-07-11",
+      employees,
+      slots: baseSlots,
+      taskTypes,
+    });
+    const slots = baseSlots.map((slot) => ({
+      ...slot,
+      reservedEmployeeIds: reservationPlan.reservationsBySlotId.get(slot.id),
+    }));
+    const result = generateSchedule({
+      seed: "july-endo-eight-reservations",
+      employees,
+      taskTypes,
+      slots,
+    });
+
+    assert.equal(reservationPlan.unresolved.length, 0);
+    assert.equal(reservationPlan.reservations.length, 8);
+    assert.equal(result.assignments.length, 8);
+    assert.deepEqual(
+      new Set(result.assignments.map((assignment) => assignment.employeeId)),
+      new Set(endoscopyNames.map((name) => name.toLowerCase())),
+    );
     assert.equal(result.conflicts.length, 0);
   });
 

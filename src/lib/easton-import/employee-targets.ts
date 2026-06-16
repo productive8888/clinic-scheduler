@@ -12,6 +12,7 @@ export type EastonEmployeeIdentity = {
 export type EastonTargetIdentity = {
   employeeId?: string | null;
   employeeName: string;
+  scheduleEligibility?: string | null;
 };
 
 export const LEGACY_EASTON_GENERIC_WORK_PATTERN_CODES = [
@@ -35,7 +36,8 @@ export function findEastonTargetForEmployee<TTarget extends EastonTargetIdentity
   employee: EastonEmployeeIdentity,
   targets: TTarget[],
 ) {
-  const byLinkedEmployee = targets.find(
+  const activeTargets = activeScheduledTargets(targets);
+  const byLinkedEmployee = activeTargets.find(
     (target) => target.employeeId === employee.id,
   );
 
@@ -44,7 +46,7 @@ export function findEastonTargetForEmployee<TTarget extends EastonTargetIdentity
   }
 
   const employeeFullName = normalizeEastonEmployeeName(employee.fullName);
-  const exactNameMatches = targets.filter(
+  const exactNameMatches = activeTargets.filter(
     (target) => normalizeEastonEmployeeName(target.employeeName) === employeeFullName,
   );
 
@@ -53,7 +55,7 @@ export function findEastonTargetForEmployee<TTarget extends EastonTargetIdentity
   }
 
   const employeeFirstName = firstEastonNameToken(employee.fullName);
-  const firstNameMatches = targets.filter(
+  const firstNameMatches = activeTargets.filter(
     (target) =>
       normalizeEastonEmployeeName(target.employeeName) === employeeFirstName,
   );
@@ -65,6 +67,13 @@ export function findEmployeeForEastonTarget<TEmployee extends EastonEmployeeIden
   target: EastonTargetIdentity,
   employees: TEmployee[],
 ) {
+  if (
+    target.scheduleEligibility &&
+    target.scheduleEligibility !== "ACTIVE_SCHEDULED"
+  ) {
+    return null;
+  }
+
   if (target.employeeId) {
     const linked = employees.find((employee) => employee.id === target.employeeId);
 
@@ -87,6 +96,16 @@ export function findEmployeeForEastonTarget<TEmployee extends EastonEmployeeIden
   );
 
   return firstNameMatches.length === 1 ? firstNameMatches[0] : null;
+}
+
+function activeScheduledTargets<TTarget extends EastonTargetIdentity>(
+  targets: TTarget[],
+) {
+  return targets.filter(
+    (target) =>
+      !target.scheduleEligibility ||
+      target.scheduleEligibility === "ACTIVE_SCHEDULED",
+  );
 }
 
 export function eastonWorkPatternGroupForCode(code?: string | null) {

@@ -49,8 +49,12 @@ export default async function EastonImportPage() {
         </div>
       </section>
 
-      <section className="grid gap-4 md:grid-cols-4">
+      <section className="grid gap-4 md:grid-cols-5">
         <Metric label="Workbook" value={preview.workbookPath ? "Found" : "Missing"} />
+        <Metric
+          label="Target sheet"
+          value={preview.activeEmployeeTargetSheetName ?? "Missing"}
+        />
         <Metric label="Shift templates" value={String(preview.shifts.length)} />
         <Metric label="Role demand rows" value={String(preview.roleDemand.length)} />
         <Metric label="Employee targets" value={String(preview.employeeTargets.length)} />
@@ -84,6 +88,10 @@ export default async function EastonImportPage() {
           <div>
             <span className="font-medium text-slate-900">Modified:</span>{" "}
             {preview.workbookModifiedAt ?? "n/a"}
+          </div>
+          <div>
+            <span className="font-medium text-slate-900">Active target sheet:</span>{" "}
+            {preview.activeEmployeeTargetSheetName ?? "None parsed"}
           </div>
           <div>
             <span className="font-medium text-slate-900">Role codes:</span>{" "}
@@ -155,6 +163,8 @@ export default async function EastonImportPage() {
             item.employeeName,
             item.roleLabel ?? "",
             item.groupLabel ?? "",
+            item.scheduleEligibility,
+            item.scheduleEligibilityReason ?? "",
             item.targetPatientShifts?.toString() ?? "",
             String(item.requiredBackgroundAssignments),
             item.extraHourWeekdays.map(weekdayShortName).join(", "),
@@ -164,6 +174,8 @@ export default async function EastonImportPage() {
             "Employee",
             "Role",
             "Group",
+            "Eligibility",
+            "Reason",
             "Patient shifts",
             "BG min",
             "Extra days",

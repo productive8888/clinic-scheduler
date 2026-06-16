@@ -60,12 +60,15 @@ slots on that exact block. These spreadsheet counts are not collapsed into
 whole-day or weekly totals. Previously imported Easton weekly definitions are
 archived when the workbook defaults are reapplied.
 
-Easton `Shifts by GY` BG values are separate employee-specific weekly minimums.
-They are imported into each matched `Employee.requiredWeeklyBackgroundShifts`
-field so managers can edit them directly from employee profiles. The same value
-is also preserved in `EmployeeScheduleTarget` as the import snapshot. Current
-generation, scoring, and publish validation use the employee profile field as
-the live source of truth.
+Easton active target sheet BG values are separate employee-specific weekly
+minimums. The importer prefers `NEW NEW Shifts by GY`, then `NEW Shifts by GY`,
+then legacy `Shifts by GY`. The active sheet BG value is imported into each
+matched `Employee.requiredWeeklyBackgroundShifts` field so managers can edit it
+directly from employee profiles. The same value is also preserved in
+`EmployeeScheduleTarget` as the import snapshot. Current generation, scoring,
+and publish validation use the employee profile field as the live source of
+truth. These BG values are hard weekly role-mix requirements, not just
+under-hour filler.
 
 After required clinic and configured background slots are generated, week/range
 generation first repairs hard July work-pattern requirements. That repair may
@@ -84,7 +87,10 @@ including BG, Front Background, Booking, Research, Float, and generated
 Background slots. The pass fills existing open background-class slots first,
 then creates optional `GENERATED_BACKGROUND_TOP_OFF` Background slots as needed
 to meet employee BG/background minimums and move employees toward expected
-weekly hours without overfilling them. It can only use shift blocks in the
+weekly hours without overfilling them. Role-mix BG minimums are reserved and
+validated before arbitrary clinic over-assignment, so a person with a high BG
+minimum should not be filled with random clinic roles until their required BG
+mix becomes impossible. The pass can only use shift blocks in the
 employee's July work skeleton, so Group Saturday/Endoscopy employees cannot be
 topped off with weekday 7:00 AM starts or Monday 6:00 PM endings. The pass
 also repairs employees who are already at 40 hours but below their BG minimum

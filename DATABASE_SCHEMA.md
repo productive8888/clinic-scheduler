@@ -7,10 +7,12 @@ versioned migrations in `prisma/migrations`.
 
 - `Employee`: staff profile, Auth.js user link, role, status, PTO balance,
   expected weekly hours, required weekly BG/background shift minimum,
-  comp-time balance display field, weekly assignment limit, work pattern,
-  start/end dates. Employee role/status remains the source of truth for
-  authorization, and `requiredWeeklyBackgroundShifts` is the live source of
-  truth for weekly BG/background minimums.
+  schedule eligibility for ordinary generation, comp-time balance display field,
+  weekly assignment limit, work pattern, start/end dates. Employee role/status
+  remains the source of truth for authorization, `scheduleEligible` controls
+  whether active staff participate in ordinary generated schedules, and
+  `requiredWeeklyBackgroundShifts` is the live source of truth for weekly
+  BG/background minimums.
 - `User`, `Account`, `Session`, and `VerificationToken`: Auth.js-owned
   authentication tables for magic-link users, persistent sessions, and email
   verification tokens.
@@ -104,10 +106,12 @@ versioned migrations in `prisma/migrations`.
   `SchedulePattern` only as an employee-target container and does not create
   slots from June sample assignments.
 - `EmployeeScheduleTarget`: spreadsheet-derived target counts by employee name
-  or employee link, including patient-shift targets, per-role counts, imported
-  BG minimum snapshots, imported work-pattern code, extra-hour weekdays,
-  exposure goals, and 40-hour weekly targets. These rows remain historical and
-  auditable; current generation and publish validation read the editable
+  or employee link, including active target sheet name, import eligibility
+  (`ACTIVE_SCHEDULED`, `SPECIAL_EXCLUDED`, or `NEEDS_REVIEW`), patient-shift
+  targets, per-role counts, imported BG minimum snapshots, imported
+  work-pattern code, extra-hour weekdays, exposure goals, and 40-hour weekly
+  targets. These rows remain historical and auditable; current generation and
+  publish validation read active scheduled targets only and use the editable
   employee profile field for required weekly BG/background shifts.
 - `BackgroundPullRule`: employee-specific pull order and max-pull caps for
   pullable, non-protected background work.

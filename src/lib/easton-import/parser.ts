@@ -33,6 +33,9 @@ export type EastonEmployeeTarget = {
   roleLabel: string | null;
   groupLabel: string | null;
   workPatternCode: string | null;
+  activeTargetSheetName: string;
+  scheduleEligibility: "ACTIVE_SCHEDULED" | "SPECIAL_EXCLUDED" | "NEEDS_REVIEW";
+  scheduleEligibilityReason: string | null;
   requiredBackgroundAssignments: number;
   extraHourWeekdays: number[];
   targetTaskCounts: Record<string, number>;
@@ -54,6 +57,7 @@ export type EastonWorkbookPreview = {
   workbookPath: string | null;
   workbookModifiedAt: string | null;
   sheets: { name: string; rowCount: number; columnCount: number }[];
+  activeEmployeeTargetSheetName: string | null;
   shifts: EastonParsedShift[];
   roleDemand: EastonRoleDemand[];
   employeeTargets: EastonEmployeeTarget[];
@@ -62,11 +66,19 @@ export type EastonWorkbookPreview = {
 };
 
 const PRIVATE_WORKBOOK_CANDIDATES = [
+  path.join(process.cwd(), "private", "Easton Scheduling 6-16.xlsx"),
+  path.join(process.cwd(), "private", "easton scheduling 6-16.xlsx"),
   path.join(process.cwd(), "private", "New Easton Scheduling.xlsx"),
   path.join(process.cwd(), "private", "new easton scheduling.xlsx"),
   path.join(process.cwd(), "private", "easton-scheduling.xlsx"),
   path.join(process.cwd(), "private", "Copy of Easton Scheduling.xlsx"),
 ];
+
+const ACTIVE_TARGET_SHEET_NAMES = [
+  "NEW NEW Shifts by GY",
+  "NEW Shifts by GY",
+  "Shifts by GY",
+] as const;
 
 const ROLE_CODE_ALIASES: Record<string, string> = {
   ALLERGY: "NEW_ALLERGY",
@@ -152,14 +164,18 @@ export async function parseEastonWorkbook(explicitPath?: string | null) {
   }));
 
   const shiftsAndHours = workbook.getWorksheet("Shifts + Hours");
-  const shiftsByGy = workbook.getWorksheet("Shifts by GY");
+  const activeTargetSheet = selectActiveEmployeeTargetSheet(workbook);
 
   if (!shiftsAndHours) {
     warnings.push("Missing Shifts + Hours sheet.");
   }
 
-  if (!shiftsByGy) {
-    warnings.push("Missing Shifts by GY sheet.");
+  if (!activeTargetSheet) {
+    warnings.push(
+      "Missing active employee target sheet. Expected NEW NEW Shifts by GY, NEW Shifts by GY, or Shifts by GY.",
+    );
+  } else {
+    warnings.push(`Active employee target sheet: ${activeTargetSheet.name}.`);
   }
 
   const primaryDemand = shiftsAndHours
@@ -175,9 +191,12 @@ export async function parseEastonWorkbook(explicitPath?: string | null) {
     workbookPath,
     workbookModifiedAt: stats.mtime.toISOString(),
     sheets,
+    activeEmployeeTargetSheetName: activeTargetSheet?.name ?? null,
     shifts: dedupeShifts(primaryDemand.shifts),
     roleDemand: primaryDemand.roleDemand,
-    employeeTargets: shiftsByGy ? parseEmployeeTargetsSheet(shiftsByGy) : [],
+    employeeTargets: activeTargetSheet
+      ? parseEmployeeTargetsSheet(activeTargetSheet)
+      : [],
     sampleAssignments: [],
     warnings,
   } satisfies EastonWorkbookPreview;
@@ -304,6 +323,18 @@ function parseShiftColumns(worksheet: ExcelJS.Worksheet) {
   return columns;
 }
 
+function selectActiveEmployeeTargetSheet(workbook: ExcelJS.Workbook) {
+  for (const sheetName of ACTIVE_TARGET_SHEET_NAMES) {
+    const worksheet = workbook.getWorksheet(sheetName);
+
+    if (worksheet) {
+      return worksheet;
+    }
+  }
+
+  return null;
+}
+
 function parseEmployeeTargetsSheet(worksheet: ExcelJS.Worksheet) {
   const headers = new Map<number, string>();
 
@@ -327,7 +358,6 @@ function parseEmployeeTargetsSheet(worksheet: ExcelJS.Worksheet) {
 
     const targetTaskCounts: Record<string, number> = {};
     let targetPatientShifts: number | null = null;
-    let targetTotalHours: number | null = null;
     let requiredBackgroundAssignments = 0;
 
     for (const [column, header] of headers) {
@@ -344,17 +374,16 @@ function parseEmployeeTargetsSheet(worksheet: ExcelJS.Worksheet) {
       const headerCode = normalizeEastonRoleCode(header.replace(/\(.+\)/, ""));
 
       if (headerCode === "PATIENTS") {
-        targetPatientShifts = value;
+        targetPatientShifts = value > 0 ? value : null;
       } else if (header.trim().toLowerCase() === "bg") {
-        targetTaskCounts.BACKGROUND = value;
-        requiredBackgroundAssignments = value;
-      } else if (headerCode !== "SHIFT_HOURS") {
+        if (value > 0) {
+          targetTaskCounts.BACKGROUND = value;
+          requiredBackgroundAssignments = value;
+        }
+      } else if (headerCode !== "SHIFT_HOURS" && value > 0) {
         targetTaskCounts[headerCode] = value;
       }
 
-      if (value > 0 && column >= 18 && column <= 22 && targetTotalHours === null) {
-        targetTotalHours = value;
-      }
     }
 
     const exposureGoals = ["GI", "ALLERGY", "PCP"].filter((goal) =>
@@ -362,17 +391,29 @@ function parseEmployeeTargetsSheet(worksheet: ExcelJS.Worksheet) {
     );
     const groupLabel = nullableText(row.getCell(5));
     const workPatternGroup = resolveEastonWorkPatternGroup(groupLabel);
+    const eligibility = classifyEmployeeTarget({
+      roleLabel: nullableText(row.getCell(4)),
+      groupLabel,
+      hasRecognizedWorkPattern: Boolean(workPatternGroup),
+      targetTaskCounts,
+      targetPatientShifts,
+      requiredBackgroundAssignments,
+    });
 
     targets.push({
       employeeName,
       roleLabel: nullableText(row.getCell(4)),
       groupLabel,
       workPatternCode: workPatternGroup?.code ?? null,
+      activeTargetSheetName: worksheet.name,
+      scheduleEligibility: eligibility.status,
+      scheduleEligibilityReason: eligibility.reason,
       requiredBackgroundAssignments,
       extraHourWeekdays: workPatternGroup?.extraHourWeekdays ?? [],
       targetTaskCounts,
       targetPatientShifts,
-      targetTotalHours: 40,
+      targetTotalHours:
+        eligibility.status === "ACTIVE_SCHEDULED" ? 40 : null,
       exposureGoals,
     });
   }
@@ -389,12 +430,51 @@ function emptyPreview(input: {
     workbookPath: input.workbookPath,
     workbookModifiedAt: input.workbookModifiedAt,
     sheets: [],
+    activeEmployeeTargetSheetName: null,
     shifts: [],
     roleDemand: [],
     employeeTargets: [],
     sampleAssignments: [],
     warnings: input.warnings,
   } satisfies EastonWorkbookPreview;
+}
+
+function classifyEmployeeTarget(input: {
+  roleLabel: string | null;
+  groupLabel: string | null;
+  hasRecognizedWorkPattern: boolean;
+  targetTaskCounts: Record<string, number>;
+  targetPatientShifts: number | null;
+  requiredBackgroundAssignments: number;
+}): {
+  status: EastonEmployeeTarget["scheduleEligibility"];
+  reason: string | null;
+} {
+  const hasRoleTargets =
+    input.requiredBackgroundAssignments > 0 ||
+    Number(input.targetPatientShifts ?? 0) > 0 ||
+    Object.values(input.targetTaskCounts).some((value) => value > 0);
+
+  if (input.hasRecognizedWorkPattern) {
+    return { status: "ACTIVE_SCHEDULED", reason: null };
+  }
+
+  if (!hasRoleTargets) {
+    return {
+      status: "SPECIAL_EXCLUDED",
+      reason:
+        input.roleLabel || input.groupLabel
+          ? "No recognized July group and no active role targets in the active sheet."
+          : "No active July scheduling targets in the active sheet.",
+    };
+  }
+
+  return {
+    status: "NEEDS_REVIEW",
+    reason: input.groupLabel
+      ? `Unrecognized July work-pattern group: ${input.groupLabel}.`
+      : "Active role targets exist but no July work-pattern group was provided.",
+  };
 }
 
 function parseWeekday(value: string) {

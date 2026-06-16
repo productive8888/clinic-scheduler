@@ -666,7 +666,7 @@ export async function applyEastonDefaultsFromWorkbook(input: {
       data: {
         active: false,
         notes:
-          "Archived by July Easton import. Use the exact July group patterns imported from Shifts by GY.",
+          "Archived by July Easton import. Use the exact July group patterns imported from the active Shifts by GY target sheet.",
       },
     });
 
@@ -766,7 +766,7 @@ export async function applyEastonDefaultsFromWorkbook(input: {
       update: {
         name: "Easton July active targets",
         description:
-          "Active July scheduling model parsed from Shifts + Hours and Shifts by GY. Contains employee targets only; it does not hardcode sample assignments.",
+          `Active July scheduling model parsed from Shifts + Hours and ${preview.activeEmployeeTargetSheetName ?? "the active Shifts by GY target sheet"}. Contains employee targets only; it does not hardcode sample assignments.`,
         source: "EASTON_SPREADSHEET",
         active: true,
       },
@@ -774,7 +774,7 @@ export async function applyEastonDefaultsFromWorkbook(input: {
         code: "EASTON_JULY_ACTIVE_TARGETS",
         name: "Easton July active targets",
         description:
-          "Active July scheduling model parsed from Shifts + Hours and Shifts by GY. Contains employee targets only; it does not hardcode sample assignments.",
+          `Active July scheduling model parsed from Shifts + Hours and ${preview.activeEmployeeTargetSheetName ?? "the active Shifts by GY target sheet"}. Contains employee targets only; it does not hardcode sample assignments.`,
         source: "EASTON_SPREADSHEET",
         active: true,
         createdByEmployeeId: input.actorEmployeeId ?? null,
@@ -797,7 +797,11 @@ export async function applyEastonDefaultsFromWorkbook(input: {
         ? workPatternIdByCode.get(target.workPatternCode) ?? null
         : null;
 
-      if (!employeeId && hasMeaningfulEmployeeTarget(target)) {
+      if (
+        !employeeId &&
+        target.scheduleEligibility === "ACTIVE_SCHEDULED" &&
+        hasMeaningfulEmployeeTarget(target)
+      ) {
         unmatchedTargetNames.push(target.employeeName);
       }
 
@@ -815,6 +819,9 @@ export async function applyEastonDefaultsFromWorkbook(input: {
           employeeName: target.employeeName,
           periodLabel: "Easton July active model",
           workPatternCode: target.workPatternCode,
+          activeTargetSheetName: target.activeTargetSheetName,
+          scheduleEligibility: target.scheduleEligibility,
+          scheduleEligibilityReason: target.scheduleEligibilityReason,
           requiredBackgroundAssignments: target.requiredBackgroundAssignments,
           extraHourWeekdays: target.extraHourWeekdays as Prisma.InputJsonArray,
           targetPatientShifts: target.targetPatientShifts,
@@ -826,6 +833,10 @@ export async function applyEastonDefaultsFromWorkbook(input: {
             [
               target.roleLabel,
               target.groupLabel,
+              target.scheduleEligibility !== "ACTIVE_SCHEDULED"
+                ? target.scheduleEligibility
+                : null,
+              target.scheduleEligibilityReason,
               `Required BG ${target.requiredBackgroundAssignments}`,
             ]
               .filter(Boolean)
@@ -859,6 +870,7 @@ export async function applyEastonDefaultsFromWorkbook(input: {
 
     return {
       reviewId: review.id,
+      activeEmployeeTargetSheetName: preview.activeEmployeeTargetSheetName,
       shiftTemplateCount: shiftTemplateIdByKey.size,
       staffingRuleCount,
       backgroundStaffingRuleCount,
@@ -867,6 +879,7 @@ export async function applyEastonDefaultsFromWorkbook(input: {
       workPatternCount: workPatternIdByCode.size,
       skippedPullNames,
       unmatchedTargetNames,
+      targetEligibilityCounts: countTargetEligibility(preview.employeeTargets),
       patternSlotCount: 0,
       employeeTargetCount: preview.employeeTargets.length,
     };
@@ -890,12 +903,14 @@ function previewSummaryJson(preview: EastonWorkbookPreview) {
   return {
     workbookPath: preview.workbookPath,
     workbookModifiedAt: preview.workbookModifiedAt,
+    activeEmployeeTargetSheetName: preview.activeEmployeeTargetSheetName,
     sheets: preview.sheets,
     shiftCount: preview.shifts.length,
     roleDemandCount: preview.roleDemand.length,
     employeeTargetCount: preview.employeeTargets.length,
     sampleAssignmentCount: preview.sampleAssignments.length,
     roleCodes: [...new Set(preview.roleDemand.map((item) => item.roleCode))].sort(),
+    targetEligibilityCounts: countTargetEligibility(preview.employeeTargets),
   } satisfies Prisma.InputJsonObject;
 }
 
@@ -929,13 +944,23 @@ function weekdayName(weekday: number) {
 }
 
 function hasMeaningfulEmployeeTarget(target: {
+  scheduleEligibility?: string | null;
+  workPatternCode?: string | null;
   requiredBackgroundAssignments: number;
   targetPatientShifts: number | null;
   targetTotalHours: number | null;
   targetTaskCounts: Record<string, number>;
   exposureGoals: string[];
 }) {
+  if (
+    target.scheduleEligibility &&
+    target.scheduleEligibility !== "ACTIVE_SCHEDULED"
+  ) {
+    return false;
+  }
+
   return (
+    Boolean(target.workPatternCode) ||
     target.requiredBackgroundAssignments > 0 ||
     Number(target.targetPatientShifts ?? 0) > 0 ||
     Number(target.targetTotalHours ?? 0) > 0 ||
@@ -949,14 +974,34 @@ export function isEastonBackgroundRole(roleCode: string) {
 }
 
 export function eastonEmployeeProfileUpdateFromTarget(
-  target: Pick<EastonEmployeeTarget, "requiredBackgroundAssignments">,
+  target: Pick<
+    EastonEmployeeTarget,
+    "requiredBackgroundAssignments" | "scheduleEligibility"
+  >,
   workPatternId: string | null,
 ) {
+  if (target.scheduleEligibility !== "ACTIVE_SCHEDULED") {
+    return {
+      scheduleEligible: false,
+      requiredWeeklyBackgroundShifts: 0,
+      workPatternId: null,
+    };
+  }
+
   return {
     expectedWeeklyHours: 40,
+    scheduleEligible: true,
     requiredWeeklyBackgroundShifts: target.requiredBackgroundAssignments,
     ...(workPatternId ? { workPatternId } : {}),
   };
+}
+
+function countTargetEligibility(targets: EastonEmployeeTarget[]) {
+  return targets.reduce<Record<string, number>>((counts, target) => {
+    counts[target.scheduleEligibility] =
+      (counts[target.scheduleEligibility] ?? 0) + 1;
+    return counts;
+  }, {});
 }
 
 export function eastonShiftTemplateDataFromShift(shift: EastonParsedShift) {

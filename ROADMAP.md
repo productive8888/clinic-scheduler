@@ -115,8 +115,14 @@
   employee-specific background pull-priority rules with max-pull caps.
 - Work-pattern templates for exact July Easton groups: Saturday endoscopy and
   non-endoscopy `M + Th`, `T + Th`, `M + W`, `M + T`, `T + W`, and `W + Th`
-  40-hour patterns, assignable from employee profiles and imported from
-  `Shifts by GY`.
+  40-hour patterns, assignable from employee profiles and imported from the
+  active Easton target sheet.
+- Easton target import now prefers `NEW NEW Shifts by GY`, then
+  `NEW Shifts by GY`, then legacy `Shifts by GY`, and records active scheduled,
+  special/excluded, or needs-review eligibility per target row.
+- Special/excluded active-sheet rows, such as Krishi and Ibrahim in the current
+  workbook, are kept for review but excluded from ordinary July generation and
+  hard work-pattern warnings.
 - Hard weekly validation for July work-pattern requirements and employee BG
   minimums, with week-view blockers and audited publish override reasons.
 - Allergy Shots is deprecated for active July generation; legacy task records
@@ -131,10 +137,15 @@
 - Day/week/month/custom generated-output clearing that removes generated
   assignments and slots while preserving manual/locked overrides and published
   dates unless explicitly confirmed.
-- Employee-owned required weekly BG/background minimums, imported from Easton
-  `Shifts by GY` but editable in employee profiles, plus deterministic
-  BG/hour top-off and flexible in-skeleton BG conversion after clinic coverage
-  generation.
+- Active-sheet ENDO role targets hard-reserve Saturday 6:00 AM-2:00 PM
+  Endoscopy slots before ordinary Saturday/BG/top-off logic; the current
+  workbook's eight ENDO target employees fill the eight Endoscopy slots when no
+  hard blocker exists.
+- Employee-owned required weekly BG/background minimums, imported from the
+  active Easton target sheet but editable in employee profiles, plus
+  deterministic BG/hour top-off and flexible in-skeleton BG conversion after
+  clinic coverage generation. BG minimums are validated as hard role-mix
+  requirements, not just under-hour filler.
 - Soft week-to-week consistency preference from the previous published matching
   weekday/shift/task assignment.
 - Task type classification flags are manager-editable from the staffing admin

@@ -31,6 +31,9 @@ export async function getWeeklyHardRequirementSummary(input: {
       select: {
         employeeId: true,
         employeeName: true,
+        activeTargetSheetName: true,
+        scheduleEligibility: true,
+        scheduleEligibilityReason: true,
         workPatternCode: true,
         requiredBackgroundAssignments: true,
         extraHourWeekdays: true,
@@ -41,7 +44,7 @@ export async function getWeeklyHardRequirementSummary(input: {
       },
     }),
     getDb().employee.findMany({
-      where: { status: "ACTIVE" },
+      where: { status: "ACTIVE", scheduleEligible: true },
       orderBy: [{ fullName: "asc" }, { id: "asc" }],
       select: {
         id: true,
@@ -95,6 +98,11 @@ export async function getWeeklyHardRequirementSummary(input: {
       return {
         employeeId: employee.id,
         employeeName: employee.fullName,
+        activeTargetSheetName: importedTarget?.activeTargetSheetName ?? null,
+        scheduleEligibility:
+          importedTarget?.scheduleEligibility ?? "ACTIVE_SCHEDULED",
+        scheduleEligibilityReason:
+          importedTarget?.scheduleEligibilityReason ?? null,
         workPatternCode:
           workPattern?.code ?? importedTarget?.workPatternCode ?? null,
         workPatternKind: workPattern?.kind ?? null,
@@ -117,17 +125,22 @@ export async function getWeeklyHardRequirementSummary(input: {
           scheduleTarget: importedTarget,
           expectedWeeklyHours: employee.expectedWeeklyHours,
         }),
+        targetTaskCounts: jsonNumberRecord(importedTarget?.targetTaskCounts),
       };
     }),
     ...targets
       .filter(
         (target) =>
+          target.scheduleEligibility === "ACTIVE_SCHEDULED" &&
           !findEmployeeForEastonTarget(target, employees) &&
           hasMeaningfulImportedTarget(target),
       )
       .map((target) => ({
         employeeId: target.employeeId,
         employeeName: target.employeeName,
+        activeTargetSheetName: target.activeTargetSheetName,
+        scheduleEligibility: target.scheduleEligibility,
+        scheduleEligibilityReason: target.scheduleEligibilityReason,
         workPatternCode: target.workPatternCode,
         workPatternKind: null,
         requiredSaturdayShiftCategory: null,
@@ -136,6 +149,7 @@ export async function getWeeklyHardRequirementSummary(input: {
         requiredBackgroundAssignments: target.requiredBackgroundAssignments,
         extraHourWeekdays: jsonNumberArray(target.extraHourWeekdays),
         expectedWeeklyHours: Number(target.targetTotalHours ?? 40),
+        targetTaskCounts: jsonNumberRecord(target.targetTaskCounts),
       })),
   ];
   const assignments: WeeklyHardRequirementAssignment[] = scheduleDays.flatMap((day) =>
@@ -171,6 +185,21 @@ function jsonNumberArray(value: unknown) {
   return value.map(Number).filter((item) => Number.isFinite(item));
 }
 
+function jsonNumberRecord(value: unknown) {
+  if (!value || Array.isArray(value) || typeof value !== "object") {
+    return {};
+  }
+
+  return Object.fromEntries(
+    Object.entries(value)
+      .map(([key, item]): [string, number] => [key, Number(item)])
+      .filter(
+        (entry): entry is [string, number] =>
+          Number.isFinite(entry[1]) && entry[1] > 0,
+      ),
+  );
+}
+
 function hasPositiveTargetCounts(value: unknown) {
   if (!value || Array.isArray(value) || typeof value !== "object") {
     return false;
@@ -180,13 +209,23 @@ function hasPositiveTargetCounts(value: unknown) {
 }
 
 function hasMeaningfulImportedTarget(target: {
+  scheduleEligibility?: string | null;
+  workPatternCode?: string | null;
   requiredBackgroundAssignments: number;
   targetPatientShifts: unknown;
   targetTaskCounts: unknown;
   targetTotalHours: unknown;
   exposureGoals: unknown;
 }) {
+  if (
+    target.scheduleEligibility &&
+    target.scheduleEligibility !== "ACTIVE_SCHEDULED"
+  ) {
+    return false;
+  }
+
   return (
+    Boolean(target.workPatternCode) ||
     target.requiredBackgroundAssignments > 0 ||
     Number(target.targetPatientShifts ?? 0) > 0 ||
     Number(target.targetTotalHours ?? 0) > 0 ||

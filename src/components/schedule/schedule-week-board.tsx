@@ -385,6 +385,15 @@ function StaffSummaryTable({
                 })}
                 <td className="px-3 py-3 text-slate-700">
                   <div className="grid grid-cols-2 gap-x-3 gap-y-1">
+                    <span>Target sheet</span>
+                    <strong>{row.activeTargetSheetName ?? "None"}</strong>
+                    <span>Eligibility</span>
+                    <strong>
+                      {row.scheduleEligibility}
+                      {row.scheduleEligibilityReason
+                        ? ` / ${row.scheduleEligibilityReason}`
+                        : ""}
+                    </strong>
                     <span>Patient shifts</span>
                     <strong>{row.patientFacingShiftCount}</strong>
                     <span>Background shifts</span>
@@ -444,6 +453,10 @@ function StaffSummaryTable({
                     <strong>
                       {row.exposure.GI} / {row.exposure.ALLERGY} / {row.exposure.PCP}
                     </strong>
+                    <span>Target roles</span>
+                    <strong>{formatRoleCounts(row.targetTaskCounts)}</strong>
+                    <span>Assigned roles</span>
+                    <strong>{formatRoleCounts(row.roleCounts)}</strong>
                   </div>
                 </td>
               </tr>
@@ -574,6 +587,20 @@ function StatusBadge({ status }: { status: string }) {
 
 function formatLabel(value: string) {
   return value.replace(/([A-Z])/g, " $1").trim();
+}
+
+function formatRoleCounts(counts: Record<string, number> | undefined) {
+  const entries = Object.entries(counts ?? {})
+    .filter(([, count]) => Number(count) > 0)
+    .sort(([left], [right]) => left.localeCompare(right));
+
+  if (entries.length === 0) {
+    return "None";
+  }
+
+  return entries
+    .map(([code, count]) => `${code.replaceAll("_", " ")} ${count}`)
+    .join(" / ");
 }
 
 function shortDateLabel(date: string) {

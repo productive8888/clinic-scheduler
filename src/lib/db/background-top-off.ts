@@ -150,7 +150,7 @@ export async function topOffBackgroundAssignmentsForRange(input: {
       include: { skillRequirements: true },
     }),
     db.employee.findMany({
-      where: { status: "ACTIVE" },
+      where: { status: "ACTIVE", scheduleEligible: true },
       orderBy: [{ fullName: "asc" }, { id: "asc" }],
       include: {
         skills: true,
@@ -221,6 +221,7 @@ export async function topOffBackgroundAssignmentsForRange(input: {
     }),
     db.employeeScheduleTarget.findMany({
       where: {
+        scheduleEligibility: "ACTIVE_SCHEDULED",
         pattern: {
           code: "EASTON_JULY_ACTIVE_TARGETS",
           active: true,

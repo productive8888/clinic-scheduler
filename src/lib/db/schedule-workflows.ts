@@ -888,7 +888,7 @@ export async function getScheduleWeekData(anchorDate: string) {
       select: { startDate: true, endDate: true },
     }),
     getDb().employee.findMany({
-      where: { status: "ACTIVE" },
+      where: { status: "ACTIVE", scheduleEligible: true },
       orderBy: { fullName: "asc" },
       select: {
         id: true,
@@ -977,6 +977,10 @@ export async function getScheduleWeekData(anchorDate: string) {
       workPatternLabel: target?.workPatternCode
         ? workPatternLabels.get(target.workPatternCode) ?? target.workPatternCode
         : null,
+      activeTargetSheetName: target?.activeTargetSheetName ?? null,
+      scheduleEligibility: target?.scheduleEligibility ?? "ACTIVE_SCHEDULED",
+      scheduleEligibilityReason: target?.scheduleEligibilityReason ?? null,
+      targetTaskCounts: target?.targetTaskCounts ?? {},
       requiredBackgroundAssignments:
         target?.requiredBackgroundAssignments ?? 0,
       missingBackgroundAssignments:

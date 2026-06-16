@@ -23,6 +23,7 @@ export type EmployeeWorkPatternSource = {
 
 export type EmployeeScheduleTargetSource = {
   workPatternCode?: string | null;
+  scheduleEligibility?: string | null;
   extraHourWeekdays?: unknown;
   targetTotalHours?: unknown;
   requiredBackgroundAssignments?: number | null;
@@ -38,6 +39,10 @@ export function getEffectiveWorkPattern(input: {
   scheduleTarget?: EmployeeScheduleTargetSource;
   expectedWeeklyHours?: unknown;
 }): EffectiveWorkPattern | null {
+  if (isInactiveTarget(input.scheduleTarget)) {
+    return null;
+  }
+
   const targetGroup = eastonWorkPatternGroupForCode(
     input.scheduleTarget?.workPatternCode,
   );
@@ -83,7 +88,9 @@ export function getEffectiveWeeklyTargetHours(input: {
 }) {
   return (
     numberOrNull(input.workPattern?.targetWeeklyHours) ??
-    numberOrNull(input.scheduleTarget?.targetTotalHours) ??
+    (isInactiveTarget(input.scheduleTarget)
+      ? null
+      : numberOrNull(input.scheduleTarget?.targetTotalHours)) ??
     numberOrNull(input.expectedWeeklyHours) ??
     40
   );
@@ -93,10 +100,21 @@ export function getEffectiveRequiredBackgroundAssignments(input: {
   employeeRequiredBackgroundAssignments?: number | null;
   scheduleTarget?: EmployeeScheduleTargetSource;
 }) {
+  if (isInactiveTarget(input.scheduleTarget)) {
+    return input.employeeRequiredBackgroundAssignments ?? 0;
+  }
+
   return (
     input.employeeRequiredBackgroundAssignments ??
     input.scheduleTarget?.requiredBackgroundAssignments ??
     0
+  );
+}
+
+function isInactiveTarget(target?: EmployeeScheduleTargetSource) {
+  return Boolean(
+    target?.scheduleEligibility &&
+      target.scheduleEligibility !== "ACTIVE_SCHEDULED",
   );
 }
 

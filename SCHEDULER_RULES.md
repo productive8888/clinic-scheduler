@@ -89,11 +89,15 @@ not contain scheduling decisions.
   weekday regular PM 1:00 PM-5:00 PM, Saturday long/endoscopy
   6:00 AM-2:00 PM, and Saturday shorter 8:00 AM-2:00 PM.
 - The private Easton workbook can be parsed from
-  `private/New Easton Scheduling.xlsx`, `private/new easton scheduling.xlsx`,
-  `private/easton-scheduling.xlsx`, or
+  `private/Easton Scheduling 6-16.xlsx`, `private/New Easton Scheduling.xlsx`,
+  `private/new easton scheduling.xlsx`, `private/easton-scheduling.xlsx`, or
   `private/Copy of Easton Scheduling.xlsx` through the admin Easton import page.
   Parsed July shifts, role demand, employee targets, BG minimums, and work
   pattern groups are reviewed before applying editable database rules.
+- The active July employee target sheet is selected in this order:
+  `NEW NEW Shifts by GY`, then `NEW Shifts by GY`, then legacy
+  `Shifts by GY`. Old target sheets are ignored whenever a newer active sheet
+  exists.
 - `Shifts + Hours` is the active reusable source for Easton shift templates and
   staffing demand. Its counts are per shift block, never whole-day totals.
   Background, Front Background, Booking, Research, and Float counts therefore
@@ -105,6 +109,20 @@ not contain scheduling decisions.
   defaults deactivate Allergy Shots staffing rules. June sheets are ignored for
   active generation so applying the workbook does not double-count demand or
   hardcode a single historical week.
+- `NEW NEW Shifts by GY` rows with a recognized July group are imported as
+  `ACTIVE_SCHEDULED`. Rows with no recognized group and no active role targets
+  are imported as `SPECIAL_EXCLUDED`; they do not participate in ordinary July
+  generation, do not require 40 hours, and do not produce missing work-pattern
+  warnings. Rows with role targets but no recognized group are marked
+  `NEEDS_REVIEW`.
+- Employees with `ENDO > 0` on the active target sheet are hard-reserved into
+  Saturday 6:00 AM-2:00 PM Endoscopy slots before ordinary Saturday, BG, or
+  top-off logic. The current active sheet has eight such employees: Angela,
+  Easton, Gisella, Giulia, Josh, Maryn, Nicole, and Rowan.
+- The active sheet `BG` column is an employee-specific hard weekly role-mix
+  minimum. It is stored on `Employee.requiredWeeklyBackgroundShifts` and
+  validated separately from the 40-hour work-pattern math; BG is not only
+  under-hour filler.
 - For deployed databases, run `npm run review:easton` and then
   `npm run apply:easton` locally against the target `DATABASE_URL`; the workbook
   remains private and is not required on Vercel.

@@ -9,6 +9,9 @@ import {
 export type WeeklyHardRequirementTarget = {
   employeeId: string | null;
   employeeName: string;
+  activeTargetSheetName?: string | null;
+  scheduleEligibility?: string | null;
+  scheduleEligibilityReason?: string | null;
   workPatternCode: string | null;
   requiresWorkPattern?: boolean;
   workPatternKind?: "CUSTOM" | "ENDOSCOPY_SATURDAY" | "NON_ENDOSCOPY_SATURDAY" | null;
@@ -17,6 +20,7 @@ export type WeeklyHardRequirementTarget = {
   requiredBackgroundAssignments: number;
   extraHourWeekdays: number[];
   expectedWeeklyHours: number;
+  targetTaskCounts?: Record<string, number>;
 };
 
 export type WeeklyHardRequirementAssignment = {
@@ -77,6 +81,13 @@ export function evaluateWeeklyHardRequirements(input: {
   }
 
   for (const target of input.targets) {
+    if (
+      target.scheduleEligibility &&
+      target.scheduleEligibility !== "ACTIVE_SCHEDULED"
+    ) {
+      continue;
+    }
+
     if (!target.employeeId) {
       issues.push({
         code: "UNMATCHED_TARGET_EMPLOYEE",

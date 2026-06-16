@@ -179,6 +179,7 @@ model Employee {
   expectedWeeklyHours            Decimal        @default(40) @db.Decimal(6, 2)
   requiredWeeklyBackgroundShifts Int            @default(0)
   compTimeBalanceHours           Decimal        @default(0) @db.Decimal(7, 2)
+  scheduleEligible               Boolean        @default(true)
   weeklyAssignmentLimit          Int?
   workPatternId                  String?
   startDate                      DateTime       @db.Date
@@ -221,6 +222,7 @@ model Employee {
 
   @@index([status])
   @@index([role])
+  @@index([scheduleEligible])
   @@index([workPatternId])
 }
 
@@ -796,6 +798,9 @@ model EmployeeScheduleTarget {
   employeeName                  String
   periodLabel                   String?
   workPatternCode               String?
+  activeTargetSheetName         String?
+  scheduleEligibility           String   @default("ACTIVE_SCHEDULED")
+  scheduleEligibilityReason     String?
   requiredBackgroundAssignments Int      @default(0)
   extraHourWeekdays             Json?
   targetPatientShifts           Decimal? @db.Decimal(8, 2)
@@ -812,6 +817,7 @@ model EmployeeScheduleTarget {
 
   @@index([patternId])
   @@index([employeeId])
+  @@index([scheduleEligibility])
   @@index([workPatternCode])
   @@index([employeeName])
 }

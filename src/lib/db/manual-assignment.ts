@@ -56,6 +56,7 @@ export async function getManualAssignmentWarnings(input: {
     getActivePatternSlotsForDate(slot.scheduleDay.date),
     getDb().employeeScheduleTarget.findMany({
       where: {
+        scheduleEligibility: "ACTIVE_SCHEDULED",
         pattern: {
           code: "EASTON_JULY_ACTIVE_TARGETS",
           active: true,
@@ -230,6 +231,7 @@ export async function getManualAssignmentWarningMatrix(date: string) {
     getActivePatternSlotsForDate(dateValue),
     getDb().employeeScheduleTarget.findMany({
       where: {
+        scheduleEligibility: "ACTIVE_SCHEDULED",
         pattern: {
           code: "EASTON_JULY_ACTIVE_TARGETS",
           active: true,

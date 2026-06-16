@@ -173,6 +173,7 @@ export function buildWeekStaffSummary(input: {
     >();
     const assignmentsByDate: Record<string, WeekStaffAssignmentInput[]> = {};
     const exposure = { GI: 0, ALLERGY: 0, PCP: 0 };
+    const roleCounts: Record<string, number> = {};
 
     for (const assignment of assignments) {
       const dateAssignments = assignmentsByDate[assignment.date] ?? [];
@@ -199,6 +200,9 @@ export function buildWeekStaffSummary(input: {
       if (group) {
         exposure[group] += 1;
       }
+
+      roleCounts[assignment.taskTypeCode] =
+        (roleCounts[assignment.taskTypeCode] ?? 0) + 1;
     }
 
     const uniqueShifts = [...shifts.values()];
@@ -219,6 +223,7 @@ export function buildWeekStaffSummary(input: {
         (shift) => shift.saturdayOrEndoscopy,
       ).length,
       exposure,
+      roleCounts,
       assignmentsByDate,
     };
   });

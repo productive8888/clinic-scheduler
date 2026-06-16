@@ -63,19 +63,28 @@ generation. June sheets, including `June Schedule`, `June Shifts by GY`, and
 `June Shifts + Hours`, are deprecated for active generation and no longer create
 schedule-pattern slots.
 
-`Shifts by GY` is the active Easton employee-target source. Its group column is
-imported as hard July work-pattern metadata: `Saturday` means the 6:00 AM-2:00
-PM endoscopy Saturday block, while `M + Th`, `T + Th`, `M + W`, `M + T`,
-`T + W`, and `W + Th` mean the 8:00 AM-2:00 PM Saturday block plus 5-hour
-make-up shifts on the listed weekdays. The sheet's BG value is copied to the
-matched employee profile as `requiredWeeklyBackgroundShifts`; the imported
-target row remains a snapshot, but the employee field drives current generation
-and publish validation.
+The active Easton employee-target source is selected in priority order:
+`NEW NEW Shifts by GY`, then `NEW Shifts by GY`, then legacy `Shifts by GY`.
+Its group column is imported as hard July work-pattern metadata: `Saturday`
+means the 6:00 AM-2:00 PM endoscopy Saturday block, while `M + Th`, `T + Th`,
+`M + W`, `M + T`, `T + W`, and `W + Th` mean the 8:00 AM-2:00 PM Saturday block
+plus 5-hour make-up shifts on the listed weekdays. The active sheet's BG value
+is copied to the matched employee profile as
+`requiredWeeklyBackgroundShifts`; the imported target row remains a snapshot,
+but the employee field drives current generation and publish validation.
 
-When `Shifts by GY` uses first names, the importer and runtime scheduler match
-those target rows to unique active employees by first name. Ambiguous names are
-left unmatched for review. Legacy generic Easton Saturday patterns are archived
-and ignored by active July generation unless an exact July group is available.
+Active target rows are classified during import. `ACTIVE_SCHEDULED` employees
+participate in ordinary July generation. `SPECIAL_EXCLUDED` rows, such as
+special-role rows with no group and no role targets, are kept for review but do
+not schedule, require 40 hours, or produce missing work-pattern warnings.
+`NEEDS_REVIEW` rows have role targets but no recognized July group and should be
+fixed before they participate in ordinary generation.
+
+When the active target sheet uses first names, the importer and runtime
+scheduler match active scheduled target rows to unique active employees by
+first name. Ambiguous names are left unmatched for review. Legacy generic
+Easton Saturday patterns are archived and ignored by active July generation
+unless an exact July group is available.
 
 For Tuesday, Wednesday, and Thursday, a group make-up day is satisfied only by
 the 7:00 AM-12:00 PM shift. For Monday, either 7:00 AM-12:00 PM or
@@ -93,10 +102,12 @@ Week generation assigns and repairs Saturday work-pattern requirements first:
 the Saturday/endoscopy group uses the 6:00 AM-2:00 PM block, and all
 non-endoscopy July groups use the 8:00 AM-2:00 PM block. Weekday 5-hour group
 repair then runs after the ordinary weekday schedules have been generated.
-Endoscopy/Saturday employees are reserved into real Saturday Endoscopy task
-slots before ordinary scoring, background assignment, or BG/hour top-off. If
-that real Endoscopy placement is infeasible, the schedule stays unresolved
-rather than satisfying the employee with Saturday background work.
+Employees with `ENDO > 0` on the active target sheet are reserved into real
+Saturday Endoscopy task slots before ordinary scoring, background assignment,
+or BG/hour top-off. The current active workbook has eight ENDO targets:
+Angela, Easton, Gisella, Giulia, Josh, Maryn, Nicole, and Rowan. If a real
+Endoscopy placement is infeasible, the schedule stays unresolved rather than
+satisfying the employee with Saturday background work.
 
 The July week planner now creates an employee work skeleton before task
 assignment. Group `Saturday` employees get Saturday 6:00 AM-2:00 PM plus four
