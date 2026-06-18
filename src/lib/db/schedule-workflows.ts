@@ -34,8 +34,15 @@ import { getSchedulePublishIssues } from "@/lib/schedule/publish-validation";
 import { isJulyPatientShiftTaskType } from "@/lib/schedule/patient-shifts";
 import { LEGACY_SHIFT_TEMPLATE_ID } from "@/lib/shifts/legacy";
 import { enumerateIsoDates, parseIsoDate, toIsoDate } from "@/lib/utils/date";
-import { getWeeklyHardRequirementSummary } from "@/lib/db/weekly-hard-requirements";
+import {
+  getRangeWeeklyHardRequirementSummary,
+  getWeeklyHardRequirementSummary,
+} from "@/lib/db/weekly-hard-requirements";
 import { eastonWorkPatternGroups } from "@/lib/easton-import/work-patterns";
+import {
+  getPatientFairnessRepairDiagnosticsForRange,
+  repairPatientFairnessForRange,
+} from "@/lib/db/patient-fairness-repair";
 
 export type BulkGenerationSummary = {
   startDate: string;
@@ -96,6 +103,14 @@ export type BulkGenerationSummary = {
   backgroundTopOffAssignmentsCreated: number;
   backgroundRoleMixSwapsMade: number;
   backgroundTopOffIncompleteEmployees: number;
+  patientRangeSwapsMade: number;
+  patientDiversitySwapsMade: number;
+  patientRepairBlockedEmployees: number;
+  patientBelowMinimum: number;
+  patientAboveMaximum: number;
+  patientMissingGi: number;
+  patientMissingAllergy: number;
+  patientMissingPcp: number;
   workPatternTopOffSlotsCreated: number;
   workPatternAssignmentsCreated: number;
   workPatternSwapsMade: number;
@@ -184,6 +199,14 @@ export async function generateScheduleRange(input: {
     backgroundTopOffAssignmentsCreated: 0,
     backgroundRoleMixSwapsMade: 0,
     backgroundTopOffIncompleteEmployees: 0,
+    patientRangeSwapsMade: 0,
+    patientDiversitySwapsMade: 0,
+    patientRepairBlockedEmployees: 0,
+    patientBelowMinimum: 0,
+    patientAboveMaximum: 0,
+    patientMissingGi: 0,
+    patientMissingAllergy: 0,
+    patientMissingPcp: 0,
     workPatternTopOffSlotsCreated: 0,
     workPatternAssignmentsCreated: 0,
     workPatternSwapsMade: 0,
@@ -319,6 +342,21 @@ export async function generateScheduleRange(input: {
       topOffSummary.employeesMissingBackground.length +
       topOffSummary.employeesUnderExpectedHours.length;
     summary.configurationWarnings.push(...topOffSummary.configurationWarnings);
+
+    const patientFairnessSummary = await repairPatientFairnessForRange({
+      startDate: input.startDate,
+      endDate: input.endDate,
+      allowedDates: datesToGenerate,
+      actorEmployeeId: input.actorEmployeeId,
+    });
+    summary.patientRangeSwapsMade =
+      patientFairnessSummary.rangeSwapsMade;
+    summary.patientDiversitySwapsMade =
+      patientFairnessSummary.diversitySwapsMade;
+    summary.patientRepairBlockedEmployees =
+      patientFairnessSummary.diagnostics.filter(
+        (diagnostic) => diagnostic.repairState === "BLOCKED",
+      ).length;
   }
 
   for (const date of datesToGenerate) {
@@ -418,7 +456,7 @@ export async function generateScheduleRange(input: {
   const targetSummary = await getRangeWeeklyTargetSummary(datesToGenerate);
   summary.employeesUnderTarget = targetSummary.underTarget;
   summary.employeesOverTarget = targetSummary.overTarget;
-  const hardRequirementSummary = await getWeeklyHardRequirementSummary({
+  const hardRequirementSummary = await getRangeWeeklyHardRequirementSummary({
     startDate: input.startDate,
     endDate: input.endDate,
   });
@@ -427,6 +465,14 @@ export async function generateScheduleRange(input: {
   summary.workPatternIssues = hardRequirementSummary.workPatternIssues.length;
   summary.unmatchedTargetIssues =
     hardRequirementSummary.unmatchedTargetIssues.length;
+  summary.patientBelowMinimum =
+    hardRequirementSummary.patientSummary.belowMinimum;
+  summary.patientAboveMaximum =
+    hardRequirementSummary.patientSummary.aboveMaximum;
+  summary.patientMissingGi = hardRequirementSummary.patientSummary.missingGi;
+  summary.patientMissingAllergy =
+    hardRequirementSummary.patientSummary.missingAllergy;
+  summary.patientMissingPcp = hardRequirementSummary.patientSummary.missingPcp;
   const workPatternDiagnostics =
     hardRequirementSummary.employeeDiagnostics.filter(
       (diagnostic) => diagnostic.workPattern.requirement,
@@ -524,7 +570,7 @@ export async function publishScheduleRange(input: {
     alreadyPublishedDates: [] as string[],
     skippedDates: [] as Array<{ date: string; reason: string }>,
   };
-  const hardRequirements = await getWeeklyHardRequirementSummary({
+  const hardRequirements = await getRangeWeeklyHardRequirementSummary({
     startDate: input.startDate,
     endDate: input.endDate,
   });
@@ -821,6 +867,7 @@ export async function getScheduleWeekData(anchorDate: string) {
     backgroundDefinitionCount,
     backgroundStaffingRuleCount,
     hardRequirements,
+    patientRepairDiagnostics,
     configurationWarnings,
   ] =
     await Promise.all([
@@ -915,6 +962,7 @@ export async function getScheduleWeekData(anchorDate: string) {
       },
     }),
     getWeeklyHardRequirementSummary(range),
+    getPatientFairnessRepairDiagnosticsForRange(range),
     getGenerationConfigurationWarnings(),
   ]);
   const targetsByEmployeeId = new Map(
@@ -957,6 +1005,12 @@ export async function getScheduleWeekData(anchorDate: string) {
       diagnostic,
     ]),
   );
+  const patientRepairDiagnosticsByEmployeeId = new Map(
+    patientRepairDiagnostics.map((diagnostic) => [
+      diagnostic.employeeId,
+      diagnostic,
+    ]),
+  );
   const issuesByEmployeeId = new Map<string, typeof hardRequirements.issues>();
 
   for (const issue of hardRequirements.issues) {
@@ -975,6 +1029,8 @@ export async function getScheduleWeekData(anchorDate: string) {
   const staffRows = baseStaffRows.map((row) => {
     const target = targetsByEmployeeId.get(row.employeeId);
     const diagnostic = diagnosticsByEmployeeId.get(row.employeeId);
+    const patientRepairDiagnostic =
+      patientRepairDiagnosticsByEmployeeId.get(row.employeeId);
 
     return {
       ...row,
@@ -1000,6 +1056,15 @@ export async function getScheduleWeekData(anchorDate: string) {
       requiredSaturdayPaidHours:
         diagnostic?.workPattern.requiredSaturdayPaidHours ?? null,
       hardRequirementIssues: issuesByEmployeeId.get(row.employeeId) ?? [],
+      patientRangeStatus:
+        diagnostic?.patientFairness.rangeStatus ?? "WITHIN_RANGE",
+      missingPatientExposureGroups:
+        diagnostic?.patientFairness.missingExposureGroups ?? [],
+      patientRepairAttempted:
+        patientRepairDiagnostic?.repairAttempted ?? false,
+      patientRepairState:
+        patientRepairDiagnostic?.repairState ?? "NOT_NEEDED",
+      patientRepairBlocker: patientRepairDiagnostic?.blocker ?? null,
     };
   });
 
@@ -1008,6 +1073,8 @@ export async function getScheduleWeekData(anchorDate: string) {
     backgroundDefinitionCount,
     backgroundStaffingRuleCount,
     hardRequirements,
+    patientFairnessSummary: hardRequirements.patientSummary,
+    patientDiversityWarnings: hardRequirements.patientDiversityWarnings,
     configurationWarnings,
     publishBlockingDays: scheduleDays
       .map((day) => ({

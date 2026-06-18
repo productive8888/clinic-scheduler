@@ -104,6 +104,12 @@ export function toExistingAssignment(
     isBackground: taskType?.isBackground,
     isFloat: taskType?.isFloat,
     isEndoscopy: taskType?.isEndoscopy,
+    exposureGroup:
+      taskType?.exposureGroup === "GI" ||
+      taskType?.exposureGroup === "ALLERGY" ||
+      taskType?.exposureGroup === "PCP"
+        ? taskType.exposureGroup
+        : null,
     canBePulledForClinic: slot.canBePulledForClinic,
     protectedFromPull: slot.protectedFromPull,
     locked: assignment.source === "LOCKED",

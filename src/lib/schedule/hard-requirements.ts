@@ -6,6 +6,12 @@ import {
   type WorkPatternValidation,
 } from "@/lib/schedule/work-pattern-requirements";
 import { isCanonicalBgTaskCode } from "@/lib/schedule/bg-role";
+import {
+  buildPatientFairnessDiagnostic,
+  JULY_PATIENT_SHIFT_MAXIMUM,
+  JULY_PATIENT_SHIFT_MINIMUM,
+  type PatientFairnessDiagnostic,
+} from "@/lib/schedule/patient-fairness";
 
 export type WeeklyHardRequirementTarget = {
   employeeId: string | null;
@@ -45,7 +51,9 @@ export type WeeklyHardRequirementIssue = {
     | "ABOVE_EXPECTED_HOURS"
     | "SATURDAY_PATTERN_UNMET"
     | "EXTRA_HOUR_DAY_UNMET"
-    | "FORBIDDEN_WORK_PATTERN_SHIFT";
+    | "FORBIDDEN_WORK_PATTERN_SHIFT"
+    | "PATIENT_SHIFT_MINIMUM_UNMET"
+    | "PATIENT_SHIFT_MAXIMUM_EXCEEDED";
   employeeId: string | null;
   employeeName: string;
   message: string;
@@ -58,6 +66,14 @@ export type WeeklyHardRequirementEmployeeDiagnostic = {
   requiredBackgroundAssignments: number;
   assignedBackgroundAssignments: number;
   missingBackgroundAssignments: number;
+  patientFairness: PatientFairnessDiagnostic;
+};
+
+export type WeeklyPatientDiversityWarning = {
+  employeeId: string;
+  employeeName: string;
+  missingExposureGroups: PatientFairnessDiagnostic["missingExposureGroups"];
+  message: string;
 };
 
 export function evaluateWeeklyHardRequirements(input: {
@@ -73,6 +89,7 @@ export function evaluateWeeklyHardRequirements(input: {
   >();
   const issues: WeeklyHardRequirementIssue[] = [];
   const employeeDiagnostics: WeeklyHardRequirementEmployeeDiagnostic[] = [];
+  const patientDiversityWarnings: WeeklyPatientDiversityWarning[] = [];
 
   for (const assignment of input.assignments) {
     const employeeAssignments =
@@ -140,6 +157,11 @@ export function evaluateWeeklyHardRequirements(input: {
       },
       assignments: employeeAssignments,
     });
+    const patientFairness = buildPatientFairnessDiagnostic({
+      employeeId: target.employeeId,
+      employeeName: target.employeeName,
+      assignments: employeeAssignments,
+    });
 
     employeeDiagnostics.push({
       employeeId: target.employeeId,
@@ -151,7 +173,35 @@ export function evaluateWeeklyHardRequirements(input: {
         0,
         target.requiredBackgroundAssignments - backgroundAssignments,
       ),
+      patientFairness,
     });
+
+    if (patientFairness.patientShiftCount < JULY_PATIENT_SHIFT_MINIMUM) {
+      issues.push({
+        code: "PATIENT_SHIFT_MINIMUM_UNMET",
+        employeeId: target.employeeId,
+        employeeName: target.employeeName,
+        message: `${target.employeeName} has ${patientFairness.patientShiftCount} July patient shifts; the required range is ${JULY_PATIENT_SHIFT_MINIMUM}-${JULY_PATIENT_SHIFT_MAXIMUM} (GI, Allergy, or PCP only).`,
+      });
+    }
+
+    if (patientFairness.patientShiftCount > JULY_PATIENT_SHIFT_MAXIMUM) {
+      issues.push({
+        code: "PATIENT_SHIFT_MAXIMUM_EXCEEDED",
+        employeeId: target.employeeId,
+        employeeName: target.employeeName,
+        message: `${target.employeeName} has ${patientFairness.patientShiftCount} July patient shifts; the required range is ${JULY_PATIENT_SHIFT_MINIMUM}-${JULY_PATIENT_SHIFT_MAXIMUM} (GI, Allergy, or PCP only).`,
+      });
+    }
+
+    if (patientFairness.missingExposureGroups.length > 0) {
+      patientDiversityWarnings.push({
+        employeeId: target.employeeId,
+        employeeName: target.employeeName,
+        missingExposureGroups: patientFairness.missingExposureGroups,
+        message: `${target.employeeName} is missing ideal ${patientFairness.missingExposureGroups.join(", ")} patient exposure.`,
+      });
+    }
 
     if (
       target.requiredBackgroundAssignments > 0 &&
@@ -241,6 +291,31 @@ export function evaluateWeeklyHardRequirements(input: {
     unmatchedTargetIssues: issues.filter(
       (issue) => issue.code === "UNMATCHED_TARGET_EMPLOYEE",
     ),
+    patientRangeIssues: issues.filter(
+      (issue) =>
+        issue.code === "PATIENT_SHIFT_MINIMUM_UNMET" ||
+        issue.code === "PATIENT_SHIFT_MAXIMUM_EXCEEDED",
+    ),
+    patientDiversityWarnings,
+    patientSummary: {
+      belowMinimum: employeeDiagnostics.filter(
+        (diagnostic) =>
+          diagnostic.patientFairness.rangeStatus === "BELOW_MINIMUM",
+      ).length,
+      aboveMaximum: employeeDiagnostics.filter(
+        (diagnostic) =>
+          diagnostic.patientFairness.rangeStatus === "ABOVE_MAXIMUM",
+      ).length,
+      missingGi: employeeDiagnostics.filter((diagnostic) =>
+        diagnostic.patientFairness.missingExposureGroups.includes("GI"),
+      ).length,
+      missingAllergy: employeeDiagnostics.filter((diagnostic) =>
+        diagnostic.patientFairness.missingExposureGroups.includes("ALLERGY"),
+      ).length,
+      missingPcp: employeeDiagnostics.filter((diagnostic) =>
+        diagnostic.patientFairness.missingExposureGroups.includes("PCP"),
+      ).length,
+    },
     canPublish: issues.length === 0,
   };
 }

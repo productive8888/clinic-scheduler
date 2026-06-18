@@ -279,7 +279,10 @@ Prefer underutilized employees when possible
 Fairness logic should remain configurable and modular.
 Fairness can include patient-facing shift balance, per-skill/role targets,
 GI/Allergy/PCP exposure goals, Saturday/endoscopy counts, total scheduled hours,
-and week-to-week pattern consistency. These are soft objectives only.
+and week-to-week pattern consistency. For the active July Easton model, the
+weekly range of 2-5 strict patient shifts (GI, Allergy, and PCP only) is a
+publish-blocking feasibility requirement unless a manager records an override.
+The goal of at least one GI, one Allergy, and one PCP remains soft.
 
 PTO SYSTEM
 Employees should be able to:
@@ -473,7 +476,8 @@ primitive. Manager range generation is an orchestration layer that:
 3. prepares shift blocks, staffing-rule slots, and period-linked background slots
 4. runs daily generation in stable ascending date order
 5. repairs hard July work-pattern requirements before ordinary BG/hour top-off
-6. persists assignments and returns an aggregate shortage/conflict summary
+6. repairs literal BG minimums, then rebalances strict weekly patient shifts
+7. persists assignments and returns an aggregate shortage/conflict summary
 
 The manager schedule route is the whole-day review surface. It displays every
 dated shift block without requiring AM/PM navigation. `/schedule/week` provides

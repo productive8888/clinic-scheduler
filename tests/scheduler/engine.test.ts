@@ -37,6 +37,14 @@ import {
   selectLiteralBgSwapCandidate,
 } from "../../src/lib/db/background-top-off";
 import {
+  applyPatientAssignmentSwapInMemory,
+  buildPatientDiagnosticMap,
+  selectPatientDiversitySwapCandidate,
+  selectPatientRangeSwapCandidate,
+  type PatientRepairEmployee,
+  type PatientRepairSlot,
+} from "../../src/lib/db/patient-fairness-repair";
+import {
   getEffectiveRequiredBackgroundAssignments,
   getEffectiveWorkPattern,
 } from "../../src/lib/schedule/easton-work-pattern-resolution";
@@ -94,6 +102,11 @@ import {
   isJulyPatientShiftTaskCode,
   julyPatientShiftGroupFromTaskCode,
 } from "../../src/lib/schedule/patient-shifts";
+import {
+  buildPatientFairnessDiagnostic,
+  JULY_PATIENT_SHIFT_MAXIMUM,
+  JULY_PATIENT_SHIFT_MINIMUM,
+} from "../../src/lib/schedule/patient-fairness";
 import {
   isShortNoticeForDateRange,
   isShortNoticeScheduleChange,
@@ -157,6 +170,175 @@ const mondayThroughFriday = [1, 2, 3, 4, 5].map((weekday) => ({
   endMinute: 1440,
   effectiveStartDate: "2026-01-01",
 }));
+const defaultSlot: SchedulerTaskSlot = {
+  id: "default-slot",
+  date: monday,
+  shiftBlockId: defaultShiftBlock.id,
+  shiftTemplateId: defaultShiftBlock.shiftTemplateId,
+  shiftCategory: "AM",
+  shiftName: "AM regular",
+  paidHours: 4,
+  taskTypeId: "task",
+  slotIndex: 1,
+  startMinute: 8 * 60,
+  endMinute: 12 * 60,
+  requirementLevel: "REQUIRED",
+  requiredStaff: 1,
+};
+
+function baseEmployee(id: string, fullName: string): SchedulerEmployee {
+  return {
+    id,
+    fullName,
+    skillIds: [],
+    availability: allDayMonday,
+  };
+}
+
+function patientFairnessTarget(employeeId: string, employeeName: string) {
+  return {
+    employeeId,
+    employeeName,
+    scheduleEligibility: "ACTIVE_SCHEDULED",
+    workPatternCode: null,
+    requiresWorkPattern: false,
+    requiredBackgroundAssignments: 0,
+    extraHourWeekdays: [],
+    expectedWeeklyHours: 0,
+  };
+}
+
+function patientFairnessAssignment(
+  employeeId: string,
+  taskTypeCode: string,
+  index: number,
+) {
+  return {
+    employeeId,
+    date: `2026-07-${String(6 + index).padStart(2, "0")}`,
+    shiftBlockId: `patient-shift-${index}`,
+    shiftCategory: "AM",
+    startMinute: 8 * 60,
+    endMinute: 12 * 60,
+    paidHours: 4,
+    taskTypeCode,
+    isBackground: false,
+  };
+}
+
+function patientRepairEmployee(
+  id: string,
+  fullName: string,
+): PatientRepairEmployee {
+  return {
+    id,
+    fullName,
+    active: true,
+    skillIds: [],
+    availability: [1, 2, 3, 4, 5, 6].map((weekday) => ({
+      weekday,
+      startMinute: 0,
+      endMinute: 24 * 60,
+      active: true,
+    })),
+    unavailable: [],
+    weeklyAssignmentLimit: null,
+    targetWeeklyHours: 40,
+    expectedHours: 40,
+    requiredBackgroundAssignments: 0,
+    workPattern: null,
+  };
+}
+
+function patientRepairSlot(input: {
+  id: string;
+  date: string;
+  taskTypeCode: string;
+  employeeId: string;
+  isBackground?: boolean;
+  shiftCategory?: SchedulerTaskSlot["shiftCategory"];
+  startMinute?: number;
+  endMinute?: number;
+  paidHours?: number;
+}): PatientRepairSlot {
+  const startMinute = input.startMinute ?? 8 * 60;
+  const endMinute = input.endMinute ?? 12 * 60;
+  const patientGroup = julyPatientShiftGroupFromTaskCode(
+    input.taskTypeCode,
+  );
+
+  return {
+    id: input.id,
+    date: input.date,
+    scheduleDayId: `day-${input.date}`,
+    scheduleDayStatus: "GENERATED",
+    shiftBlockId: `block-${input.id}`,
+    shiftTemplateId: `template-${input.id}`,
+    shiftCategory: input.shiftCategory ?? "AM",
+    shiftName: `Shift ${input.id}`,
+    paidHours: input.paidHours ?? (endMinute - startMinute) / 60,
+    taskTypeId: `task-${input.taskTypeCode}`,
+    slotIndex: 1,
+    requirementLevel: "REQUIRED",
+    startMinute,
+    endMinute,
+    minStaff: 1,
+    requiredStaff: 1,
+    requiredSkillIds: [],
+    eligibleEmployeeIds: [],
+    canBePulledForClinic: false,
+    protectedFromPull: false,
+    source: "STAFFING_RULE",
+    taskType: {
+      id: `task-${input.taskTypeCode}`,
+      code: input.taskTypeCode,
+      name: input.taskTypeCode.replaceAll("_", " "),
+      requiredSkillIds: [],
+      isPatientFacing: Boolean(patientGroup),
+      isClinical: Boolean(patientGroup),
+      isBackground: input.isBackground ?? false,
+      isSkilled: false,
+      isEndoscopy: input.taskTypeCode === "ENDOSCOPY",
+      isFloat: input.taskTypeCode === "FLOAT",
+      exposureGroup: patientGroup,
+    },
+    assignments: [
+      {
+        id: `assignment-${input.id}`,
+        employeeId: input.employeeId,
+        locked: false,
+        source: "GENERATED",
+      },
+    ],
+  };
+}
+
+function patientRepairExistingAssignments(slots: PatientRepairSlot[]) {
+  return slots.flatMap((slot) =>
+    slot.assignments.map((assignment) => ({
+      slotId: slot.id,
+      employeeId: assignment.employeeId,
+      date: slot.date,
+      taskTypeId: slot.taskTypeId,
+      startMinute: slot.startMinute,
+      endMinute: slot.endMinute,
+      shiftBlockId: slot.shiftBlockId,
+      shiftCategory: slot.shiftCategory,
+      paidHours: slot.paidHours,
+      isPatientFacing: Boolean(
+        julyPatientShiftGroupFromTaskCode(slot.taskType.code),
+      ),
+      isClinical: slot.taskType.isClinical,
+      isBackground: slot.taskType.isBackground,
+      isFloat: slot.taskType.isFloat,
+      isEndoscopy: slot.taskType.isEndoscopy,
+      exposureGroup: julyPatientShiftGroupFromTaskCode(slot.taskType.code),
+      canBePulledForClinic: slot.canBePulledForClinic,
+      protectedFromPull: slot.protectedFromPull,
+      locked: assignment.locked,
+    })),
+  );
+}
 
 function shift(
   date: string,
@@ -3605,7 +3787,7 @@ describe("Easton July hard requirements", () => {
     );
   });
 
-  it("passes when BG minimum, Saturday group, and extra-hour days are met", () => {
+  it("passes when BG, patient range, Saturday group, and extra-hour days are met", () => {
     const result = evaluateWeeklyHardRequirements({
       targets: [
         {
@@ -3614,7 +3796,7 @@ describe("Easton July hard requirements", () => {
           workPatternCode: "EASTON_GROUP_T_TH",
           requiredBackgroundAssignments: 2,
           extraHourWeekdays: [2, 4],
-          expectedWeeklyHours: 16,
+          expectedWeeklyHours: 20,
         },
       ],
       assignments: [
@@ -3639,6 +3821,17 @@ describe("Easton July hard requirements", () => {
           paidHours: 5,
           taskTypeCode: "BACKGROUND",
           isBackground: true,
+        },
+        {
+          employeeId: "yvonne",
+          date: "2026-07-10",
+          shiftBlockId: "fri-am",
+          shiftCategory: "AM",
+          startMinute: 480,
+          endMinute: 720,
+          paidHours: 4,
+          taskTypeCode: "PCP",
+          isBackground: false,
         },
         {
           employeeId: "yvonne",
@@ -5679,6 +5872,494 @@ describe("automated scheduling workflow foundations", () => {
       row.exposure.GI + row.exposure.ALLERGY + row.exposure.PCP,
     );
     assert.equal(row.roleCounts.PROCEDURE, 1);
+  });
+
+  it("flags employees below two or above five strict July patient shifts", () => {
+    const targets = [
+      patientFairnessTarget("below", "Below Employee"),
+      patientFairnessTarget("above", "Above Employee"),
+    ];
+    const assignments = [
+      patientFairnessAssignment("below", "NEW_GI", 0),
+      ...Array.from({ length: 6 }, (_, index) =>
+        patientFairnessAssignment(
+          "above",
+          index % 3 === 0
+            ? "NEW_GI"
+            : index % 3 === 1
+              ? "NEW_ALLERGY"
+              : "PCP",
+          index + 1,
+        ),
+      ),
+    ];
+    const result = evaluateWeeklyHardRequirements({ targets, assignments });
+
+    assert.equal(JULY_PATIENT_SHIFT_MINIMUM, 2);
+    assert.equal(JULY_PATIENT_SHIFT_MAXIMUM, 5);
+    assert.equal(result.patientSummary.belowMinimum, 1);
+    assert.equal(result.patientSummary.aboveMaximum, 1);
+    assert.ok(
+      result.issues.some(
+        (issue) =>
+          issue.employeeId === "below" &&
+          issue.code === "PATIENT_SHIFT_MINIMUM_UNMET",
+      ),
+    );
+    assert.ok(
+      result.issues.some(
+        (issue) =>
+          issue.employeeId === "above" &&
+          issue.code === "PATIENT_SHIFT_MAXIMUM_EXCEEDED",
+      ),
+    );
+  });
+
+  it("keeps missing GI Allergy PCP diversity as a soft warning", () => {
+    const result = evaluateWeeklyHardRequirements({
+      targets: [patientFairnessTarget("employee", "Employee")],
+      assignments: [
+        patientFairnessAssignment("employee", "NEW_GI", 0),
+        patientFairnessAssignment("employee", "NEW_GI", 1),
+        patientFairnessAssignment("employee", "PCP", 2),
+      ],
+    });
+
+    assert.equal(result.patientRangeIssues.length, 0);
+    assert.equal(result.canPublish, true);
+    assert.deepEqual(
+      result.patientDiversityWarnings[0]?.missingExposureGroups,
+      ["ALLERGY"],
+    );
+  });
+
+  it("strongly favors an employee below the patient minimum over one at the maximum", () => {
+    const result = generateSchedule({
+      seed: "patient-range-priority",
+      employees: [
+        {
+          ...baseEmployee("below", "Below"),
+          scheduledPatientFacingAssignmentsThisWeek: 1,
+        },
+        {
+          ...baseEmployee("maximum", "Maximum"),
+          scheduledPatientFacingAssignmentsThisWeek: 5,
+        },
+      ],
+      taskTypes: [
+        {
+          id: "gi",
+          code: "NEW_GI",
+          name: "New GI",
+          requiredSkillIds: [],
+          isClinical: true,
+          exposureGroup: "GI",
+        },
+      ],
+      slots: [
+        {
+          ...defaultSlot,
+          id: "gi-slot",
+          taskTypeId: "gi",
+        },
+      ],
+    });
+
+    assert.equal(result.assignments[0]?.employeeId, "below");
+  });
+
+  it("uses weekly GI Allergy PCP exposure when choosing a diversity assignment", () => {
+    const result = generateSchedule({
+      seed: "patient-diversity-priority",
+      employees: [
+        {
+          ...baseEmployee("missing-allergy", "Missing Allergy"),
+          scheduledPatientFacingAssignmentsThisWeek: 2,
+          scheduledExposureAssignmentsThisWeek: { GI: 1, PCP: 1 },
+          exposureGoals: ["GI", "ALLERGY", "PCP"],
+        },
+        {
+          ...baseEmployee("has-allergy", "Has Allergy"),
+          scheduledPatientFacingAssignmentsThisWeek: 2,
+          scheduledExposureAssignmentsThisWeek: {
+            GI: 1,
+            ALLERGY: 1,
+          },
+          exposureGoals: ["GI", "ALLERGY", "PCP"],
+        },
+      ],
+      taskTypes: [
+        {
+          id: "allergy",
+          code: "NEW_ALLERGY",
+          name: "New Allergy",
+          requiredSkillIds: [],
+          isClinical: true,
+          exposureGroup: "ALLERGY",
+        },
+      ],
+      slots: [
+        {
+          ...defaultSlot,
+          id: "allergy-slot",
+          taskTypeId: "allergy",
+        },
+      ],
+    });
+
+    assert.equal(result.assignments[0]?.employeeId, "missing-allergy");
+  });
+
+  it("repairs a below-minimum employee without unstaffing either role", () => {
+    const recipient = patientRepairEmployee("recipient", "Recipient");
+    const donor = patientRepairEmployee("donor", "Donor");
+    const slots = [
+      patientRepairSlot({
+        id: "recipient-existing-patient",
+        date: "2026-07-06",
+        taskTypeCode: "NEW_GI",
+        employeeId: recipient.id,
+      }),
+      patientRepairSlot({
+        id: "support",
+        date: "2026-07-07",
+        taskTypeCode: "RESEARCH",
+        employeeId: recipient.id,
+        isBackground: true,
+      }),
+      patientRepairSlot({
+        id: "gi",
+        date: "2026-07-08",
+        taskTypeCode: "NEW_GI",
+        employeeId: donor.id,
+      }),
+      patientRepairSlot({
+        id: "allergy",
+        date: "2026-07-09",
+        taskTypeCode: "NEW_ALLERGY",
+        employeeId: donor.id,
+      }),
+      patientRepairSlot({
+        id: "pcp",
+        date: "2026-07-10",
+        taskTypeCode: "PCP",
+        employeeId: donor.id,
+      }),
+    ];
+    const allAssignments = patientRepairExistingAssignments(slots);
+    const result = selectPatientRangeSwapCandidate({
+      recipientEmployee: recipient,
+      employees: [recipient, donor],
+      slots,
+      allAssignments,
+      movableDateSet: new Set(slots.map((slot) => slot.date)),
+      mode: "BELOW_MINIMUM",
+    });
+
+    assert.ok(result.candidate);
+    assert.equal(result.candidate.recipientSourceSlot.id, "support");
+    assert.ok(
+      ["gi", "allergy", "pcp"].includes(
+        result.candidate.donorPatientSlot.id,
+      ),
+    );
+    assert.equal(result.candidate.recipientSourceSlot.assignments.length, 1);
+    assert.equal(result.candidate.donorPatientSlot.assignments.length, 1);
+    applyPatientAssignmentSwapInMemory({
+      swap: {
+        firstEmployee: result.candidate.recipientEmployee,
+        firstAssignment: result.candidate.recipientAssignment,
+        firstSlot: result.candidate.recipientSourceSlot,
+        secondEmployee: result.candidate.donorEmployee,
+        secondAssignment: result.candidate.donorAssignment,
+        secondSlot: result.candidate.donorPatientSlot,
+      },
+      assignments: allAssignments,
+    });
+    const diagnostics = buildPatientDiagnosticMap(
+      [recipient, donor],
+      slots,
+    );
+
+    assert.equal(diagnostics.get(recipient.id)?.patientShiftCount, 2);
+    assert.equal(diagnostics.get(donor.id)?.patientShiftCount, 2);
+    assert.ok(slots.every((slot) => slot.assignments.length === 1));
+  });
+
+  it("repairs an above-maximum donor toward an employee with room", () => {
+    const recipient = patientRepairEmployee("recipient", "Recipient");
+    const donor = patientRepairEmployee("donor", "Donor");
+    const slots = [
+      patientRepairSlot({
+        id: "recipient-support",
+        date: "2026-07-06",
+        taskTypeCode: "RESEARCH",
+        employeeId: recipient.id,
+        isBackground: true,
+      }),
+      ...Array.from({ length: 4 }, (_, index) =>
+        patientRepairSlot({
+          id: `recipient-patient-${index}`,
+          date: `2026-07-${String(7 + index).padStart(2, "0")}`,
+          taskTypeCode:
+            index % 3 === 0
+              ? "NEW_GI"
+              : index % 3 === 1
+                ? "NEW_ALLERGY"
+                : "PCP",
+          employeeId: recipient.id,
+          startMinute: index >= 3 ? 13 * 60 : 8 * 60,
+          endMinute: index >= 3 ? 17 * 60 : 12 * 60,
+        }),
+      ),
+      ...Array.from({ length: 6 }, (_, index) =>
+        patientRepairSlot({
+          id: `donor-patient-${index}`,
+          date: `2026-07-${String(6 + index).padStart(2, "0")}`,
+          taskTypeCode:
+            index % 3 === 0
+              ? "NEW_GI"
+              : index % 3 === 1
+                ? "NEW_ALLERGY"
+                : "PCP",
+          employeeId: donor.id,
+          startMinute: index >= 5 ? 13 * 60 : 8 * 60,
+          endMinute: index >= 5 ? 17 * 60 : 12 * 60,
+        }),
+      ),
+    ];
+    const allAssignments = patientRepairExistingAssignments(slots);
+    const result = selectPatientRangeSwapCandidate({
+      donorEmployee: donor,
+      employees: [recipient, donor],
+      slots,
+      allAssignments,
+      movableDateSet: new Set(slots.map((slot) => slot.date)),
+      mode: "ABOVE_MAXIMUM",
+    });
+
+    assert.ok(result.candidate);
+    assert.equal(result.candidate.donorEmployee.id, donor.id);
+    assert.equal(result.candidate.recipientEmployee.id, recipient.id);
+    applyPatientAssignmentSwapInMemory({
+      swap: {
+        firstEmployee: result.candidate.recipientEmployee,
+        firstAssignment: result.candidate.recipientAssignment,
+        firstSlot: result.candidate.recipientSourceSlot,
+        secondEmployee: result.candidate.donorEmployee,
+        secondAssignment: result.candidate.donorAssignment,
+        secondSlot: result.candidate.donorPatientSlot,
+      },
+      assignments: allAssignments,
+    });
+    const diagnostics = buildPatientDiagnosticMap(
+      [recipient, donor],
+      slots,
+    );
+
+    assert.equal(diagnostics.get(recipient.id)?.patientShiftCount, 5);
+    assert.equal(diagnostics.get(donor.id)?.patientShiftCount, 5);
+    assert.ok(slots.every((slot) => slot.assignments.length === 1));
+  });
+
+  it("does not break literal BG minimums to repair patient range", () => {
+    const recipient = {
+      ...patientRepairEmployee("recipient", "Recipient"),
+      requiredBackgroundAssignments: 1,
+    };
+    const donor = patientRepairEmployee("donor", "Donor");
+    const slots = [
+      patientRepairSlot({
+        id: "literal-bg",
+        date: "2026-07-06",
+        taskTypeCode: "BACKGROUND",
+        employeeId: recipient.id,
+        isBackground: true,
+      }),
+      patientRepairSlot({
+        id: "gi",
+        date: "2026-07-07",
+        taskTypeCode: "NEW_GI",
+        employeeId: donor.id,
+      }),
+      patientRepairSlot({
+        id: "allergy",
+        date: "2026-07-08",
+        taskTypeCode: "NEW_ALLERGY",
+        employeeId: donor.id,
+      }),
+      patientRepairSlot({
+        id: "pcp",
+        date: "2026-07-09",
+        taskTypeCode: "PCP",
+        employeeId: donor.id,
+      }),
+    ];
+    const result = selectPatientRangeSwapCandidate({
+      recipientEmployee: recipient,
+      employees: [recipient, donor],
+      slots,
+      allAssignments: patientRepairExistingAssignments(slots),
+      movableDateSet: new Set(slots.map((slot) => slot.date)),
+      mode: "BELOW_MINIMUM",
+    });
+
+    assert.equal(result.candidate, null);
+    assert.ok(result.blockers.some((blocker) => blocker.includes("BG minimum")));
+  });
+
+  it("does not use Saturday or Endoscopy assignments for patient repair", () => {
+    const recipient = patientRepairEmployee("recipient", "Recipient");
+    const donor = patientRepairEmployee("donor", "Donor");
+    const slots = [
+      patientRepairSlot({
+        id: "saturday-support",
+        date: "2026-07-11",
+        taskTypeCode: "BACKGROUND",
+        employeeId: recipient.id,
+        isBackground: true,
+        shiftCategory: "SATURDAY",
+        startMinute: 8 * 60,
+        endMinute: 14 * 60,
+        paidHours: 6,
+      }),
+      patientRepairSlot({
+        id: "gi",
+        date: "2026-07-07",
+        taskTypeCode: "NEW_GI",
+        employeeId: donor.id,
+      }),
+      patientRepairSlot({
+        id: "allergy",
+        date: "2026-07-08",
+        taskTypeCode: "NEW_ALLERGY",
+        employeeId: donor.id,
+      }),
+      patientRepairSlot({
+        id: "pcp",
+        date: "2026-07-09",
+        taskTypeCode: "PCP",
+        employeeId: donor.id,
+      }),
+    ];
+    const result = selectPatientRangeSwapCandidate({
+      recipientEmployee: recipient,
+      employees: [recipient, donor],
+      slots,
+      allAssignments: patientRepairExistingAssignments(slots),
+      movableDateSet: new Set(slots.map((slot) => slot.date)),
+      mode: "BELOW_MINIMUM",
+    });
+
+    assert.equal(result.candidate, null);
+    assert.ok(
+      result.blockers.some((blocker) =>
+        blocker.includes("no generated, unlocked non-patient assignment"),
+      ),
+    );
+  });
+
+  it("finds a GI Allergy PCP diversity swap when it improves exposure", () => {
+    const first = patientRepairEmployee("first", "First");
+    const second = patientRepairEmployee("second", "Second");
+    const slots = [
+      patientRepairSlot({
+        id: "first-gi-1",
+        date: "2026-07-06",
+        taskTypeCode: "NEW_GI",
+        employeeId: first.id,
+      }),
+      patientRepairSlot({
+        id: "first-gi-2",
+        date: "2026-07-07",
+        taskTypeCode: "NEW_GI",
+        employeeId: first.id,
+      }),
+      patientRepairSlot({
+        id: "first-pcp",
+        date: "2026-07-08",
+        taskTypeCode: "PCP",
+        employeeId: first.id,
+      }),
+      patientRepairSlot({
+        id: "second-allergy-1",
+        date: "2026-07-06",
+        taskTypeCode: "NEW_ALLERGY",
+        employeeId: second.id,
+        startMinute: 13 * 60,
+        endMinute: 17 * 60,
+      }),
+      patientRepairSlot({
+        id: "second-allergy-2",
+        date: "2026-07-07",
+        taskTypeCode: "NEW_ALLERGY",
+        employeeId: second.id,
+        startMinute: 13 * 60,
+        endMinute: 17 * 60,
+      }),
+      patientRepairSlot({
+        id: "second-pcp",
+        date: "2026-07-08",
+        taskTypeCode: "PCP",
+        employeeId: second.id,
+        startMinute: 13 * 60,
+        endMinute: 17 * 60,
+      }),
+    ];
+    const allAssignments = patientRepairExistingAssignments(slots);
+    const candidate = selectPatientDiversitySwapCandidate({
+      employees: [first, second],
+      slots,
+      allAssignments,
+      movableDateSet: new Set(slots.map((slot) => slot.date)),
+    });
+
+    assert.ok(candidate);
+    assert.equal(
+      julyPatientShiftGroupFromTaskCode(candidate.firstSlot.taskType.code),
+      "GI",
+    );
+    assert.equal(
+      julyPatientShiftGroupFromTaskCode(candidate.secondSlot.taskType.code),
+      "ALLERGY",
+    );
+    applyPatientAssignmentSwapInMemory({
+      swap: candidate,
+      assignments: allAssignments,
+    });
+    const diagnostics = buildPatientDiagnosticMap([first, second], slots);
+
+    assert.deepEqual(
+      diagnostics.get(first.id)?.missingExposureGroups,
+      [],
+    );
+    assert.deepEqual(
+      diagnostics.get(second.id)?.missingExposureGroups,
+      [],
+    );
+  });
+
+  it("builds strict patient diagnostics without counting support roles", () => {
+    const diagnostic = buildPatientFairnessDiagnostic({
+      employeeId: "employee",
+      employeeName: "Employee",
+      assignments: [
+        { employeeId: "employee", taskTypeCode: "PROCEDURE" },
+        { employeeId: "employee", taskTypeCode: "ENDOSCOPY" },
+        { employeeId: "employee", taskTypeCode: "BACKGROUND" },
+        { employeeId: "employee", taskTypeCode: "NEW_GI" },
+        { employeeId: "employee", taskTypeCode: "NEW_ALLERGY" },
+        { employeeId: "employee", taskTypeCode: "PCP" },
+      ],
+    });
+
+    assert.equal(diagnostic.patientShiftCount, 3);
+    assert.deepEqual(diagnostic.exposure, {
+      GI: 1,
+      ALLERGY: 1,
+      PCP: 1,
+    });
+    assert.equal(diagnostic.rangeStatus, "WITHIN_RANGE");
   });
 
   it("hides migration-only legacy full-day blocks from manager workflow", () => {

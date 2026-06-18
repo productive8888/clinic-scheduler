@@ -20,6 +20,11 @@ import { backgroundTaskDisplayName } from "@/lib/background/display";
 import type { getScheduleWeekData } from "@/lib/db/schedule-workflows";
 import { weekdayShortName } from "@/lib/easton-import/work-patterns";
 import {
+  JULY_PATIENT_SHIFT_MAXIMUM,
+  JULY_PATIENT_SHIFT_MINIMUM,
+  type PatientFairnessRangeStatus,
+} from "@/lib/schedule/patient-fairness";
+import {
   addDaysIsoDate,
   enumerateIsoDates,
   formatDisplayDate,
@@ -204,8 +209,8 @@ export function ScheduleWeekBoard({
         <section className="rounded-md border border-rose-200 bg-rose-50 p-4 text-sm text-rose-950">
           <h2 className="font-semibold">July hard requirements are unmet</h2>
           <p className="mt-1 text-rose-900">
-            Publish is blocked until BG minimums and work-pattern rules are fixed,
-            or a manager records an override in the schedule workflow.
+            Publish is blocked until BG minimums, work-pattern rules, and the
+            2-5 patient-shift range are fixed, or a manager records an override.
           </p>
           <div className="mt-3 grid gap-2 md:grid-cols-2">
             {data.hardRequirements.issues.slice(0, 12).map((issue, index) => (
@@ -256,6 +261,31 @@ export function ScheduleWeekBoard({
         </section>
       ) : null}
 
+      <section className="grid gap-3 rounded-md border border-slate-200 bg-white p-4 shadow-sm sm:grid-cols-2 lg:grid-cols-5">
+        <PatientSummaryMetric
+          label="Below patient minimum"
+          value={data.patientFairnessSummary.belowMinimum}
+          tone="rose"
+        />
+        <PatientSummaryMetric
+          label="Above patient maximum"
+          value={data.patientFairnessSummary.aboveMaximum}
+          tone="rose"
+        />
+        <PatientSummaryMetric
+          label="Missing GI"
+          value={data.patientFairnessSummary.missingGi}
+        />
+        <PatientSummaryMetric
+          label="Missing Allergy"
+          value={data.patientFairnessSummary.missingAllergy}
+        />
+        <PatientSummaryMetric
+          label="Missing PCP"
+          value={data.patientFairnessSummary.missingPcp}
+        />
+      </section>
+
       <StaffSummaryTable data={data} weekDates={weekDates} />
 
       <section className="grid gap-4">
@@ -295,7 +325,7 @@ function StaffSummaryTable({
         ) : null}
       </div>
       <div className="overflow-x-auto">
-        <table className="min-w-[1500px] border-collapse text-left text-xs">
+        <table className="min-w-[1600px] border-collapse text-left text-xs">
           <thead className="bg-slate-50 text-slate-600">
             <tr>
               <th className="sticky left-0 z-10 border-b border-r border-slate-200 bg-slate-50 px-3 py-2 font-semibold">
@@ -405,7 +435,37 @@ function StaffSummaryTable({
                         : ""}
                     </strong>
                     <span>Patient shifts</span>
-                    <strong>{row.patientFacingShiftCount}</strong>
+                    <strong
+                      className={patientRangeTone(row.patientRangeStatus)}
+                    >
+                      {row.patientFacingShiftCount} / target{" "}
+                      {JULY_PATIENT_SHIFT_MINIMUM}-
+                      {JULY_PATIENT_SHIFT_MAXIMUM} /{" "}
+                      {patientRangeLabel(row.patientRangeStatus)}
+                    </strong>
+                    <span>Ideal exposure</span>
+                    <strong>
+                      {row.missingPatientExposureGroups.length > 0
+                        ? `Missing ${row.missingPatientExposureGroups.join(", ")}`
+                        : "GI + Allergy + PCP covered"}
+                    </strong>
+                    <span>Patient repair</span>
+                    <strong
+                      className={
+                        row.patientRepairState === "BLOCKED"
+                          ? "text-rose-700"
+                          : row.patientRepairState === "REPAIRED"
+                            ? "text-emerald-700"
+                            : undefined
+                      }
+                    >
+                      {row.patientRepairAttempted
+                        ? row.patientRepairState.replaceAll("_", " ")
+                        : "Not attempted"}
+                      {row.patientRepairBlocker
+                        ? ` / ${row.patientRepairBlocker}`
+                        : ""}
+                    </strong>
                     <span>Background shifts</span>
                     <strong>{row.backgroundShiftCount}</strong>
                     <span>Literal BG min</span>
@@ -595,6 +655,49 @@ function StatusBadge({ status }: { status: string }) {
       {status}
     </span>
   );
+}
+
+function PatientSummaryMetric({
+  label,
+  value,
+  tone = "slate",
+}: {
+  label: string;
+  value: number;
+  tone?: "slate" | "rose";
+}) {
+  return (
+    <div>
+      <div className="text-xs font-semibold uppercase text-slate-500">
+        {label}
+      </div>
+      <div
+        className={
+          tone === "rose" && value > 0
+            ? "mt-1 text-2xl font-semibold text-rose-700"
+            : "mt-1 text-2xl font-semibold text-slate-950"
+        }
+      >
+        {value}
+      </div>
+    </div>
+  );
+}
+
+function patientRangeTone(status: PatientFairnessRangeStatus) {
+  return status === "WITHIN_RANGE" ? "text-emerald-700" : "text-rose-700";
+}
+
+function patientRangeLabel(status: PatientFairnessRangeStatus) {
+  if (status === "BELOW_MINIMUM") {
+    return "Below";
+  }
+
+  if (status === "ABOVE_MAXIMUM") {
+    return "Above";
+  }
+
+  return "OK";
 }
 
 function formatLabel(value: string) {

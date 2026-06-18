@@ -18,6 +18,10 @@ export type SchedulerEmployee = {
   historicalEndoscopyAssignments?: number;
   targetWeeklyHours?: number | null;
   scheduledHoursThisWeek?: number;
+  scheduledPatientFacingAssignmentsThisWeek?: number;
+  scheduledExposureAssignmentsThisWeek?: Partial<
+    Record<"GI" | "ALLERGY" | "PCP", number>
+  >;
   scheduledBackgroundAssignmentsThisWeek?: number;
   scheduledEarlyStartShiftsThisWeek?: number;
   requiredBackgroundAssignments?: number;
@@ -136,6 +140,7 @@ export type ExistingAssignment = {
   isBackground?: boolean;
   isFloat?: boolean;
   isEndoscopy?: boolean;
+  exposureGroup?: "GI" | "ALLERGY" | "PCP" | null;
   canBePulledForClinic?: boolean;
   protectedFromPull?: boolean;
   locked?: boolean;

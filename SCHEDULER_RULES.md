@@ -59,6 +59,26 @@ not contain scheduling decisions.
   slot's shift start/end time, including Saturday shifts when configured.
 - Fairness scoring favors underused employees and reduces repeated difficult
   task assignments.
+- Active July employees should receive 2-5 strict patient shifts per clinic
+  week. Patient shifts mean only GI, Allergy, and PCP. Procedure, Civil, Front,
+  Front Background, IT, Endoscopy, Booking, Research, Float, literal BG,
+  Prior Authorization, Allergy Shots, and other support roles do not count.
+  Initial assignment scoring strongly favors employees below two and penalizes
+  additional patient assignments at five.
+- After work-pattern and literal-BG repair, generation runs a deterministic
+  patient-fairness swap pass. It exchanges generated, unlocked non-patient work
+  with GI/Allergy/PCP work while preserving skill requirements, PTO/NPTO,
+  availability, no-overlap, July work skeletons, exact hours, literal BG
+  minimums, required Saturday/Endoscopy placements, and filled clinic coverage.
+  Published dates, manual overrides, locked assignments, protected background
+  work, and Saturday assignments are not moved.
+- Employees with fewer than two or more than five patient shifts block publish
+  unless a manager records an override reason. Generation still returns the
+  best feasible draft and reports the employee and first concrete swap blocker.
+- GI/Allergy/PCP diversity is a soft goal. When an employee has at least three
+  patient shifts but is missing one category, the repair pass may exchange two
+  patient assignments when the exchange improves total exposure coverage
+  without changing either employee's patient count or breaking hard rules.
 - Configurable `SchedulingRule` rows can prefer, avoid, boost, penalize, or
   mark employees as backup-only for task selection.
 - Supported manager-facing rule types are `PREFER_EMPLOYEE_FOR_TASK`,
@@ -241,8 +261,8 @@ not contain scheduling decisions.
   work-pattern employee counts, required/satisfied extra-hour day counts, and
   employees still missing exact extra-hour days.
 - Weekly target hours influence scoring and top-off, while imported July
-  work-pattern groups and employee-required literal BG minimums are hard
-  publish checks. The scheduler strongly
+  work-pattern groups, employee-required literal BG minimums, and the 2-5
+  strict patient-shift range are hard publish checks. The scheduler strongly
   prefers the required 5-hour make-up weekdays and correct Saturday block while
   still respecting skills, availability, PTO/NPTO, and overlap rules. If a week
   remains infeasible, publish is blocked unless a manager records an override

@@ -21,6 +21,10 @@
 - Weekly employee-row staff summary for AM/PM roles, unique-shift paid hours,
   patient/background workload, Saturday/endoscopy counts, and GI/Allergy/PCP
   exposure review.
+- July patient-shift fairness with a strong 2-5 weekly GI/Allergy/PCP range,
+  deterministic generated-assignment swap repair, publish blocking with
+  override support, soft one-of-each exposure balancing, and week-view
+  repair/blocker diagnostics.
 - Day/week/month/custom-range generation with published-date protection,
   deterministic per-date seeds, background-slot preparation, aggregate result
   summaries, and bulk audit logs.

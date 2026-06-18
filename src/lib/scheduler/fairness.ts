@@ -2,6 +2,10 @@ import { dateToWeekday } from "./constraints";
 import { isExtraHourShiftForWeekday } from "@/lib/schedule/work-pattern-requirements";
 import { isCanonicalBgTaskType } from "@/lib/schedule/bg-role";
 import { isJulyPatientShiftTaskType } from "@/lib/schedule/patient-shifts";
+import {
+  JULY_PATIENT_SHIFT_MAXIMUM,
+  JULY_PATIENT_SHIFT_MINIMUM,
+} from "@/lib/schedule/patient-fairness";
 import type {
   ExistingAssignment,
   SchedulerEmployee,
@@ -79,6 +83,12 @@ export function getFairnessScore(
   });
 
   score += getExposureGoalScore({
+    employee,
+    assignments,
+    taskType,
+    settings,
+  });
+  score += getPatientRangeScore({
     employee,
     assignments,
     taskType,
@@ -228,19 +238,55 @@ function getExposureGoalScore(input: {
 
   const exposureGroup = input.taskType.exposureGroup;
 
-  if (!exposureGroup || !input.employee.exposureGoals.includes(exposureGroup)) {
+  if (
+    (exposureGroup !== "GI" &&
+      exposureGroup !== "ALLERGY" &&
+      exposureGroup !== "PCP") ||
+    !input.employee.exposureGoals.includes(exposureGroup)
+  ) {
     return 0;
   }
 
   const alreadyHasExposure =
-    getTaskAssignmentCount(input.employee, input.taskType.id) > 0 ||
+    (input.employee.scheduledExposureAssignmentsThisWeek?.[exposureGroup] ??
+      0) > 0 ||
     input.assignments.some(
       (assignment) =>
         assignment.employeeId === input.employee.id &&
-        assignment.taskTypeId === input.taskType?.id,
+        assignment.exposureGroup === exposureGroup,
     );
 
   return alreadyHasExposure ? 0 : input.settings.exposureGoalWeight;
+}
+
+function getPatientRangeScore(input: {
+  employee: SchedulerEmployee;
+  assignments: ExistingAssignment[];
+  taskType?: SchedulerTaskType;
+  settings: SchedulerFairnessSettings;
+}) {
+  if (!input.taskType || !isJulyPatientShiftTaskType(input.taskType)) {
+    return 0;
+  }
+
+  const currentWeekCount =
+    (input.employee.scheduledPatientFacingAssignmentsThisWeek ?? 0) +
+    getCurrentPatientFacingCount(input.employee.id, input.assignments);
+  const weight = input.settings.patientFacingShiftWeight;
+
+  if (currentWeekCount < JULY_PATIENT_SHIFT_MINIMUM) {
+    return (
+      (JULY_PATIENT_SHIFT_MINIMUM - currentWeekCount) *
+      weight *
+      20
+    );
+  }
+
+  if (currentWeekCount >= JULY_PATIENT_SHIFT_MAXIMUM) {
+    return -(currentWeekCount - JULY_PATIENT_SHIFT_MAXIMUM + 1) * weight * 30;
+  }
+
+  return 0;
 }
 
 function getCurrentSaturdayCount(

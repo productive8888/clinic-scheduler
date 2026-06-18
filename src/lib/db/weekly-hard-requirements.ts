@@ -13,7 +13,12 @@ import {
   getEffectiveWeeklyTargetHours,
   getEffectiveWorkPattern,
 } from "@/lib/schedule/easton-work-pattern-resolution";
-import { parseIsoDate, toIsoDate } from "@/lib/utils/date";
+import {
+  enumerateIsoDates,
+  parseIsoDate,
+  toIsoDate,
+} from "@/lib/utils/date";
+import { clinicWeekRange } from "@/lib/schedule/range";
 
 export async function getWeeklyHardRequirementSummary(input: {
   startDate: string;
@@ -174,6 +179,74 @@ export async function getWeeklyHardRequirementSummary(input: {
       assignments,
     }),
     targets: hardTargets,
+  };
+}
+
+export async function getRangeWeeklyHardRequirementSummary(input: {
+  startDate: string;
+  endDate: string;
+}) {
+  const weekStarts = [
+    ...new Set(
+      enumerateIsoDates(input.startDate, input.endDate).map(
+        (date) => clinicWeekRange(date).startDate,
+      ),
+    ),
+  ].sort();
+  const weeks = await Promise.all(
+    weekStarts.map(async (weekStart) => {
+      const range = clinicWeekRange(weekStart);
+
+      return {
+        range,
+        summary: await getWeeklyHardRequirementSummary(range),
+      };
+    }),
+  );
+
+  return {
+    weeks,
+    issues: weeks.flatMap((week) => week.summary.issues),
+    bgMinimumIssues: weeks.flatMap(
+      (week) => week.summary.bgMinimumIssues,
+    ),
+    workPatternIssues: weeks.flatMap(
+      (week) => week.summary.workPatternIssues,
+    ),
+    unmatchedTargetIssues: weeks.flatMap(
+      (week) => week.summary.unmatchedTargetIssues,
+    ),
+    patientRangeIssues: weeks.flatMap(
+      (week) => week.summary.patientRangeIssues,
+    ),
+    patientDiversityWarnings: weeks.flatMap(
+      (week) => week.summary.patientDiversityWarnings,
+    ),
+    employeeDiagnostics: weeks.flatMap(
+      (week) => week.summary.employeeDiagnostics,
+    ),
+    patientSummary: weeks.reduce(
+      (total, week) => ({
+        belowMinimum:
+          total.belowMinimum + week.summary.patientSummary.belowMinimum,
+        aboveMaximum:
+          total.aboveMaximum + week.summary.patientSummary.aboveMaximum,
+        missingGi: total.missingGi + week.summary.patientSummary.missingGi,
+        missingAllergy:
+          total.missingAllergy +
+          week.summary.patientSummary.missingAllergy,
+        missingPcp:
+          total.missingPcp + week.summary.patientSummary.missingPcp,
+      }),
+      {
+        belowMinimum: 0,
+        aboveMaximum: 0,
+        missingGi: 0,
+        missingAllergy: 0,
+        missingPcp: 0,
+      },
+    ),
+    canPublish: weeks.every((week) => week.summary.canPublish),
   };
 }
 

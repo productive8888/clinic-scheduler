@@ -851,6 +851,11 @@ export async function generateScheduleForDate(input: {
   const historicalSaturdayCountByEmployee = new Map<string, number>();
   const historicalEndoscopyCountByEmployee = new Map<string, number>();
   const scheduledHoursThisWeekByEmployee = new Map<string, number>();
+  const scheduledPatientFacingThisWeekByEmployee = new Map<string, number>();
+  const scheduledExposureThisWeekByEmployee = new Map<
+    string,
+    Record<"GI" | "ALLERGY" | "PCP", number>
+  >();
   const scheduledBackgroundAssignmentsThisWeekByEmployee = new Map<string, number>();
   const scheduledEarlyStartsThisWeekByEmployee = new Map<string, number>();
   const countedCurrentWeekShifts = new Set<string>();
@@ -939,6 +944,30 @@ export async function generateScheduleForDate(input: {
             1,
         );
       }
+
+      const exposureGroup = taskExposureGroup(
+        assignment.taskSlot.taskType.code,
+      );
+
+      if (exposureGroup) {
+        scheduledPatientFacingThisWeekByEmployee.set(
+          assignment.employeeId,
+          (scheduledPatientFacingThisWeekByEmployee.get(
+            assignment.employeeId,
+          ) ?? 0) + 1,
+        );
+        const exposure =
+          scheduledExposureThisWeekByEmployee.get(assignment.employeeId) ?? {
+            GI: 0,
+            ALLERGY: 0,
+            PCP: 0,
+          };
+        exposure[exposureGroup] += 1;
+        scheduledExposureThisWeekByEmployee.set(
+          assignment.employeeId,
+          exposure,
+        );
+      }
     }
   }
 
@@ -1014,6 +1043,14 @@ export async function generateScheduleForDate(input: {
         }),
         scheduledHoursThisWeek:
           scheduledHoursThisWeekByEmployee.get(employee.id) ?? 0,
+        scheduledPatientFacingAssignmentsThisWeek:
+          scheduledPatientFacingThisWeekByEmployee.get(employee.id) ?? 0,
+        scheduledExposureAssignmentsThisWeek:
+          scheduledExposureThisWeekByEmployee.get(employee.id) ?? {
+            GI: 0,
+            ALLERGY: 0,
+            PCP: 0,
+          },
         scheduledBackgroundAssignmentsThisWeek:
           scheduledBackgroundAssignmentsThisWeekByEmployee.get(employee.id) ?? 0,
         scheduledEarlyStartShiftsThisWeek:
