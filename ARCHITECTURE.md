@@ -301,10 +301,14 @@ The scheduling engine should automatically regenerate affected assignments
 Replacement staff should be selected automatically
 
 OPTO SYSTEM
-OPTO is a separate admin-maintained balance and append-only adjustment ledger.
-Admins can credit, debit, set, or correct an employee balance with an effective
-date and required reason. OPTO does not share PTO approval rules, NPTO policy,
-or the payroll adjustment ledger.
+OPTO is a separate manager-maintained balance and append-only adjustment ledger.
+Managers can credit, debit, set, or correct an employee balance with an
+effective date and required reason. Negative OPTO balances are allowed.
+Employees log overtime already worked. Logged overtime stays pending until a
+manager approves it. Approval applies available OPTO first and records the
+remaining hours as payable payroll overtime. Reversal restores the exact OPTO
+hours applied and removes the payable overtime from active payroll totals.
+OPTO does not share PTO approval rules or NPTO policy.
 
 COVERAGE ENGINE
 If a scheduled employee becomes unavailable:

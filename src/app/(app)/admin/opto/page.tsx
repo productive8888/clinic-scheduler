@@ -1,9 +1,7 @@
 import { Gauge, History, ShieldCheck } from "lucide-react";
-import { redirect } from "next/navigation";
 import { OptoAdjustmentForm } from "@/components/admin/opto-adjustment-form";
 import { OptoLedgerTable } from "@/components/admin/opto-ledger-table";
 import { SetupRequired } from "@/components/layout/setup-required";
-import { getCurrentActor } from "@/lib/auth";
 import { getOptoAdminPageData } from "@/lib/db/opto";
 
 export const dynamic = "force-dynamic";
@@ -13,16 +11,6 @@ export default async function OptoPage({
 }: {
   searchParams: Promise<Record<string, string | string[] | undefined>>;
 }) {
-  const actor = await getCurrentActor();
-
-  if (!actor) {
-    redirect("/login");
-  }
-
-  if (actor.role !== "ADMIN") {
-    redirect("/admin");
-  }
-
   const params = await searchParams;
   const employeeId = stringParam(params.employeeId);
   const startDate = dateParam(params.startDate);
@@ -52,14 +40,15 @@ export default async function OptoPage({
         <div className="flex flex-wrap items-start justify-between gap-4">
           <div>
             <p className="text-sm font-medium uppercase tracking-normal text-emerald-800">
-              Admin-only OPTO
+              Manager OPTO
             </p>
             <h1 className="mt-1 text-3xl font-semibold text-slate-950">
               Manual OPTO balances
             </h1>
             <p className="mt-2 max-w-3xl text-sm text-slate-500">
               Record manual credits, debits, and exact-balance corrections.
-              OPTO remains separate from PTO, NPTO, comp time, payroll, and scheduling.
+              OPTO remains separate from PTO, NPTO, comp time, and scheduling;
+              overtime approval uses it before calculating payable overtime.
             </p>
           </div>
           <div className="grid min-w-52 gap-1 rounded-md border border-emerald-200 bg-emerald-50 px-4 py-3">

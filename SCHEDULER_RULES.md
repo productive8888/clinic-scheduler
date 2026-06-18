@@ -314,11 +314,12 @@ not contain scheduling decisions.
 - Calendar exports are publish-gated: ICS feeds include active assignments from
   published schedule days only.
 - Payroll reports do not change scheduling decisions. They read schedule,
-  shift paid hours, PTO/NPTO, holiday, and payroll ledger records after
+  shift paid hours, PTO/NPTO, approved overtime, holiday, and payroll ledger records after
   scheduling has happened and surface warnings for missing/unpublished schedule
   data or unresolved staffing issues.
-- OPTO is an admin-only manual balance ledger and does not affect scheduler
-  eligibility, PTO/NPTO approval, or payroll calculations.
+- OPTO is a manager-maintained balance ledger and does not affect scheduler
+  eligibility or PTO/NPTO approval. It is used only during overtime approval to
+  split OPTO-applied hours from payable overtime hours.
 - PTO approvals that deduct balance create payroll ledger debit entries.
   Reversal/cancellation workflows restore balance when appropriate and create
   reversal ledger entries rather than deleting history.

@@ -32,6 +32,7 @@ const baseInput: BuildPayrollReportInput = {
   scheduleDays: [],
   ptoRequests: [],
   nptoRequests: [],
+  overtimeRequests: [],
   paidHolidays: [],
   ledgerEntries: [],
   settings: {
@@ -139,6 +140,46 @@ describe("payroll calculations", () => {
     assert.ok(
       report.rows[0].warningCodes.includes("REVERSED_OR_CANCELLED_TIME_OFF"),
     );
+  });
+
+  it("includes only approved payable overtime in final paid hours", () => {
+    const report = buildPayrollReport({
+      ...baseInput,
+      overtimeRequests: [
+        {
+          id: "overtime-approved",
+          employeeId: employee.id,
+          workDate: "2026-06-04",
+          status: "APPROVED",
+          requestedHours: 5,
+          optoAppliedHours: 3,
+          payableOvertimeHours: 2,
+        },
+        {
+          id: "overtime-pending",
+          employeeId: employee.id,
+          workDate: "2026-06-05",
+          status: "PENDING",
+          requestedHours: 4,
+          optoAppliedHours: 0,
+          payableOvertimeHours: 0,
+        },
+        {
+          id: "overtime-reversed",
+          employeeId: employee.id,
+          workDate: "2026-06-06",
+          status: "REVERSED",
+          requestedHours: 2,
+          optoAppliedHours: 1,
+          payableOvertimeHours: 1,
+        },
+      ],
+    });
+
+    assert.equal(report.rows[0].approvedOvertimeRequestedHours, 5);
+    assert.equal(report.rows[0].optoAppliedHours, 3);
+    assert.equal(report.rows[0].payableOvertimeHours, 2);
+    assert.equal(report.rows[0].finalPaidHoursEstimate, 2);
   });
 
   it("calculates biweekly expected hours from weekly expected hours", () => {
@@ -302,6 +343,7 @@ describe("payroll calculations", () => {
     const csv = payrollReportToCsv(report);
 
     assert.match(csv, /^Employee,Email,Expected Hours/);
+    assert.match(csv, /Approved Overtime Hours,OPTO Applied Hours,Payable Overtime Hours/);
     assert.match(csv, /Ava Allergy,ava@example\.com,80\.00/);
   });
 

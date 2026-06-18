@@ -89,7 +89,7 @@ export function OptoAdjustmentForm({ employees }: OptoAdjustmentFormProps) {
         </button>
         <p className="inline-flex items-center gap-2 text-xs text-slate-500">
           <Minus size={14} aria-hidden="true" />
-          Debits cannot make the balance negative.
+          Negative OPTO balances are allowed.
           <Replace size={14} aria-hidden="true" />
           Set balance records the difference; corrections accept a signed
           amount.

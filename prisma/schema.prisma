@@ -161,6 +161,7 @@ enum PayrollAdjustmentType {
   PTO_DEBIT
   PTO_CREDIT
   NPTO_UNPAID_DEDUCTION
+  OVERTIME_PAYABLE
   PAID_HOLIDAY_CREDIT
   COMP_TIME_CREDIT
   COMP_TIME_DEBIT
@@ -202,6 +203,8 @@ model Employee {
   reviewedPtoRequests        PTORequest[]                     @relation("PtoReviewer")
   nptoRequests               NPTORequest[]                    @relation("EmployeeNptoRequests")
   reviewedNptoRequests       NPTORequest[]                    @relation("NptoReviewer")
+  overtimeRequests           OvertimeRequest[]                @relation("EmployeeOvertimeRequests")
+  reviewedOvertimeRequests   OvertimeRequest[]                @relation("OvertimeReviewer")
   assignments                Assignment[]                     @relation("AssignedEmployee")
   assignedAssignments        Assignment[]                     @relation("AssignedByEmployee")
   schedulingRules            SchedulingRule[]                 @relation("RuleEmployee")
@@ -424,6 +427,29 @@ model NPTORequest {
 
   @@index([employeeId, status, startDate, endDate])
   @@index([status])
+}
+
+model OvertimeRequest {
+  id                    String        @id @default(cuid())
+  employeeId            String
+  workDate              DateTime      @db.Date
+  requestedHours        Decimal       @db.Decimal(8, 2)
+  reason                String?
+  status                RequestStatus @default(PENDING)
+  reviewedByEmployeeId  String?
+  reviewedAt            DateTime?
+  rejectionReason       String?
+  optoAppliedHours      Decimal       @default(0) @db.Decimal(8, 2)
+  payableOvertimeHours  Decimal       @default(0) @db.Decimal(8, 2)
+  createdAt             DateTime      @default(now())
+  updatedAt             DateTime      @updatedAt
+
+  employee   Employee  @relation("EmployeeOvertimeRequests", fields: [employeeId], references: [id], onDelete: Cascade)
+  reviewedBy Employee? @relation("OvertimeReviewer", fields: [reviewedByEmployeeId], references: [id], onDelete: SetNull)
+
+  @@index([employeeId, workDate])
+  @@index([status, workDate])
+  @@index([reviewedByEmployeeId])
 }
 
 model TimeOffSettings {
@@ -1029,6 +1055,8 @@ model OptoLedgerEntry {
   effectiveDate       DateTime           @db.Date
   reason              String
   createdByEmployeeId String?
+  sourceEntityType    String?
+  sourceEntityId      String?
   metadata            Json?
   createdAt           DateTime           @default(now())
 
@@ -1039,4 +1067,5 @@ model OptoLedgerEntry {
   @@index([effectiveDate])
   @@index([adjustmentType])
   @@index([createdByEmployeeId])
+  @@index([sourceEntityType, sourceEntityId])
 }

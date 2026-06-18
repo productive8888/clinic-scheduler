@@ -1,4 +1,9 @@
-import { Prisma, type HolidayPayRule, type PayrollAdjustmentType } from "@prisma/client";
+import {
+  Prisma,
+  type HolidayPayRule,
+  type PayrollAdjustmentType,
+  type PrismaClient,
+} from "@prisma/client";
 import { writeAuditLog } from "@/lib/audit";
 import { getDb } from "@/lib/db";
 import { buildPayrollReport } from "@/lib/payroll/calculations";
@@ -65,6 +70,7 @@ export async function getPayrollReport(input: {
     scheduleDays,
     ptoRequests,
     nptoRequests,
+    overtimeRequests,
     paidHolidays,
     ledgerEntries,
   ] = await Promise.all([
@@ -114,6 +120,12 @@ export async function getPayrollReport(input: {
         startDate: { lte: end },
         endDate: { gte: start },
       },
+    }),
+    db.overtimeRequest.findMany({
+      where: {
+        workDate: { gte: start, lte: end },
+      },
+      orderBy: [{ workDate: "asc" }, { createdAt: "asc" }],
     }),
     db.paidHoliday.findMany({
       where: {
@@ -207,6 +219,15 @@ export async function getPayrollReport(input: {
       endMinute: request.endMinute,
       requestedHours: Number(request.requestedHours),
       unpaidHours: Number(request.unpaidHours),
+    })),
+    overtimeRequests: overtimeRequests.map((request) => ({
+      id: request.id,
+      employeeId: request.employeeId,
+      workDate: toIsoDate(request.workDate),
+      status: request.status,
+      requestedHours: Number(request.requestedHours),
+      optoAppliedHours: Number(request.optoAppliedHours),
+      payableOvertimeHours: Number(request.payableOvertimeHours),
     })),
     paidHolidays: paidHolidays.map((holiday) => ({
       id: holiday.id,
@@ -305,7 +326,7 @@ export async function recordPayrollLedgerEntry(input: {
   createdByEmployeeId?: string | null;
   metadata?: Record<string, unknown> | null;
   notes?: string | null;
-}) {
+}, db: Pick<PrismaClient, "payrollAdjustmentLedger"> | Prisma.TransactionClient = getDb()) {
   const data = {
     employeeId: input.employeeId,
     type: input.type,
@@ -325,7 +346,7 @@ export async function recordPayrollLedgerEntry(input: {
   };
 
   if (input.sourceEntityType && input.sourceEntityId) {
-    return getDb().payrollAdjustmentLedger.upsert({
+    return db.payrollAdjustmentLedger.upsert({
       where: {
         employeeId_type_sourceEntityType_sourceEntityId: {
           employeeId: input.employeeId,
@@ -339,5 +360,5 @@ export async function recordPayrollLedgerEntry(input: {
     });
   }
 
-  return getDb().payrollAdjustmentLedger.create({ data });
+  return db.payrollAdjustmentLedger.create({ data });
 }

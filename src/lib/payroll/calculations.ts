@@ -39,6 +39,9 @@ export function buildPayrollReport(
       scheduledWorkHours: 0,
       ptoHours: 0,
       nptoUnpaidHours: 0,
+      approvedOvertimeRequestedHours: 0,
+      optoAppliedHours: 0,
+      payableOvertimeHours: 0,
       paidHolidayHours: 0,
       holidayCompTimeHours: 0,
       holidayPtoCreditHours: 0,
@@ -51,6 +54,7 @@ export function buildPayrollReport(
       assignmentCount: 0,
       ptoRequestCount: 0,
       nptoRequestCount: 0,
+      overtimeEntryCount: 0,
       manualOverrideCount: 0,
       warningCodes: [],
     });
@@ -116,6 +120,24 @@ export function buildPayrollReport(
     }
   }
 
+  for (const request of input.overtimeRequests) {
+    const row = rowsByEmployee.get(request.employeeId);
+
+    if (
+      !row ||
+      request.status !== "APPROVED" ||
+      request.workDate < input.startDate ||
+      request.workDate > input.endDate
+    ) {
+      continue;
+    }
+
+    row.approvedOvertimeRequestedHours += request.requestedHours;
+    row.optoAppliedHours += request.optoAppliedHours;
+    row.payableOvertimeHours += request.payableOvertimeHours;
+    row.overtimeEntryCount += 1;
+  }
+
   for (const holiday of input.paidHolidays) {
     if (!holiday.active) {
       continue;
@@ -173,6 +195,11 @@ export function buildPayrollReport(
 
     row.ptoHours = roundToTwo(row.ptoHours);
     row.nptoUnpaidHours = roundToTwo(row.nptoUnpaidHours);
+    row.approvedOvertimeRequestedHours = roundToTwo(
+      row.approvedOvertimeRequestedHours,
+    );
+    row.optoAppliedHours = roundToTwo(row.optoAppliedHours);
+    row.payableOvertimeHours = roundToTwo(row.payableOvertimeHours);
     row.scheduledWorkHours = roundToTwo(row.scheduledWorkHours);
     row.paidHolidayHours = roundToTwo(row.paidHolidayHours);
     row.holidayCompTimeHours = roundToTwo(row.holidayCompTimeHours);
@@ -249,7 +276,9 @@ export function buildPayrollReport(
         ? overage
         : 0;
 
-    row.finalPaidHoursEstimate = roundToTwo(basePaidHours - bankedOverage);
+    row.finalPaidHoursEstimate = roundToTwo(
+      basePaidHours - bankedOverage + row.payableOvertimeHours,
+    );
 
     if (employee.ptoBalanceHours < 0) {
       addEmployeeWarning(row, warnings, {
@@ -283,6 +312,12 @@ export function buildPayrollReport(
       scheduledWorkHours: sumRows(rows, "scheduledWorkHours"),
       ptoHours: sumRows(rows, "ptoHours"),
       nptoUnpaidHours: sumRows(rows, "nptoUnpaidHours"),
+      approvedOvertimeRequestedHours: sumRows(
+        rows,
+        "approvedOvertimeRequestedHours",
+      ),
+      optoAppliedHours: sumRows(rows, "optoAppliedHours"),
+      payableOvertimeHours: sumRows(rows, "payableOvertimeHours"),
       paidHolidayHours: sumRows(rows, "paidHolidayHours"),
       endoscopyPtoCreditHours: sumRows(rows, "endoscopyPtoCreditHours"),
       compTimeCreditHours: sumRows(rows, "compTimeCreditHours"),

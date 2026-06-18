@@ -83,6 +83,16 @@ export type PayrollNptoInput = PayrollTimeOffInput & {
   unpaidHours: number;
 };
 
+export type PayrollOvertimeInput = {
+  id: string;
+  employeeId: string;
+  workDate: string;
+  status: string;
+  requestedHours: number;
+  optoAppliedHours: number;
+  payableOvertimeHours: number;
+};
+
 export type PayrollPaidHolidayInput = {
   id: string;
   date: string;
@@ -131,6 +141,9 @@ export type PayrollReportRow = {
   scheduledWorkHours: number;
   ptoHours: number;
   nptoUnpaidHours: number;
+  approvedOvertimeRequestedHours: number;
+  optoAppliedHours: number;
+  payableOvertimeHours: number;
   paidHolidayHours: number;
   holidayCompTimeHours: number;
   holidayPtoCreditHours: number;
@@ -143,6 +156,7 @@ export type PayrollReportRow = {
   assignmentCount: number;
   ptoRequestCount: number;
   nptoRequestCount: number;
+  overtimeEntryCount: number;
   manualOverrideCount: number;
   warningCodes: PayrollWarningCode[];
 };
@@ -158,6 +172,9 @@ export type PayrollReportSummary = {
     scheduledWorkHours: number;
     ptoHours: number;
     nptoUnpaidHours: number;
+    approvedOvertimeRequestedHours: number;
+    optoAppliedHours: number;
+    payableOvertimeHours: number;
     paidHolidayHours: number;
     endoscopyPtoCreditHours: number;
     compTimeCreditHours: number;
@@ -173,6 +190,7 @@ export type BuildPayrollReportInput = {
   scheduleDays: PayrollScheduleDayInput[];
   ptoRequests: PayrollTimeOffInput[];
   nptoRequests: PayrollNptoInput[];
+  overtimeRequests: PayrollOvertimeInput[];
   paidHolidays: PayrollPaidHolidayInput[];
   ledgerEntries: PayrollLedgerInput[];
   settings: PayrollSettingsInput;

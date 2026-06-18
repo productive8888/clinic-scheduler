@@ -62,16 +62,20 @@
 - NPTO no-pay time off workflow with separate pending request records, no hours
   cap enforcement, admin override/reversal, audit logs, short-notice flags, and
   schedule repair.
-- Admin-only OPTO balance management with credit, debit, set-balance, and
-  correction operations backed by a transactional append-only ledger.
+- Manager OPTO balance management with credit, debit, set-balance, correction,
+  negative-balance support, and a transactional append-only ledger.
+- Employee overtime logging with pending manager approval, OPTO-first
+  allocation, payable overtime payroll reporting, immutable approved entries,
+  audited rejection/cancellation, and reversal that restores OPTO.
 - Clinic scenarios for routine, clinic-closed, reduced-staffing, and custom
   schedule days.
 - Optional manual-only tasks for Research, Background, Booking, Float, and
   Extra.
 - Configurable staffing requirement rules for tiered multi-slot task staffing by
   task type, weekday, scenario, effective date range, and requirement level.
-- Employee-facing portal for upcoming assignments, PTO status, PTO balance,
-  skills, and normal weekly schedule visibility.
+- Employee-facing portal for upcoming assignments, PTO status, PTO and OPTO
+  balances, overtime logging/history, skills, and normal weekly schedule
+  visibility.
 - Role-aware navigation, admin route protection, and a development-only seeded
   employee switcher for local testing.
 - Development/admin session diagnostics, deployment environment checks, and

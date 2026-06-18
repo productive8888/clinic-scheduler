@@ -4,6 +4,7 @@ import {
   Banknote,
   CalendarCheck2,
   CalendarDays,
+  ClockArrowUp,
   ClipboardCheck,
   Database,
   FileSpreadsheet,
@@ -14,7 +15,6 @@ import {
   Users,
 } from "lucide-react";
 import Link from "next/link";
-import { getCurrentActor } from "@/lib/auth";
 
 const adminLinks = [
   {
@@ -48,6 +48,18 @@ const adminLinks = [
     icon: Banknote,
   },
   {
+    href: "/admin/overtime",
+    title: "Overtime review",
+    description: "Approve logged overtime and split OPTO-applied from payable hours.",
+    icon: ClockArrowUp,
+  },
+  {
+    href: "/admin/opto",
+    title: "OPTO balances",
+    description: "Adjust employee OPTO balances and review the append-only ledger.",
+    icon: Gauge,
+  },
+  {
     href: "/admin/staffing",
     title: "Staffing requirements",
     description: "Configure tiered multi-person task slot rules by date context.",
@@ -79,20 +91,7 @@ const adminLinks = [
   },
 ];
 
-const adminOnlyLinks = [
-  {
-    href: "/admin/opto",
-    title: "OPTO balances",
-    description: "Manually adjust admin-only OPTO balances and review the ledger.",
-    icon: Gauge,
-  },
-];
-
-export default async function AdminPage() {
-  const actor = await getCurrentActor();
-  const visibleLinks =
-    actor?.role === "ADMIN" ? [...adminLinks, ...adminOnlyLinks] : adminLinks;
-
+export default function AdminPage() {
   return (
     <div className="grid gap-6">
       <section className="rounded-md border border-slate-200 bg-white p-6 shadow-sm">
@@ -108,7 +107,7 @@ export default async function AdminPage() {
       </section>
 
       <section className="grid gap-4 md:grid-cols-2">
-        {visibleLinks.map((item) => {
+        {adminLinks.map((item) => {
           const Icon = item.icon;
 
           return (

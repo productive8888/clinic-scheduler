@@ -42,8 +42,8 @@ export default async function AuditLogPage({
           Recent system activity
         </h1>
         <p className="mt-2 max-w-2xl text-sm text-slate-500">
-          Review schedule, PTO, employee, and configuration changes captured by
-          server-side actions.
+          Review schedule, time off, overtime, OPTO, employee, and configuration
+          changes captured by server-side actions.
         </p>
         <div className="mt-4 inline-flex items-center gap-2 rounded-md bg-slate-100 px-3 py-2 text-sm font-semibold text-slate-700">
           <Activity size={16} aria-hidden="true" />

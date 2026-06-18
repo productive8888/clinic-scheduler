@@ -16,6 +16,7 @@ import { parseIsoDate } from "@/lib/utils/date";
 
 export async function createEmployeeAction(formData: FormData) {
   const actor = await requireManager();
+  const actorEmployeeId = auditActorId(actor);
   const values = employeeFormValuesFromFormData(formData);
 
   const employee = await getDb().$transaction(async (tx) => {
@@ -26,6 +27,7 @@ export async function createEmployeeAction(formData: FormData) {
         role: values.role,
         status: values.status,
         ptoBalanceHours: values.ptoBalanceHours,
+        optoBalanceHours: values.optoBalanceHours,
         expectedWeeklyHours: values.expectedWeeklyHours,
         requiredWeeklyBackgroundShifts: values.requiredWeeklyBackgroundShifts,
         weeklyAssignmentLimit: values.weeklyAssignmentLimit,
@@ -43,11 +45,41 @@ export async function createEmployeeAction(formData: FormData) {
     await replaceEmployeeAvailability(tx, record.id, values);
     await ensureAuthUserForEmployeeInTransaction(tx, record.id);
 
+    if (values.optoBalanceHours !== 0) {
+      const ledgerEntry = await tx.optoLedgerEntry.create({
+        data: {
+          employeeId: record.id,
+          adjustmentHours: values.optoBalanceHours,
+          balanceBefore: 0,
+          balanceAfter: values.optoBalanceHours,
+          adjustmentType: "SET_BALANCE",
+          effectiveDate: parseIsoDate(values.startDate),
+          reason: "Initial OPTO balance set on employee profile.",
+          createdByEmployeeId: actorEmployeeId,
+          sourceEntityType: "EmployeeProfileCreate",
+          sourceEntityId: record.id,
+        },
+      });
+
+      await writeAuditLog(
+        {
+          actorEmployeeId,
+          action: "opto.adjust_employee_profile",
+          entityType: "OptoLedgerEntry",
+          entityId: ledgerEntry.id,
+          before: { balanceHours: 0 },
+          after: { balanceHours: values.optoBalanceHours },
+          metadata: { employeeId: record.id },
+        },
+        tx,
+      );
+    }
+
     return record;
   });
 
   await writeAuditLog({
-    actorEmployeeId: auditActorId(actor),
+    actorEmployeeId,
     action: "employee.create",
     entityType: "Employee",
     entityId: employee.id,
@@ -59,6 +91,7 @@ export async function createEmployeeAction(formData: FormData) {
 
 export async function updateEmployeeAction(employeeId: string, formData: FormData) {
   const actor = await requireManager();
+  const actorEmployeeId = auditActorId(actor);
   const values = employeeFormValuesFromFormData(formData);
 
   const before = await getDb().employee.findUnique({
@@ -67,6 +100,25 @@ export async function updateEmployeeAction(employeeId: string, formData: FormDat
   });
 
   const employee = await getDb().$transaction(async (tx) => {
+    const lockedRows = await tx.$queryRaw<
+      Array<{ optoBalanceHours: { toString(): string } }>
+    >`
+      SELECT "optoBalanceHours"
+      FROM "Employee"
+      WHERE "id" = ${employeeId}
+      FOR UPDATE
+    `;
+    const currentOptoBalance = Number(lockedRows[0]?.optoBalanceHours ?? 0);
+
+    if (
+      values.optoBalanceOriginal !== null &&
+      currentOptoBalance !== values.optoBalanceOriginal
+    ) {
+      throw new Error(
+        "OPTO balance changed while this employee form was open. Refresh and try again.",
+      );
+    }
+
     await tx.employeeSkill.deleteMany({ where: { employeeId } });
     await tx.weeklyAvailability.deleteMany({ where: { employeeId } });
 
@@ -78,6 +130,7 @@ export async function updateEmployeeAction(employeeId: string, formData: FormDat
         role: values.role,
         status: values.status,
         ptoBalanceHours: values.ptoBalanceHours,
+        optoBalanceHours: values.optoBalanceHours,
         expectedWeeklyHours: values.expectedWeeklyHours,
         requiredWeeklyBackgroundShifts: values.requiredWeeklyBackgroundShifts,
         weeklyAssignmentLimit: values.weeklyAssignmentLimit,
@@ -107,11 +160,41 @@ export async function updateEmployeeAction(employeeId: string, formData: FormDat
       });
     }
 
+    if (currentOptoBalance !== values.optoBalanceHours) {
+      const ledgerEntry = await tx.optoLedgerEntry.create({
+        data: {
+          employeeId,
+          adjustmentHours: values.optoBalanceHours - currentOptoBalance,
+          balanceBefore: currentOptoBalance,
+          balanceAfter: values.optoBalanceHours,
+          adjustmentType: "SET_BALANCE",
+          effectiveDate: new Date(),
+          reason: "OPTO balance updated from employee profile.",
+          createdByEmployeeId: actorEmployeeId,
+          sourceEntityType: "EmployeeProfileUpdate",
+          sourceEntityId: employeeId,
+        },
+      });
+
+      await writeAuditLog(
+        {
+          actorEmployeeId,
+          action: "opto.adjust_employee_profile",
+          entityType: "OptoLedgerEntry",
+          entityId: ledgerEntry.id,
+          before: { balanceHours: currentOptoBalance },
+          after: { balanceHours: values.optoBalanceHours },
+          metadata: { employeeId },
+        },
+        tx,
+      );
+    }
+
     return record;
   });
 
   await writeAuditLog({
-    actorEmployeeId: auditActorId(actor),
+    actorEmployeeId,
     action: "employee.update",
     entityType: "Employee",
     entityId: employee.id,

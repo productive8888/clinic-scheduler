@@ -78,6 +78,10 @@ import {
   wouldExceedNptoCap,
 } from "../../src/lib/npto/policy";
 import { calculateOptoAdjustment } from "../../src/lib/opto/adjustment";
+import {
+  calculateOvertimeApproval,
+  calculateOvertimeReversal,
+} from "../../src/lib/overtime/policy";
 import { buildStaffingAnalytics } from "../../src/lib/analytics/staffing";
 import { buildAssignmentCalendarEvents } from "../../src/lib/calendar/events";
 import { buildIcsCalendar } from "../../src/lib/calendar/ics";
@@ -125,6 +129,7 @@ import {
   REQUIRED_TASK_SKILL_CODES,
 } from "../../src/lib/skills/catalog";
 import { employeeFormSchema } from "../../src/lib/validation/employee";
+import { overtimeEntrySchema } from "../../src/lib/validation/overtime";
 
 const monday = "2026-06-01";
 const saturday = "2026-06-06";
@@ -5253,6 +5258,8 @@ describe("automated scheduling workflow foundations", () => {
       role: "EMPLOYEE",
       status: "ACTIVE",
       ptoBalanceHours: "0",
+      optoBalanceHours: "-2",
+      optoBalanceOriginal: "-2",
       expectedWeeklyHours: "40",
       requiredWeeklyBackgroundShifts: "3",
       weeklyAssignmentLimit: "",
@@ -5264,6 +5271,7 @@ describe("automated scheduling workflow foundations", () => {
     });
 
     assert.equal(parsed.requiredWeeklyBackgroundShifts, 3);
+    assert.equal(parsed.optoBalanceHours, -2);
   });
 
   for (const [taskCode, skillCode] of [
@@ -6547,7 +6555,7 @@ describe("manual OPTO policy", () => {
     );
   });
 
-  it("sets an exact balance and rejects a negative result", () => {
+  it("sets an exact balance and allows a negative result", () => {
     assert.deepEqual(
       calculateOptoAdjustment({
         currentBalance: 9,
@@ -6560,14 +6568,17 @@ describe("manual OPTO policy", () => {
         balanceAfter: 4,
       },
     );
-    assert.throws(
-      () =>
-        calculateOptoAdjustment({
-          currentBalance: 1,
-          type: "DEBIT",
-          hours: 2,
-        }),
-      /cannot be negative/,
+    assert.deepEqual(
+      calculateOptoAdjustment({
+        currentBalance: 1,
+        type: "DEBIT",
+        hours: 2,
+      }),
+      {
+        balanceBefore: 1,
+        adjustmentHours: -2,
+        balanceAfter: -1,
+      },
     );
   });
 
@@ -6584,6 +6595,130 @@ describe("manual OPTO policy", () => {
         balanceAfter: 9.5,
       },
     );
+  });
+});
+
+describe("overtime approval policy", () => {
+  it("uses OPTO first when it fully covers logged overtime", () => {
+    assert.deepEqual(
+      calculateOvertimeApproval({
+        requestedHours: 2.5,
+        optoBalanceHours: 4,
+      }),
+      {
+        requestedHours: 2.5,
+        optoBalanceHours: 4,
+        optoAppliedHours: 2.5,
+        payableOvertimeHours: 0,
+        projectedOptoBalanceHours: 1.5,
+      },
+    );
+  });
+
+  it("splits partially covered overtime into OPTO and payable hours", () => {
+    assert.deepEqual(
+      calculateOvertimeApproval({
+        requestedHours: 5,
+        optoBalanceHours: 3,
+      }),
+      {
+        requestedHours: 5,
+        optoBalanceHours: 3,
+        optoAppliedHours: 3,
+        payableOvertimeHours: 2,
+        projectedOptoBalanceHours: 0,
+      },
+    );
+  });
+
+  it("makes all overtime payable when OPTO is zero or negative", () => {
+    assert.equal(
+      calculateOvertimeApproval({
+        requestedHours: 4,
+        optoBalanceHours: 0,
+      }).payableOvertimeHours,
+      4,
+    );
+    assert.equal(
+      calculateOvertimeApproval({
+        requestedHours: 4,
+        optoBalanceHours: -2,
+      }).optoAppliedHours,
+      0,
+    );
+  });
+
+  it("accepts only positive quarter-hour overtime entries", () => {
+    assert.equal(
+      overtimeEntrySchema.parse({
+        workDate: "2026-06-18",
+        requestedHours: "1.25",
+        reason: "",
+      }).requestedHours,
+      1.25,
+    );
+    assert.throws(() =>
+      overtimeEntrySchema.parse({
+        workDate: "2026-06-18",
+        requestedHours: "1.1",
+      }),
+    );
+  });
+
+  it("restores applied OPTO and reverses payable overtime", () => {
+    assert.deepEqual(
+      calculateOvertimeReversal({
+        optoAppliedHours: 3,
+        payableOvertimeHours: 2,
+      }),
+      {
+        restoredOptoHours: 3,
+        payrollReversalHours: -2,
+      },
+    );
+  });
+
+  it("keeps self-service identity and manager review authorization server-side", async () => {
+    const [employeeActions, managerActions, service] = await Promise.all([
+      fs.readFile(
+        path.join(
+          process.cwd(),
+          "src",
+          "app",
+          "(app)",
+          "employee",
+          "actions.ts",
+        ),
+        "utf8",
+      ),
+      fs.readFile(
+        path.join(
+          process.cwd(),
+          "src",
+          "app",
+          "(app)",
+          "admin",
+          "overtime",
+          "actions.ts",
+        ),
+        "utf8",
+      ),
+      fs.readFile(
+        path.join(process.cwd(), "src", "lib", "db", "overtime.ts"),
+        "utf8",
+      ),
+    ]);
+
+    assert.match(
+      employeeActions,
+      /createMyOvertimeEntryAction[\s\S]*employeeId:\s*actor\.id/,
+    );
+    assert.match(managerActions, /requireManager\(\)/);
+    assert.match(service, /overtime_entry\.self_create|overtime_entry\.create/);
+    assert.match(service, /overtime_entry\.approve/);
+    assert.match(service, /overtime_entry\.reject/);
+    assert.match(service, /overtime_entry\.reverse/);
+    assert.match(service, /opto\.adjust_overtime/);
   });
 });
 

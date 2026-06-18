@@ -46,6 +46,11 @@ versioned migrations in `prisma/migrations`.
   cap. Legacy cap snapshot, used-hours snapshot, and denial fields remain for
   historical compatibility alongside review metadata, short-notice flag, and a
   future `payrollProcessedAt` marker.
+- `OvertimeRequest`: employee- or manager-logged overtime worked on a specific
+  date. Entries start pending. Approval snapshots requested hours, OPTO applied
+  hours, and payable overtime hours. Rejected/cancelled entries do not affect
+  balances or payroll. Approved entries are immutable; reversal restores the
+  applied OPTO while preserving historical split values.
 - `TimeOffSettings`: legacy singleton time-off configuration. Its NPTO cap
   value is retained for backward-compatible reads but is not enforced or
   manager-editable in the active workflow.
@@ -56,15 +61,15 @@ versioned migrations in `prisma/migrations`.
 - `PaidHoliday`: manager-configured holiday calendar rows with date, name,
   hours, pay rule, active state, notes, and creator metadata.
 - `PayrollAdjustmentLedger`: append-only payroll accounting ledger for PTO
-  debits/credits, NPTO unpaid deductions, paid holiday credits, comp-time
-  credits/debits, manual adjustments, and reversal adjustments. Entries keep
-  employee, hours, source entity, optional period range, creator, metadata, and
-  notes.
-- `OptoLedgerEntry`: append-only admin OPTO balance ledger. Each entry stores
+  debits/credits, NPTO unpaid deductions, payable overtime, paid holiday
+  credits, comp-time credits/debits, manual adjustments, and reversal
+  adjustments. Entries keep employee, hours, source entity, optional period
+  range, creator, metadata, and notes.
+- `OptoLedgerEntry`: append-only manager OPTO balance ledger. Each entry stores
   credit/debit/set/correction type, signed adjustment, before/after balances,
-  effective date, required reason, creator, and optional metadata. The employee
-  row stores the current balance for fast display. OPTO is intentionally
-  separate from PTO requests, NPTO requests, and payroll adjustments.
+  effective date, required reason, creator, optional source entity, and metadata.
+  The employee row stores the current balance for fast display. Overtime
+  approval and reversal create linked OPTO ledger entries.
 - `ScheduleDay`: one operational staffing day, including draft, generated,
   needs-regeneration, published, or locked status, clinic scenario, and publish
   metadata. Employee deactivation/deletion marks affected future dates
@@ -183,8 +188,10 @@ which keeps analytics consistent with the current schedule state.
 Payroll reports are manager-reviewable estimates generated from current
 database records. The app does not process payroll or submit data to a payroll
 vendor. Reports combine published/draft schedule assignments, shift-block paid
-hours, approved PTO, approved NPTO, paid holidays, configurable expected weekly hours, comp-time
-settings, and ledger adjustments. The report flags missing schedule data,
+hours, approved PTO, approved NPTO, approved overtime, paid holidays,
+configurable expected weekly hours, comp-time settings, and ledger adjustments.
+Approved overtime is displayed as logged, OPTO-applied, and payable hours; only
+payable overtime increases final paid hours. The report flags missing schedule data,
 unpublished schedules, unresolved shortages, manual overrides, negative PTO
 balances, PTO below -24 hours, and reversed/cancelled time off in the selected
 period.
@@ -192,6 +199,7 @@ period.
 The ledger is append-only. PTO/NPTO reversals create reversal entries instead of
 deleting original accounting events.
 
-The OPTO ledger is also append-only. An OPTO adjustment updates the employee's
-current balance and inserts its ledger row in the same short transaction after
-locking the employee record.
+The OPTO ledger is also append-only. Manual adjustments lock the employee row.
+Overtime approvals intentionally allow a concurrent stale balance read to be
+represented as a negative OPTO balance rather than losing either approved
+deduction.

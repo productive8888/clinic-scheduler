@@ -3,6 +3,7 @@ import {
   CalendarX,
   CheckCircle2,
   Clock,
+  ClockArrowUp,
   Download,
   IdCard,
   ShieldCheck,
@@ -10,10 +11,13 @@ import {
 import Link from "next/link";
 import {
   createMyNptoRequestAction,
+  createMyOvertimeEntryAction,
   createMyPtoRequestAction,
 } from "@/app/(app)/employee/actions";
 import { NPTORequestForm } from "@/components/npto/npto-request-form";
 import { NPTORequestList } from "@/components/npto/npto-request-list";
+import { OvertimeEntryForm } from "@/components/overtime/overtime-entry-form";
+import { OvertimeEntryList } from "@/components/overtime/overtime-entry-list";
 import { PTORequestForm } from "@/components/pto/pto-request-form";
 import { PTORequestList } from "@/components/pto/pto-request-list";
 import { formatMinuteRange, WEEKDAYS } from "@/lib/availability";
@@ -27,7 +31,13 @@ type EmployeePortalDashboardProps = {
 };
 
 export function EmployeePortalDashboard({ data }: EmployeePortalDashboardProps) {
-  const { employee, assignments, ptoRequests, nptoRequests } = data;
+  const {
+    employee,
+    assignments,
+    ptoRequests,
+    nptoRequests,
+    overtimeRequests,
+  } = data;
 
   if (!employee) {
     return (
@@ -55,14 +65,14 @@ export function EmployeePortalDashboard({ data }: EmployeePortalDashboardProps) 
           {employee.fullName}
         </h1>
         <p className="mt-2 text-sm text-slate-500">
-          View upcoming work, PTO status, skills, and recurring availability.
+          View upcoming work, time-off status, logged overtime, skills, and recurring availability.
           Every PTO and NPTO request waits for manager review. NPTO is unpaid,
           blocks scheduling only after approval, and is tracked separately from
           PTO balance.
         </p>
       </section>
 
-      <section className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+      <section className="grid gap-4 sm:grid-cols-2 xl:grid-cols-5">
         <MetricCard
           icon={IdCard}
           label="Email"
@@ -82,6 +92,11 @@ export function EmployeePortalDashboard({ data }: EmployeePortalDashboardProps) 
           icon={CalendarX}
           label="PTO balance"
           value={`${employee.ptoBalanceHours.toString()} hours`}
+        />
+        <MetricCard
+          icon={ClockArrowUp}
+          label="OPTO balance"
+          value={`${employee.optoBalanceHours.toString()} hours`}
         />
       </section>
 
@@ -259,6 +274,24 @@ export function EmployeePortalDashboard({ data }: EmployeePortalDashboardProps) 
           NPTO request status
         </h2>
         <NPTORequestList requests={nptoRequests} mode="employee" />
+      </section>
+
+      <section className="rounded-md border border-slate-200 bg-white p-5 shadow-sm">
+        <h2 className="text-lg font-semibold text-slate-950">Log overtime</h2>
+        <p className="mt-1 text-sm text-slate-500">
+          Record overtime already worked. Nothing affects OPTO or payroll until a
+          manager approves the entry.
+        </p>
+        <div className="mt-4">
+          <OvertimeEntryForm action={createMyOvertimeEntryAction} />
+        </div>
+      </section>
+
+      <section className="grid gap-3">
+        <h2 className="text-lg font-semibold text-slate-950">
+          Logged overtime status
+        </h2>
+        <OvertimeEntryList entries={overtimeRequests} mode="employee" />
       </section>
     </div>
   );

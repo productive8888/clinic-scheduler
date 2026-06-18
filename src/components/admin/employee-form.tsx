@@ -105,6 +105,23 @@ export function EmployeeForm({ skills, workPatterns = [], employee }: EmployeeFo
           />
         </label>
         <label className="grid gap-1 text-sm font-medium text-slate-700">
+          OPTO balance hours
+          <input
+            name="optoBalanceHours"
+            type="number"
+            min="-10000"
+            max="10000"
+            step="0.25"
+            defaultValue={employee?.optoBalanceHours.toString() ?? "0"}
+            className="h-10 rounded-md border border-slate-300 bg-white px-3 text-slate-950 outline-none focus:border-emerald-700"
+          />
+          <input
+            type="hidden"
+            name="optoBalanceOriginal"
+            value={employee?.optoBalanceHours.toString() ?? ""}
+          />
+        </label>
+        <label className="grid gap-1 text-sm font-medium text-slate-700">
           Expected weekly hours
           <input
             name="expectedWeeklyHours"

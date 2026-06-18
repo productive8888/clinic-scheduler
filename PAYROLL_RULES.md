@@ -11,6 +11,7 @@ Payroll reports combine:
   times for calendar context.
 - Approved or overridden PTO.
 - Approved or overridden NPTO.
+- Approved logged overtime.
 - Configured paid holidays.
 - Employee expected weekly hours.
 - Payroll adjustment ledger entries.
@@ -45,9 +46,23 @@ When NPTO is reversed, unpaid hours are removed from the active request and a
 
 ## OPTO
 
-OPTO is maintained manually by admins in its own balance and append-only ledger.
-It is not included in payroll paid-hour calculations and does not create
-`PayrollAdjustmentLedger` entries.
+OPTO is maintained by managers in its own balance and append-only ledger.
+Employees log overtime already worked, and the entry remains pending until
+manager approval.
+
+Approval uses:
+
+- `OPTO applied hours = min(logged overtime hours, positive OPTO balance)`
+- `payable overtime hours = logged overtime hours - OPTO applied hours`
+
+OPTO applied hours reduce the employee balance but are not payable overtime.
+Payable overtime creates an `OVERTIME_PAYABLE` payroll ledger entry and is added
+to final paid hours. Negative OPTO balances are allowed, including when
+concurrent approvals use the same previously visible balance.
+
+Approved overtime entries are immutable. Reversal restores the exact OPTO
+applied hours, creates a payroll reversal for payable overtime, and excludes the
+reversed entry from active payroll totals.
 
 ## Holidays
 

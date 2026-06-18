@@ -4,6 +4,7 @@ import {
   Banknote,
   CalendarDays,
   CalendarCheck2,
+  ClockArrowUp,
   Clock3,
   ClipboardList,
   ClipboardCheck,
@@ -40,6 +41,8 @@ const managerNavItems = [
   { href: "/admin/employees", label: "Employees", icon: Users },
   { href: "/admin/pto", label: "PTO", icon: CalendarCheck2 },
   { href: "/admin/payroll", label: "Payroll", icon: Banknote },
+  { href: "/admin/overtime", label: "Overtime", icon: ClockArrowUp },
+  { href: "/admin/opto", label: "OPTO", icon: Gauge },
   { href: "/admin/analytics", label: "Analytics", icon: BarChart3 },
   { href: "/admin/shifts", label: "Shifts", icon: Clock3 },
   { href: "/admin/staffing", label: "Staffing", icon: Layers3 },
@@ -49,10 +52,6 @@ const managerNavItems = [
   { href: "/admin/easton-import", label: "Easton", icon: FileSpreadsheet },
   { href: "/admin/rules", label: "Rules", icon: SlidersHorizontal },
   { href: "/admin/audit", label: "Audit", icon: Activity },
-];
-
-const adminOnlyNavItems = [
-  { href: "/admin/opto", label: "OPTO", icon: Gauge },
 ];
 
 const diagnosticsNavItem = {
@@ -69,9 +68,8 @@ export async function AppShell({ children }: { children: React.ReactNode }) {
   const canViewDiagnostics =
     process.env.NODE_ENV === "development" || canManage;
   const navItems = canManage
-    ? [
+      ? [
         ...managerNavItems,
-        ...(actor?.role === "ADMIN" ? adminOnlyNavItems : []),
         ...(canViewDiagnostics ? [diagnosticsNavItem] : []),
       ]
     : employeeNavItems;

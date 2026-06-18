@@ -52,8 +52,8 @@ export default async function PayrollPage({
         </h1>
         <p className="mt-2 max-w-3xl text-sm text-slate-500">
           Generate manager-reviewable summaries from schedules, PTO, NPTO,
-          holidays, and adjustment ledger entries. CSV export is a file download
-          only; nothing is submitted to payroll.
+          approved overtime, holidays, and adjustment ledger entries. CSV export
+          is a file download only; nothing is submitted to payroll.
         </p>
         <div className="mt-4 flex flex-wrap gap-2 text-sm">
           <span className="inline-flex items-center gap-2 rounded-md bg-slate-100 px-3 py-2 font-semibold text-slate-700">
@@ -117,7 +117,7 @@ export default async function PayrollPage({
           </p>
         </div>
         <div className="overflow-x-auto">
-          <table className="w-full min-w-[960px] text-left text-sm">
+          <table className="w-full min-w-[1220px] text-left text-sm">
             <thead className="bg-slate-50 text-xs uppercase tracking-normal text-slate-500">
               <tr>
                 <th className="px-4 py-3">Employee</th>
@@ -125,6 +125,9 @@ export default async function PayrollPage({
                 <th className="px-4 py-3">Scheduled</th>
                 <th className="px-4 py-3">PTO</th>
                 <th className="px-4 py-3">NPTO</th>
+                <th className="px-4 py-3">Overtime logged</th>
+                <th className="px-4 py-3">OPTO applied</th>
+                <th className="px-4 py-3">Payable overtime</th>
                 <th className="px-4 py-3">Holiday</th>
                 <th className="px-4 py-3">Endo PTO bank</th>
                 <th className="px-4 py-3">Comp +</th>
@@ -145,6 +148,9 @@ export default async function PayrollPage({
                 <td className="px-4 py-3">{formatNumber(data.report.totals.scheduledWorkHours)}</td>
                 <td className="px-4 py-3">{formatNumber(data.report.totals.ptoHours)}</td>
                 <td className="px-4 py-3">{formatNumber(data.report.totals.nptoUnpaidHours)}</td>
+                <td className="px-4 py-3">{formatNumber(data.report.totals.approvedOvertimeRequestedHours)}</td>
+                <td className="px-4 py-3">{formatNumber(data.report.totals.optoAppliedHours)}</td>
+                <td className="px-4 py-3">{formatNumber(data.report.totals.payableOvertimeHours)}</td>
                 <td className="px-4 py-3">{formatNumber(data.report.totals.paidHolidayHours)}</td>
                 <td className="px-4 py-3">{formatNumber(data.report.totals.endoscopyPtoCreditHours)}</td>
                 <td className="px-4 py-3">{formatNumber(data.report.totals.compTimeCreditHours)}</td>
@@ -371,6 +377,13 @@ function PayrollRow({ row }: { row: PayrollReportRow }) {
       <td className="px-4 py-3">{formatNumber(row.scheduledWorkHours)}</td>
       <td className="px-4 py-3">{formatNumber(row.ptoHours)}</td>
       <td className="px-4 py-3">{formatNumber(row.nptoUnpaidHours)}</td>
+      <td className="px-4 py-3">
+        {formatNumber(row.approvedOvertimeRequestedHours)}
+      </td>
+      <td className="px-4 py-3">{formatNumber(row.optoAppliedHours)}</td>
+      <td className="px-4 py-3 font-semibold text-emerald-800">
+        {formatNumber(row.payableOvertimeHours)}
+      </td>
       <td className="px-4 py-3">{formatNumber(row.paidHolidayHours)}</td>
       <td className="px-4 py-3">{formatNumber(row.endoscopyPtoCreditHours)}</td>
       <td className="px-4 py-3">{formatNumber(row.compTimeCreditHours)}</td>

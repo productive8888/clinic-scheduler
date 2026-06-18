@@ -30,7 +30,7 @@ export function calculateOptoAdjustment(input: OptoAdjustmentInput) {
       balanceAfter = currentBalance - hours;
       break;
     case "SET_BALANCE":
-      if (hours < 0 && !input.allowNegative) {
+      if (hours < 0 && input.allowNegative === false) {
         throw new Error("OPTO balance cannot be negative.");
       }
       balanceAfter = hours;
@@ -48,7 +48,7 @@ export function calculateOptoAdjustment(input: OptoAdjustmentInput) {
   balanceAfter = roundHours(balanceAfter);
   adjustmentHours = roundHours(adjustmentHours);
 
-  if (balanceAfter < 0 && !input.allowNegative) {
+  if (balanceAfter < 0 && input.allowNegative === false) {
     throw new Error("OPTO balance cannot be negative.");
   }
 

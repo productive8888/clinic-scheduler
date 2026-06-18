@@ -19,7 +19,7 @@ export function OptoLedgerTable({ entries }: { entries: OptoLedgerRow[] }) {
 
   return (
     <div className="overflow-x-auto">
-      <table className="w-full min-w-[980px] text-left text-sm">
+      <table className="w-full min-w-[1080px] text-left text-sm">
         <thead className="bg-slate-50 text-xs uppercase tracking-normal text-slate-500">
           <tr>
             <th className="px-4 py-3">Effective</th>
@@ -29,6 +29,7 @@ export function OptoLedgerTable({ entries }: { entries: OptoLedgerRow[] }) {
             <th className="px-4 py-3">Change</th>
             <th className="px-4 py-3">After</th>
             <th className="px-4 py-3">Reason</th>
+            <th className="px-4 py-3">Source</th>
             <th className="px-4 py-3">Actor</th>
           </tr>
         </thead>
@@ -59,6 +60,9 @@ export function OptoLedgerTable({ entries }: { entries: OptoLedgerRow[] }) {
                 {Number(entry.balanceAfter).toFixed(2)}
               </td>
               <td className="max-w-sm px-4 py-3 text-slate-600">{entry.reason}</td>
+              <td className="px-4 py-3 text-xs text-slate-500">
+                {entry.sourceEntityType ?? "Manual"}
+              </td>
               <td className="px-4 py-3 text-slate-600">
                 {entry.createdBy?.fullName ?? "System"}
               </td>

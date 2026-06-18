@@ -85,6 +85,7 @@ export function EmployeeDirectory({
             </div>
             <div className="flex items-center gap-3 text-sm text-slate-500">
               <span>{employee.expectedWeeklyHours.toString()} hrs/week</span>
+              <span>{employee.optoBalanceHours.toString()} OPTO</span>
               <span>{employee.requiredWeeklyBackgroundShifts} BG/week</span>
               <span className="inline-flex items-center gap-1">
                 <CalendarClock size={16} aria-hidden="true" />

@@ -75,6 +75,7 @@ export async function createOptoAdjustment(input: {
       currentBalance: Number(lockedEmployee.optoBalanceHours),
       type: input.values.adjustmentType,
       hours: input.values.hours,
+      allowNegative: true,
     });
 
     const employee = await tx.employee.update({

@@ -62,10 +62,20 @@ export function getEmployeePortalData(employeeId: string) {
       },
       take: 20,
     }),
-  ]).then(([employee, assignments, ptoRequests, nptoRequests]) => ({
+    getDb().overtimeRequest.findMany({
+      where: { employeeId },
+      orderBy: [{ createdAt: "desc" }, { workDate: "desc" }],
+      include: {
+        employee: true,
+        reviewedBy: true,
+      },
+      take: 30,
+    }),
+  ]).then(([employee, assignments, ptoRequests, nptoRequests, overtimeRequests]) => ({
     employee,
     assignments,
     ptoRequests,
     nptoRequests,
+    overtimeRequests,
   }));
 }
