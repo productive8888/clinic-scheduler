@@ -56,9 +56,9 @@ export function EmployeePortalDashboard({ data }: EmployeePortalDashboardProps) 
         </h1>
         <p className="mt-2 text-sm text-slate-500">
           View upcoming work, PTO status, skills, and recurring availability.
-          Sick and emergency requests are auto-approved; personal and vacation
-          requests wait for manager review. NPTO is unpaid and tracked separately
-          from PTO balance.
+          Every PTO and NPTO request waits for manager review. NPTO is unpaid,
+          blocks scheduling only after approval, and is tracked separately from
+          PTO balance.
         </p>
       </section>
 

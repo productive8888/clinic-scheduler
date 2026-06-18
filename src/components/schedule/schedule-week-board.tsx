@@ -6,6 +6,7 @@ import {
   ChevronLeft,
   ChevronRight,
   Download,
+  PencilLine,
   RefreshCw,
 } from "lucide-react";
 import Link from "next/link";
@@ -150,6 +151,13 @@ export function ScheduleWeekBoard({
               Clear generated week
             </PendingSubmitButton>
           </form>
+          <Link
+            href={`/schedule/week/manual-edit?date=${data.range.startDate}`}
+            className="inline-flex h-10 items-center gap-2 rounded-md bg-slate-950 px-4 text-sm font-semibold text-white hover:bg-slate-800"
+          >
+            <PencilLine size={16} aria-hidden="true" />
+            Manual Edit
+          </Link>
           <Link
             href="/api/exports/calendar/clinic"
             className="inline-flex h-10 items-center gap-2 rounded-md border border-emerald-200 px-4 text-sm font-semibold text-emerald-800 hover:bg-emerald-50"

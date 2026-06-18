@@ -800,7 +800,10 @@ export async function clearGeneratedScheduleRange(input: {
         assignments: {
           none: {
             status: AssignmentStatus.ACTIVE,
-            locked: true,
+            OR: [
+              { locked: true },
+              { source: AssignmentSource.MANUAL_OVERRIDE },
+            ],
           },
         },
       },

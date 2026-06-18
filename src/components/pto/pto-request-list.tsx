@@ -88,12 +88,6 @@ export function PTORequestList({ requests, mode }: PTORequestListProps) {
                   Awaiting manager review.
                 </p>
               ) : null}
-              {request.status === "APPROVED" &&
-              (request.type === "SICK" || request.type === "EMERGENCY") ? (
-                <p className="mt-2 text-xs text-emerald-700">
-                  Auto-approved and included as schedule unavailability.
-                </p>
-              ) : null}
               {request.reviewedBy ? (
                 <p className="mt-2 text-xs text-slate-500">
                   Reviewed by {request.reviewedBy.fullName}
@@ -241,13 +235,6 @@ function formatTimeRange(request: PTORequest) {
 }
 
 function formatStatusLabel(request: PTORequest) {
-  if (
-    request.status === "APPROVED" &&
-    (request.type === "SICK" || request.type === "EMERGENCY")
-  ) {
-    return "AUTO-APPROVED";
-  }
-
   return request.status;
 }
 

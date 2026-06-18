@@ -5,8 +5,6 @@ import { recordPayrollLedgerEntry } from "@/lib/db/payroll";
 import {
   calculateNptoHours,
   DEFAULT_NPTO_CAP_HOURS,
-  formatNptoCapDenial,
-  wouldExceedNptoCap,
 } from "@/lib/npto/policy";
 import { regenerateExistingScheduleDaysForRange } from "@/lib/schedule/regeneration";
 import { isShortNoticeForDateRange } from "@/lib/schedule/short-notice";
@@ -70,19 +68,6 @@ export async function createNptoRequest(input: {
 }) {
   const createdAt = new Date();
   const requestHours = calculateNptoHours(input.values);
-  const [settings, usedHours] = await Promise.all([
-    getTimeOffSettings(),
-    getApprovedNptoHoursForEmployee(input.employeeId),
-  ]);
-  const capHours = Number(settings.nptoCapHours);
-  const exceedsCap = wouldExceedNptoCap({
-    usedHours,
-    requestHours,
-    capHours,
-  });
-  const denialReason = exceedsCap
-    ? formatNptoCapDenial({ usedHours, requestHours, capHours })
-    : null;
   const shortNotice = isShortNoticeForDateRange({
     createdAt,
     startDate: input.values.startDate,
@@ -92,18 +77,16 @@ export async function createNptoRequest(input: {
   const request = await getDb().nPTORequest.create({
     data: {
       employeeId: input.employeeId,
-      status: exceedsCap ? "REJECTED" : "PENDING",
+      status: "PENDING",
       startDate: parseIsoDate(input.values.startDate),
       endDate: parseIsoDate(input.values.endDate),
       startMinute: input.values.startMinute,
       endMinute: input.values.endMinute,
       requestedHours: requestHours,
-      capSnapshotHours: capHours,
-      usedHoursAtSubmission: usedHours,
+      capSnapshotHours: DEFAULT_NPTO_CAP_HOURS,
+      usedHoursAtSubmission: 0,
       shortNotice,
       reason: input.values.reason,
-      denialReason,
-      reviewedAt: exceedsCap ? createdAt : undefined,
       createdAt,
     },
   });
@@ -114,19 +97,8 @@ export async function createNptoRequest(input: {
     entityType: "NPTORequest",
     entityId: request.id,
     after: request,
-    metadata: { shortNotice, requestHours, usedHours, capHours },
+    metadata: { shortNotice, requestHours },
   });
-
-  if (exceedsCap) {
-    await writeAuditLog({
-      actorEmployeeId: input.actorEmployeeId,
-      action: "npto_request.cap_denied",
-      entityType: "NPTORequest",
-      entityId: request.id,
-      after: request,
-      metadata: { denialReason, requestHours, usedHours, capHours },
-    });
-  }
 
   return request;
 }
@@ -144,45 +116,6 @@ export async function reviewNptoRequest(input: {
 
   if (before.status !== "PENDING") {
     throw new Error("Only pending NPTO requests can be reviewed.");
-  }
-
-  if (input.status === "APPROVED") {
-    const [settings, usedHours] = await Promise.all([
-      getTimeOffSettings(),
-      getApprovedNptoHoursForEmployee(before.employeeId),
-    ]);
-    const requestHours = Number(before.requestedHours);
-    const capHours = Number(settings.nptoCapHours);
-
-    if (wouldExceedNptoCap({ usedHours, requestHours, capHours })) {
-      const denialReason = formatNptoCapDenial({
-        usedHours,
-        requestHours,
-        capHours,
-      });
-      const denied = await db.nPTORequest.update({
-        where: { id: input.requestId },
-        data: {
-          status: "REJECTED",
-          denialReason,
-          managerNote: input.managerNote,
-          reviewedByEmployeeId: input.actorEmployeeId ?? null,
-          reviewedAt: new Date(),
-        },
-      });
-
-      await writeAuditLog({
-        actorEmployeeId: input.actorEmployeeId,
-        action: "npto_request.cap_denied",
-        entityType: "NPTORequest",
-        entityId: denied.id,
-        before,
-        after: denied,
-        metadata: { denialReason, requestHours, usedHours, capHours },
-      });
-
-      return { reviewed: denied, regeneratedDates: [] };
-    }
   }
 
   const reviewed = await db.nPTORequest.update({

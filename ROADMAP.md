@@ -56,11 +56,14 @@
   regeneration of existing affected schedule days.
 - PTO approval reversal, admin override, return-to-pending, and cancel workflows
   with audit logs and schedule repair.
-- Personal/vacation approval rules, sick/emergency auto-approval, PTO balance
-  floor enforcement, and clearer employee/admin PTO status messaging.
-- NPTO no-pay time off workflow with separate request records, configurable
-  240-hour default cap, cap denial reasons, admin override/reversal, audit logs,
-  short-notice flags, and schedule repair.
+- All PTO request types now enter pending manager review, with PTO balance-floor
+  enforcement, explicit override support, and clearer employee/admin status
+  messaging.
+- NPTO no-pay time off workflow with separate pending request records, no hours
+  cap enforcement, admin override/reversal, audit logs, short-notice flags, and
+  schedule repair.
+- Admin-only OPTO balance management with credit, debit, set-balance, and
+  correction operations backed by a transactional append-only ledger.
 - Clinic scenarios for routine, clinic-closed, reduced-staffing, and custom
   schedule days.
 - Optional manual-only tasks for Research, Background, Booking, Float, and
@@ -103,6 +106,10 @@
   Assistant / MD.
 - Manual reassignment warning previews and audited override reasons, plus a
   multi-shift AM/PM assignment helper.
+- Full-screen staged weekly manual editing with employee-row scheduling,
+  assignment changes and swaps, removals, lock controls, open-slot fills,
+  optional manual slots, server-ranked candidates, batch validation, stale-data
+  protection, and atomic audited saves that preserve published status.
 - Easton spreadsheet import/review foundation for private workbook parsing,
   parsed July shift/demand/target review, and applying editable database
   defaults without activating June sample assignments.
@@ -186,8 +193,7 @@
 
 1. Configure production SMTP credentials and rotate `AUTH_SECRET` through the
    hosting environment.
-2. Add drag/drop assignment interactions on top of the existing manual override
-   server action.
+2. Add optional drag/drop ergonomics on top of the staged weekly manual editor.
 3. Add historical effective-date management for recurring availability changes.
 4. Add richer payroll review workflows for manager sign-off and report snapshot
    history after clinic payroll policies are finalized.

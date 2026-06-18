@@ -6,6 +6,7 @@ versioned migrations in `prisma/migrations`.
 ## Core Tables
 
 - `Employee`: staff profile, Auth.js user link, role, status, PTO balance,
+  manually administered OPTO balance,
   expected weekly hours, required weekly literal BG shift minimum,
   schedule eligibility for ordinary generation, comp-time balance display field,
   weekly assignment limit, work pattern, start/end dates. Employee role/status
@@ -32,18 +33,22 @@ versioned migrations in `prisma/migrations`.
   start/end minute, effective date range, and active state. Days without an
   active row are treated as normally unavailable.
 - `PTORequest`: PTO, absence, unavailability, and schedule-change requests.
-  Personal/vacation requests require approval and can deduct PTO balance.
-  Sick/emergency requests auto-approve. Approved requests are consumed by the
-  scheduler as employee unavailability. Reversed/cancelled/rejected requests do
-  not block scheduling; overridden requests do. Requests submitted within 7 days
-  of an affected date are marked short notice.
+  Every request type starts pending and requires manager review. Approved
+  personal/vacation requests can deduct PTO balance; normal approval is blocked
+  below the -24-hour floor while an explicit manager override remains available.
+  Approved requests are consumed by the scheduler as employee unavailability.
+  Reversed/cancelled/rejected/pending requests do not block scheduling;
+  overridden requests do. Requests submitted within 7 days of an affected date
+  are marked short notice.
 - `NPTORequest`: no-pay time off requests stored separately from PTO for future
   payroll support. Approved or overridden NPTO blocks scheduling but never
-  reduces PTO balance. Each row stores requested/unpaid hours, cap snapshot,
-  used-hours snapshot, denial reason, review metadata, short-notice flag, and a
+  reduces PTO balance. Every request starts pending. NPTO has no enforced hours
+  cap. Legacy cap snapshot, used-hours snapshot, and denial fields remain for
+  historical compatibility alongside review metadata, short-notice flag, and a
   future `payrollProcessedAt` marker.
-- `TimeOffSettings`: singleton time-off configuration, including the
-  manager-configurable NPTO cap. The default NPTO cap is 240 hours.
+- `TimeOffSettings`: legacy singleton time-off configuration. Its NPTO cap
+  value is retained for backward-compatible reads but is not enforced or
+  manager-editable in the active workflow.
 - `PayrollSettings`: singleton payroll-reporting configuration for default
   period length, full-time weekly hours, default holiday hours, under-hour
   flagging, optional comp-time banking/debit behavior, and configurable
@@ -55,6 +60,11 @@ versioned migrations in `prisma/migrations`.
   credits/debits, manual adjustments, and reversal adjustments. Entries keep
   employee, hours, source entity, optional period range, creator, metadata, and
   notes.
+- `OptoLedgerEntry`: append-only admin OPTO balance ledger. Each entry stores
+  credit/debit/set/correction type, signed adjustment, before/after balances,
+  effective date, required reason, creator, and optional metadata. The employee
+  row stores the current balance for fast display. OPTO is intentionally
+  separate from PTO requests, NPTO requests, and payroll adjustments.
 - `ScheduleDay`: one operational staffing day, including draft, generated,
   needs-regeneration, published, or locked status, clinic scenario, and publish
   metadata. Employee deactivation/deletion marks affected future dates
@@ -181,3 +191,7 @@ period.
 
 The ledger is append-only. PTO/NPTO reversals create reversal entries instead of
 deleting original accounting events.
+
+The OPTO ledger is also append-only. An OPTO adjustment updates the employee's
+current balance and inserts its ledger row in the same short transaction after
+locking the employee record.

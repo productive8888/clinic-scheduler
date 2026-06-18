@@ -7,12 +7,14 @@ import {
   ClipboardCheck,
   Database,
   FileSpreadsheet,
+  Gauge,
   Layers3,
   ShieldCheck,
   SlidersHorizontal,
   Users,
 } from "lucide-react";
 import Link from "next/link";
+import { getCurrentActor } from "@/lib/auth";
 
 const adminLinks = [
   {
@@ -77,7 +79,20 @@ const adminLinks = [
   },
 ];
 
-export default function AdminPage() {
+const adminOnlyLinks = [
+  {
+    href: "/admin/opto",
+    title: "OPTO balances",
+    description: "Manually adjust admin-only OPTO balances and review the ledger.",
+    icon: Gauge,
+  },
+];
+
+export default async function AdminPage() {
+  const actor = await getCurrentActor();
+  const visibleLinks =
+    actor?.role === "ADMIN" ? [...adminLinks, ...adminOnlyLinks] : adminLinks;
+
   return (
     <div className="grid gap-6">
       <section className="rounded-md border border-slate-200 bg-white p-6 shadow-sm">
@@ -93,7 +108,7 @@ export default function AdminPage() {
       </section>
 
       <section className="grid gap-4 md:grid-cols-2">
-        {adminLinks.map((item) => {
+        {visibleLinks.map((item) => {
           const Icon = item.icon;
 
           return (

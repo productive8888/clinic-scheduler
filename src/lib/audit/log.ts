@@ -1,4 +1,4 @@
-import { Prisma } from "@prisma/client";
+import { Prisma, type PrismaClient } from "@prisma/client";
 import { getDb } from "@/lib/db";
 
 export type AuditLogInput = {
@@ -11,8 +11,13 @@ export type AuditLogInput = {
   metadata?: unknown;
 };
 
-export async function writeAuditLog(input: AuditLogInput) {
-  return getDb().auditLog.create({
+type AuditLogClient = Pick<PrismaClient, "auditLog"> | Prisma.TransactionClient;
+
+export async function writeAuditLog(
+  input: AuditLogInput,
+  db: AuditLogClient = getDb(),
+) {
+  return db.auditLog.create({
     data: {
       actorEmployeeId: input.actorEmployeeId ?? null,
       action: input.action,

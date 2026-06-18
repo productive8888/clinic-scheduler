@@ -9,7 +9,6 @@ import {
   returnNptoRequestToPending,
   reverseNptoApproval,
   reviewNptoRequest,
-  updateNptoCap,
 } from "@/lib/db/npto";
 import {
   cancelPtoRequestAsAdmin,
@@ -22,7 +21,6 @@ import {
 import {
   nptoRequestValuesFromFormData,
   nptoReviewValuesFromFormData,
-  nptoSettingsValuesFromFormData,
 } from "@/lib/validation/npto";
 import {
   ptoRequestValuesFromFormData,
@@ -271,16 +269,4 @@ export async function cancelNptoAsAdminAction(
 
   revalidatePath("/admin/pto");
   revalidatePath("/employee");
-}
-
-export async function updateNptoCapAction(formData: FormData) {
-  const actor = await requireManager();
-  const values = nptoSettingsValuesFromFormData(formData);
-
-  await updateNptoCap({
-    nptoCapHours: values.nptoCapHours,
-    actorEmployeeId: auditActorId(actor),
-  });
-
-  revalidatePath("/admin/pto");
 }

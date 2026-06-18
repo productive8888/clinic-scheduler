@@ -4,11 +4,6 @@ import { enumerateIsoDates } from "@/lib/utils/date";
 export const FULL_DAY_PTO_HOURS = 8;
 export const PTO_BALANCE_APPROVAL_FLOOR_HOURS = -24;
 
-const autoApprovedTypes = new Set<PTORequestType>([
-  "SICK",
-  "EMERGENCY",
-]);
-
 const balanceDeductingTypes = new Set<PTORequestType>([
   "PERSONAL",
   "VACATION",
@@ -16,7 +11,8 @@ const balanceDeductingTypes = new Set<PTORequestType>([
 ]);
 
 export function isAutoApprovedPtoType(type: PTORequestType) {
-  return autoApprovedTypes.has(type);
+  void type;
+  return false;
 }
 
 export function deductsPtoBalance(type: PTORequestType) {
@@ -24,7 +20,8 @@ export function deductsPtoBalance(type: PTORequestType) {
 }
 
 export function requiresManagerApproval(type: PTORequestType) {
-  return !isAutoApprovedPtoType(type);
+  void type;
+  return true;
 }
 
 export function calculatePtoHours(input: {

@@ -5,7 +5,6 @@ import { recordPayrollLedgerEntry } from "@/lib/db/payroll";
 import {
   calculatePtoHours,
   deductsPtoBalance,
-  isAutoApprovedPtoType,
   PTO_BALANCE_APPROVAL_FLOOR_HOURS,
   wouldPutPtoBalanceBelowFloor,
 } from "@/lib/pto/policy";
@@ -64,7 +63,6 @@ export async function createPtoRequest(input: {
   actorEmployeeId?: string | null;
   action?: string;
 }) {
-  const autoApprove = isAutoApprovedPtoType(input.values.type);
   const createdAt = new Date();
   const shortNotice = isShortNoticeForDateRange({
     createdAt,
@@ -75,7 +73,7 @@ export async function createPtoRequest(input: {
     data: {
       employeeId: input.employeeId,
       type: input.values.type,
-      status: autoApprove ? "APPROVED" : "PENDING",
+      status: "PENDING",
       startDate: parseIsoDate(input.values.startDate),
       endDate: parseIsoDate(input.values.endDate),
       startMinute: input.values.startMinute,
@@ -83,7 +81,6 @@ export async function createPtoRequest(input: {
       shortNotice,
       reason: input.values.reason,
       createdAt,
-      reviewedAt: autoApprove ? createdAt : undefined,
     },
   });
 
@@ -95,24 +92,6 @@ export async function createPtoRequest(input: {
     after: request,
     metadata: { shortNotice },
   });
-
-  if (autoApprove) {
-    const regeneratedDates = await regenerateExistingScheduleDaysForRequest({
-      requestId: request.id,
-      startDate: toIsoDate(request.startDate),
-      endDate: toIsoDate(request.endDate),
-      actorEmployeeId: input.actorEmployeeId,
-    });
-
-    await writeAuditLog({
-      actorEmployeeId: input.actorEmployeeId,
-      action: "pto_request.auto_approve",
-      entityType: "PTORequest",
-      entityId: request.id,
-      after: request,
-      metadata: { regeneratedDates, shortNotice },
-    });
-  }
 
   return request;
 }
@@ -140,45 +119,37 @@ export async function reviewPtoRequest(input: {
     endMinute: before.endMinute,
   });
 
-  if (
-    input.status === "APPROVED" &&
-    deductsPtoBalance(before.type) &&
-    wouldPutPtoBalanceBelowFloor({
-      currentBalanceHours: Number(before.employee.ptoBalanceHours),
-      requestHours,
-    })
-  ) {
-    const denialReason = `Denied automatically: approval would put PTO balance below ${PTO_BALANCE_APPROVAL_FLOOR_HOURS} hours.`;
-    const reviewed = await db.pTORequest.update({
-      where: { id: input.requestId },
-      data: {
-        status: "REJECTED",
-        managerNote: input.managerNote
-          ? `${input.managerNote}\n${denialReason}`
-          : denialReason,
-        reviewedByEmployeeId: input.actorEmployeeId ?? null,
-        reviewedAt: new Date(),
-      },
-    });
-
-    await writeAuditLog({
-      actorEmployeeId: input.actorEmployeeId,
-      action: "pto_request.balance_denied",
-      entityType: "PTORequest",
-      entityId: reviewed.id,
-      before,
-      after: reviewed,
-      metadata: {
-        requestHours,
-        previousBalanceHours: Number(before.employee.ptoBalanceHours),
-        floorHours: PTO_BALANCE_APPROVAL_FLOOR_HOURS,
-      },
-    });
-
-    return { reviewed, regeneratedDates: [] };
-  }
-
   const reviewed = await db.$transaction(async (tx) => {
+    let currentBalanceHours = Number(before.employee.ptoBalanceHours);
+
+    if (input.status === "APPROVED" && deductsPtoBalance(before.type)) {
+      const lockedRows = await tx.$queryRaw<
+        Array<{ ptoBalanceHours: { toString(): string } }>
+      >`
+        SELECT "ptoBalanceHours"
+        FROM "Employee"
+        WHERE "id" = ${before.employeeId}
+        FOR UPDATE
+      `;
+
+      if (!lockedRows[0]) {
+        throw new Error("Employee not found.");
+      }
+
+      currentBalanceHours = Number(lockedRows[0].ptoBalanceHours);
+
+      if (
+        wouldPutPtoBalanceBelowFloor({
+          currentBalanceHours,
+          requestHours,
+        })
+      ) {
+        throw new Error(
+          `Approval would put PTO balance below ${PTO_BALANCE_APPROVAL_FLOOR_HOURS} hours. Use manager override if this is intentional.`,
+        );
+      }
+    }
+
     const updated = await tx.pTORequest.update({
       where: { id: input.requestId },
       data: {

@@ -10,6 +10,7 @@ export {
   getSessionDiagnostics,
   localDevAuthEnabled,
   requireActor,
+  requireAdmin,
   requireManager,
   requireRole,
   type AuthActor,

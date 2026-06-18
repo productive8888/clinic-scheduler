@@ -168,6 +168,13 @@ enum PayrollAdjustmentType {
   REVERSAL_ADJUSTMENT
 }
 
+enum OptoAdjustmentType {
+  CREDIT
+  DEBIT
+  SET_BALANCE
+  CORRECTION
+}
+
 model Employee {
   id                             String         @id @default(cuid())
   authProviderId                 String?        @unique
@@ -179,6 +186,7 @@ model Employee {
   expectedWeeklyHours            Decimal        @default(40) @db.Decimal(6, 2)
   requiredWeeklyBackgroundShifts Int            @default(0)
   compTimeBalanceHours           Decimal        @default(0) @db.Decimal(7, 2)
+  optoBalanceHours               Decimal        @default(0) @db.Decimal(8, 2)
   scheduleEligible               Boolean        @default(true)
   weeklyAssignmentLimit          Int?
   workPatternId                  String?
@@ -219,6 +227,8 @@ model Employee {
   backgroundPullRules        BackgroundPullRule[]             @relation("BackgroundPullEmployee")
   createdBackgroundPullRules BackgroundPullRule[]             @relation("BackgroundPullRuleCreator")
   eastonImportReviews        EastonImportReview[]             @relation("EastonImportReviewCreator")
+  optoLedgerEntries          OptoLedgerEntry[]                 @relation("OptoLedgerEmployee")
+  createdOptoEntries         OptoLedgerEntry[]                 @relation("OptoLedgerCreator")
 
   @@index([status])
   @@index([role])
@@ -1006,5 +1016,27 @@ model PayrollAdjustmentLedger {
   @@index([periodStartDate, periodEndDate])
   @@index([type])
   @@index([sourceEntityType, sourceEntityId])
+  @@index([createdByEmployeeId])
+}
+
+model OptoLedgerEntry {
+  id                  String             @id @default(cuid())
+  employeeId          String
+  adjustmentHours     Decimal            @db.Decimal(8, 2)
+  balanceBefore       Decimal            @db.Decimal(8, 2)
+  balanceAfter        Decimal            @db.Decimal(8, 2)
+  adjustmentType      OptoAdjustmentType
+  effectiveDate       DateTime           @db.Date
+  reason              String
+  createdByEmployeeId String?
+  metadata            Json?
+  createdAt           DateTime           @default(now())
+
+  employee  Employee  @relation("OptoLedgerEmployee", fields: [employeeId], references: [id], onDelete: Restrict)
+  createdBy Employee? @relation("OptoLedgerCreator", fields: [createdByEmployeeId], references: [id], onDelete: SetNull)
+
+  @@index([employeeId, effectiveDate, createdAt])
+  @@index([effectiveDate])
+  @@index([adjustmentType])
   @@index([createdByEmployeeId])
 }

@@ -7,6 +7,7 @@ import {
   Clock3,
   ClipboardList,
   ClipboardCheck,
+  Gauge,
   FileSpreadsheet,
   Layers3,
   LogOut,
@@ -50,6 +51,10 @@ const managerNavItems = [
   { href: "/admin/audit", label: "Audit", icon: Activity },
 ];
 
+const adminOnlyNavItems = [
+  { href: "/admin/opto", label: "OPTO", icon: Gauge },
+];
+
 const diagnosticsNavItem = {
   href: "/admin/diagnostics",
   label: "Diagnostics",
@@ -66,6 +71,7 @@ export async function AppShell({ children }: { children: React.ReactNode }) {
   const navItems = canManage
     ? [
         ...managerNavItems,
+        ...(actor?.role === "ADMIN" ? adminOnlyNavItems : []),
         ...(canViewDiagnostics ? [diagnosticsNavItem] : []),
       ]
     : employeeNavItems;

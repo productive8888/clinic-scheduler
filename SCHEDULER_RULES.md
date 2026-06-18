@@ -21,14 +21,13 @@ not contain scheduling decisions.
 - Approved and overridden NPTO blocks assignments through the same scheduler
   unavailability input, but NPTO is stored separately and never deducts PTO
   balance.
-- Personal and vacation requests require manager approval before blocking
-  scheduling; sick and emergency requests auto-approve and immediately block
-  assignments on affected dates.
-- Personal and vacation approvals deduct PTO balance and are denied when they
-  would put the balance below -24 hours.
-- NPTO requests are manager-reviewed no-pay time off. The default cap is 240
-  hours and managers can configure it. Requests that exceed the cap are denied
-  with a visible denial reason unless an admin override is used.
+- Every PTO request type starts pending and requires manager review before it
+  can block scheduling. There is no sick/emergency auto-approval path.
+- Personal and vacation approvals deduct PTO balance. Normal approval is denied
+  when it would put the balance below -24 hours; the explicit manager override
+  workflow remains available and auditable.
+- Every NPTO request starts pending and requires manager review. NPTO has no
+  configured or enforced hours cap.
 - PTO submitted within 7 days of any affected date is marked short notice.
 - NPTO submitted within 7 days of any affected date is marked short notice.
 - PTO approval, override, and approval reversal regenerate existing affected
@@ -49,7 +48,7 @@ not contain scheduling decisions.
   direct assignment swap, then allows lower-priority Float or explicitly
   pullable background work to yield to clinic coverage. Manager-facing shortage
   recommendations are attached only after these attempts fail.
-- Manual locked assignments are preserved during regeneration.
+- Manual overrides and locked assignments are preserved during regeneration.
 - Protected background assignments are preloaded with locked/manual assignments
   before clinic slot selection, so generation cannot silently pull them.
 - Locked assignments that conflict with approved PTO are preserved but surfaced
@@ -295,6 +294,14 @@ not contain scheduling decisions.
   weekly assignment limit, expected-hours, fairness, configured pattern
   deviation, and required-slot warnings. A manager can proceed with a recorded
   override reason.
+- The full-screen weekly manual editor stages assignment changes, swaps,
+  removals, lock changes, open-slot fills, and manual optional slots as one
+  batch. Preview and candidate ranking call server-side scheduling validation;
+  React does not implement scheduling rules.
+- Manual batches save atomically after schedule-day revision checks. Newly
+  introduced hard issues, locked-assignment changes, and edits to published
+  dates require a manager reason. Published dates retain published status after
+  a successful edit, and every operation plus the batch summary is audited.
 - Employee deactivation/deletion removes future active assignments, marks
   affected required slots as shortages, unpublishes affected dates, and marks
   each date `NEEDS_REGENERATION`. Past assignment history is preserved.
@@ -310,6 +317,8 @@ not contain scheduling decisions.
   shift paid hours, PTO/NPTO, holiday, and payroll ledger records after
   scheduling has happened and surface warnings for missing/unpublished schedule
   data or unresolved staffing issues.
+- OPTO is an admin-only manual balance ledger and does not affect scheduler
+  eligibility, PTO/NPTO approval, or payroll calculations.
 - PTO approvals that deduct balance create payroll ledger debit entries.
   Reversal/cancellation workflows restore balance when appropriate and create
   reversal ledger entries rather than deleting history.

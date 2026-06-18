@@ -347,6 +347,22 @@ export async function manuallyAssignSlot(input: {
 }) {
   const db = getDb();
   const changedAt = new Date();
+  const slotState = await db.taskSlot.findUniqueOrThrow({
+    where: { id: input.slotId },
+    select: {
+      scheduleDay: { select: { status: true } },
+    },
+  });
+
+  if (
+    slotState.scheduleDay.status === "PUBLISHED" &&
+    !input.overrideReason?.trim()
+  ) {
+    throw new Error(
+      "A manager reason is required to change a published schedule.",
+    );
+  }
+
   const warnings = await getManualAssignmentWarnings(input);
 
   if (warnings.length > 0 && !input.overrideReason?.trim()) {
@@ -409,9 +425,9 @@ export async function manuallyAssignSlot(input: {
     await tx.scheduleDay.update({
       where: { id: slot.scheduleDayId },
       data: {
-        status: "GENERATED",
-        publishedAt: null,
-        publishedByEmployeeId: null,
+        status:
+          slot.scheduleDay.status === "PUBLISHED" ? "PUBLISHED" : "GENERATED",
+        updatedAt: changedAt,
       },
     });
 
@@ -443,6 +459,7 @@ export async function manuallyAssignSlot(input: {
       shortNotice: result.shortNotice,
       overrideReason: input.overrideReason?.trim() || null,
       warnings,
+      publishedChange: slotState.scheduleDay.status === "PUBLISHED",
     },
   });
 }
@@ -1121,6 +1138,7 @@ export async function generateScheduleForDate(input: {
       .filter(
         (assignment) =>
           assignment.locked ||
+          assignment.source === AssignmentSource.MANUAL_OVERRIDE ||
           slot.backgroundTaskInstance?.definition.protectedFromPull === true,
       )
       .map((assignment) => assignment.employeeId)
@@ -1717,19 +1735,21 @@ async function reconcileSlotsForStaffingRequirements(input: {
       continue;
     }
 
-    const lockedAssignmentCount = slot.assignments.filter(
-      (assignment) => assignment.locked,
+    const protectedAssignmentCount = slot.assignments.filter(
+      (assignment) =>
+        assignment.locked ||
+        assignment.source === AssignmentSource.MANUAL_OVERRIDE,
     ).length;
 
-    if (lockedAssignmentCount > 0) {
+    if (protectedAssignmentCount > 0) {
       await db.taskSlot.update({
         where: { id: slot.id },
         data: {
           status: "SHORTAGE",
           notes:
             input.scenario === "CLINIC_CLOSED"
-              ? "Clinic is closed, but a locked manual assignment was preserved."
-              : "Staffing requirements no longer include this slot, but a locked manual assignment was preserved.",
+              ? "Clinic is closed, but a manual assignment was preserved."
+              : "Staffing requirements no longer include this slot, but a manual assignment was preserved.",
         },
       });
       continue;

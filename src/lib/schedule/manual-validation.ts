@@ -75,15 +75,31 @@ export function validateManualAssignment(input: {
 
   if (expectedWeeklyHours !== null && expectedWeeklyHours > 0) {
     const week = clinicWeekRange(input.slot.date);
-    const weeklyHours = input.assignments
-      .filter(
-        (assignment) =>
-          assignment.employeeId === input.employee?.id &&
-          assignment.date >= week.startDate &&
-          assignment.date <= week.endDate,
-      )
-      .reduce((total, assignment) => total + (assignment.paidHours ?? 0), 0);
-    const projectedHours = weeklyHours + (input.slot.paidHours ?? 0);
+    const assignedShifts = new Map<string, number>();
+
+    for (const assignment of input.assignments) {
+      if (
+        assignment.employeeId !== input.employee.id ||
+        assignment.date < week.startDate ||
+        assignment.date > week.endDate
+      ) {
+        continue;
+      }
+
+      assignedShifts.set(
+        `${assignment.date}:${assignment.shiftBlockId ?? assignment.slotId}`,
+        assignment.paidHours ?? 0,
+      );
+    }
+
+    const candidateShiftKey = `${input.slot.date}:${input.slot.shiftBlockId ?? input.slot.id}`;
+    const weeklyHours = [...assignedShifts.values()].reduce(
+      (total, hours) => total + hours,
+      0,
+    );
+    const projectedHours =
+      weeklyHours +
+      (assignedShifts.has(candidateShiftKey) ? 0 : input.slot.paidHours ?? 0);
 
     if (projectedHours > expectedWeeklyHours) {
       warnings.push({

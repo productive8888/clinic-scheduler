@@ -26,7 +26,9 @@ weekly hours value is 40, so a 14-day period defaults to 80 expected hours.
 
 Personal, vacation, and legacy PTO approvals deduct PTO balance and create
 `PTO_DEBIT` ledger entries. Sick and emergency requests are still paid time off
-for report purposes, but they do not use the balance-deducting rule.
+for report purposes, but they do not use the balance-deducting rule. Every PTO
+request type begins pending and requires manager approval; request type does not
+cause automatic approval.
 
 When a balance-deducting PTO approval is reversed, the balance is restored and a
 `REVERSAL_ADJUSTMENT` ledger entry is created. Historical records are not
@@ -36,9 +38,16 @@ deleted.
 
 NPTO is unpaid time off. Approved or overridden NPTO blocks scheduling, does not
 reduce PTO balance, and creates an `NPTO_UNPAID_DEDUCTION` ledger entry.
+Every NPTO request begins pending, and no NPTO hours cap is enforced.
 
 When NPTO is reversed, unpaid hours are removed from the active request and a
 `REVERSAL_ADJUSTMENT` ledger entry is created.
+
+## OPTO
+
+OPTO is maintained manually by admins in its own balance and append-only ledger.
+It is not included in payroll paid-hour calculations and does not create
+`PayrollAdjustmentLedger` entries.
 
 ## Holidays
 

@@ -208,6 +208,10 @@ export async function requireManager() {
   return actor;
 }
 
+export async function requireAdmin() {
+  return requireRole(["ADMIN"]);
+}
+
 export function auditActorId(actor: AuthActor | null | undefined) {
   return actor?.isDevFallback ? null : actor?.id ?? null;
 }

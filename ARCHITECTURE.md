@@ -1,6 +1,6 @@
 Clinic Scheduling + PTO Management Web Application
 Version: V1.0 Web Application Architecture Spec
-Last Updated: May 23, 2026
+Last Updated: June 18, 2026
 SYSTEM OBJECTIVE
 Build a production-ready web application for clinic staff scheduling and PTO management.
 This application replaces a legacy Google Sheets + Apps Script scheduling system and should instead function as a modern hosted web application with:
@@ -293,9 +293,18 @@ Managers should be able to:
 Approve
 Reject
 Override
+All PTO and NPTO requests enter manager review as pending. There is no
+request-type auto-approval path. NPTO has no hours cap; its legacy cap fields
+remain historical compatibility data only.
 Once PTO is approved:
 The scheduling engine should automatically regenerate affected assignments
 Replacement staff should be selected automatically
+
+OPTO SYSTEM
+OPTO is a separate admin-maintained balance and append-only adjustment ledger.
+Admins can credit, debit, set, or correct an employee balance with an effective
+date and required reason. OPTO does not share PTO approval rules, NPTO policy,
+or the payroll adjustment ledger.
 
 COVERAGE ENGINE
 If a scheduled employee becomes unavailable:
@@ -487,10 +496,11 @@ draft, published, needs-regeneration, shortage, PTO, and NPTO status.
 
 Easton workbook application treats `Shifts + Hours` as the active reusable
 shift-demand source. Every clinic and background count is stored against the
-specific shift template where it appears. `Shifts by GY` is the active employee
-target source for July work-pattern groups, required BG minimums, and 40-hour
-weekly targets. June sheets are ignored by active generation, avoiding both
-missing PM demand and duplicated or historical staffing counts.
+specific shift template where it appears. The employee target source is chosen
+in priority order: `NEW NEW Shifts by GY`, then `NEW Shifts by GY`, then legacy
+`Shifts by GY`. It supplies July work-pattern groups, required BG minimums, and
+40-hour weekly targets. June sheets are ignored by active generation, avoiding
+both missing PM demand and duplicated or historical staffing counts.
 
 All active July shift templates from `Shifts + Hours` are treated as generated
 schedulable blocks, not only the 8:00 AM shifts. The `defaultForSchedule` flag
@@ -504,10 +514,14 @@ with either the 7:00 AM-12:00 PM block or the 1:00 PM-6:00 PM block; Tuesday
 through Thursday require 7:00 AM-12:00 PM. The BG column stays separate as an
 employee-level required weekly background minimum.
 
-Manual assignment remains a manager override workflow. Server-side validation
-previews skill, PTO/NPTO, availability, overlap, weekly-limit, expected-hours,
-and required-coverage warnings. Warned changes require a reason and are written
-to the audit log.
+Manual weekly editing uses a dedicated full-screen workspace. Edits are staged
+client-side as a batch, while server-side scheduling modules preview skill,
+PTO/NPTO, availability, overlap, weekly-limit, expected-hours, work-pattern,
+locked-assignment, published-date, and required-coverage diagnostics. Candidate
+rankings use the same validation path. Saving uses one transaction with stale
+revision checks and per-operation plus batch audit records. Manual overrides are
+preserved during later generation even when unlocked. Published days remain
+published after an edit and require a recorded manager reason.
 
 
 

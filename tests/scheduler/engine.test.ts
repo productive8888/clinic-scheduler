@@ -73,16 +73,17 @@ import {
 } from "../../src/lib/pto/policy";
 import {
   calculateNptoHours,
-  formatNptoCapDenial,
   isScheduleBlockingNptoStatus,
   nptoDeductsPtoBalance,
   wouldExceedNptoCap,
 } from "../../src/lib/npto/policy";
+import { calculateOptoAdjustment } from "../../src/lib/opto/adjustment";
 import { buildStaffingAnalytics } from "../../src/lib/analytics/staffing";
 import { buildAssignmentCalendarEvents } from "../../src/lib/calendar/events";
 import { buildIcsCalendar } from "../../src/lib/calendar/ics";
 import { selectDefaultTaskTypesForScenario } from "../../src/lib/schedule/scenarios";
 import { validateManualAssignment } from "../../src/lib/schedule/manual-validation";
+import { applyManualEditBatchToState } from "../../src/lib/schedule/manual-edit-state";
 import { getSchedulePublishIssues } from "../../src/lib/schedule/publish-validation";
 import {
   clinicWeekRange,
@@ -1769,9 +1770,11 @@ describe("PTO workflow helpers", () => {
     assert.equal(result.conflicts[0].slotId, "am-pto-overlap");
   });
 
-  it("auto-approves sick and emergency requests", () => {
-    assert.equal(isAutoApprovedPtoType("SICK"), true);
-    assert.equal(isAutoApprovedPtoType("EMERGENCY"), true);
+  it("requires manager approval for every PTO request type", () => {
+    assert.equal(isAutoApprovedPtoType("SICK"), false);
+    assert.equal(isAutoApprovedPtoType("EMERGENCY"), false);
+    assert.equal(requiresManagerApproval("SICK"), true);
+    assert.equal(requiresManagerApproval("EMERGENCY"), true);
   });
 
   it("keeps personal and vacation requests on the approval path", () => {
@@ -1867,33 +1870,25 @@ describe("NPTO workflow helpers", () => {
     assert.equal(calculateNptoHours({ startDate: monday, endDate: monday }), 8);
   });
 
-  it("denies NPTO when the configured cap would be exceeded", () => {
+  it("ignores the legacy NPTO cap policy", () => {
     assert.equal(
       wouldExceedNptoCap({
         usedHours: 236,
         requestHours: 8,
         capHours: 240,
       }),
-      true,
-    );
-    assert.equal(
-      formatNptoCapDenial({
-        usedHours: 236,
-        requestHours: 8,
-        capHours: 240,
-      }).includes("exceed the configured 240 hour cap"),
-      true,
+      false,
     );
   });
 
-  it("allows admin override of NPTO cap denial to block scheduling", () => {
+  it("keeps overridden NPTO schedule-blocking without cap validation", () => {
     assert.equal(
       wouldExceedNptoCap({
         usedHours: 240,
         requestHours: 8,
         capHours: 240,
       }),
-      true,
+      false,
     );
     assert.equal(isScheduleBlockingNptoStatus("OVERRIDDEN"), true);
   });
@@ -6521,5 +6516,194 @@ describe("automated scheduling workflow foundations", () => {
       warnings.some((warning) => warning.code === "OVERLAPPING_SHIFT"),
       false,
     );
+  });
+});
+
+describe("manual OPTO policy", () => {
+  it("creates credit and debit adjustments with before and after balances", () => {
+    assert.deepEqual(
+      calculateOptoAdjustment({
+        currentBalance: 8,
+        type: "CREDIT",
+        hours: 2.5,
+      }),
+      {
+        balanceBefore: 8,
+        adjustmentHours: 2.5,
+        balanceAfter: 10.5,
+      },
+    );
+    assert.deepEqual(
+      calculateOptoAdjustment({
+        currentBalance: 10.5,
+        type: "DEBIT",
+        hours: 1.25,
+      }),
+      {
+        balanceBefore: 10.5,
+        adjustmentHours: -1.25,
+        balanceAfter: 9.25,
+      },
+    );
+  });
+
+  it("sets an exact balance and rejects a negative result", () => {
+    assert.deepEqual(
+      calculateOptoAdjustment({
+        currentBalance: 9,
+        type: "SET_BALANCE",
+        hours: 4,
+      }),
+      {
+        balanceBefore: 9,
+        adjustmentHours: -5,
+        balanceAfter: 4,
+      },
+    );
+    assert.throws(
+      () =>
+        calculateOptoAdjustment({
+          currentBalance: 1,
+          type: "DEBIT",
+          hours: 2,
+        }),
+      /cannot be negative/,
+    );
+  });
+
+  it("applies a signed correction", () => {
+    assert.deepEqual(
+      calculateOptoAdjustment({
+        currentBalance: 12,
+        type: "CORRECTION",
+        hours: -2.5,
+      }),
+      {
+        balanceBefore: 12,
+        adjustmentHours: -2.5,
+        balanceAfter: 9.5,
+      },
+    );
+  });
+});
+
+describe("staged manual schedule edits", () => {
+  const baseManualState = {
+    shiftBlocks: [
+      {
+        id: "am",
+        scheduleDayId: "day",
+        date: monday,
+      },
+      {
+        id: "pm",
+        scheduleDayId: "day",
+        date: monday,
+      },
+    ],
+    slots: [
+      {
+        id: "slot-am",
+        persistedSlotId: "slot-am",
+        scheduleDayId: "day",
+        date: monday,
+        shiftBlockId: "am",
+        taskTypeId: "front-desk",
+        slotIndex: 1,
+        requirementLevel: "REQUIRED" as const,
+        requiredStaff: 1,
+        source: "STAFFING_RULE",
+      },
+      {
+        id: "slot-pm",
+        persistedSlotId: "slot-pm",
+        scheduleDayId: "day",
+        date: monday,
+        shiftBlockId: "pm",
+        taskTypeId: "research",
+        slotIndex: 1,
+        requirementLevel: "OPTIONAL" as const,
+        requiredStaff: 1,
+        source: "MANUAL",
+      },
+    ],
+    assignments: [
+      {
+        id: "assignment-a",
+        persistedAssignmentId: "assignment-a",
+        slotId: "slot-am",
+        employeeId: "alice",
+        locked: false,
+        source: "GENERATED",
+        note: null,
+      },
+      {
+        id: "assignment-b",
+        persistedAssignmentId: "assignment-b",
+        slotId: "slot-pm",
+        employeeId: "blake",
+        locked: false,
+        source: "GENERATED",
+        note: null,
+      },
+    ],
+  };
+
+  it("stages an employee swap without mutating the base schedule", () => {
+    const draft = applyManualEditBatchToState(baseManualState, {
+      weekStart: monday,
+      revisions: [],
+      assignmentChanges: [
+        {
+          assignmentId: "assignment-a",
+          employeeId: "blake",
+          locked: true,
+        },
+        {
+          assignmentId: "assignment-b",
+          employeeId: "alice",
+          locked: true,
+        },
+      ],
+      addedAssignments: [],
+      addedSlots: [],
+    });
+
+    assert.deepEqual(
+      draft.assignments.map((assignment) => [
+        assignment.id,
+        assignment.employeeId,
+        assignment.source,
+        assignment.locked,
+      ]),
+      [
+        ["assignment-a", "blake", "MANUAL_OVERRIDE", true],
+        ["assignment-b", "alice", "MANUAL_OVERRIDE", true],
+      ],
+    );
+    assert.equal(baseManualState.assignments[0].employeeId, "alice");
+  });
+
+  it("stages a manual optional slot and assignment", () => {
+    const draft = applyManualEditBatchToState(baseManualState, {
+      weekStart: monday,
+      revisions: [],
+      assignmentChanges: [],
+      addedAssignments: [],
+      addedSlots: [
+        {
+          clientId: "manual-slot",
+          date: monday,
+          shiftBlockId: "am",
+          taskTypeId: "background",
+          employeeId: "alice",
+          locked: true,
+        },
+      ],
+    });
+
+    assert.equal(draft.slots.at(-1)?.source, "MANUAL");
+    assert.equal(draft.slots.at(-1)?.requirementLevel, "OPTIONAL");
+    assert.equal(draft.assignments.at(-1)?.source, "MANUAL_OVERRIDE");
   });
 });

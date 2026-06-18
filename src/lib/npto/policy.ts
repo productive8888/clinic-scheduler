@@ -17,7 +17,8 @@ export function wouldExceedNptoCap(input: {
   requestHours: number;
   capHours: number;
 }) {
-  return input.usedHours + input.requestHours > input.capHours;
+  void input;
+  return false;
 }
 
 export function nptoDeductsPtoBalance() {
@@ -29,7 +30,8 @@ export function formatNptoCapDenial(input: {
   requestHours: number;
   capHours: number;
 }) {
-  return `Denied automatically: ${input.usedHours + input.requestHours} NPTO hours would exceed the configured ${input.capHours} hour cap.`;
+  void input;
+  return "Legacy NPTO cap policy is disabled.";
 }
 
 export function isScheduleBlockingNptoStatus(status: RequestStatus) {

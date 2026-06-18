@@ -64,8 +64,8 @@ export function PTORequestForm({
             ))}
           </select>
           <span className="text-xs font-normal text-slate-500">
-            Personal and vacation requests need manager approval. Sick and
-            emergency requests are approved automatically.
+            Every request type waits for manager approval. Applicable PTO balance
+            is deducted only after approval or override.
           </span>
         </label>
         <label className="grid gap-1 text-sm font-medium text-slate-700">
