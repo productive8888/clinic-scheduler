@@ -91,11 +91,14 @@ import { applyManualEditBatchToState } from "../../src/lib/schedule/manual-edit-
 import { getSchedulePublishIssues } from "../../src/lib/schedule/publish-validation";
 import {
   clinicWeekRange,
+  groupScheduleDatesByClinicWeek,
   monthCalendarRange,
+  planScheduleGeneration,
   planScheduleRange,
   planUnpublishScheduleRange,
   resolveScheduleRange,
 } from "../../src/lib/schedule/range";
+import { getMonthDayPresentation } from "../../src/lib/schedule/month";
 import {
   buildWeekStaffSummary,
   buildWeekDayHealth,
@@ -1670,6 +1673,128 @@ describe("Easton full-week generation foundations", () => {
       gridStartDate: "2026-06-01",
       gridEndDate: "2026-07-05",
     });
+  });
+
+  it("partitions month generation week by week and skips every Sunday", () => {
+    const plan = planScheduleGeneration({
+      startDate: "2026-07-01",
+      endDate: "2026-07-31",
+      publishedDates: ["2026-07-07"],
+    });
+
+    assert.equal(plan.weeks.length, 5);
+    assert.equal(plan.generationWeeks.length, 5);
+    assert.deepEqual(plan.skippedSundays, [
+      "2026-07-05",
+      "2026-07-12",
+      "2026-07-19",
+      "2026-07-26",
+    ]);
+    assert.deepEqual(plan.publishedDatesSkipped, ["2026-07-07"]);
+    assert.equal(plan.schedulableDates.length, 27);
+    assert.equal(plan.datesToGenerate.length, 26);
+    assert.deepEqual(plan.weeks[0], {
+      startDate: "2026-06-29",
+      endDate: "2026-07-04",
+      dates: [
+        "2026-07-01",
+        "2026-07-02",
+        "2026-07-03",
+        "2026-07-04",
+      ],
+    });
+    assert.deepEqual(plan.weeks[4], {
+      startDate: "2026-07-27",
+      endDate: "2026-08-01",
+      dates: [
+        "2026-07-27",
+        "2026-07-28",
+        "2026-07-29",
+        "2026-07-30",
+        "2026-07-31",
+      ],
+    });
+    assert.deepEqual(
+      groupScheduleDatesByClinicWeek([
+        "2026-07-11",
+        "2026-07-06",
+        "2026-07-06",
+      ]),
+      [
+        {
+          startDate: "2026-07-06",
+          endDate: "2026-07-11",
+          dates: ["2026-07-06", "2026-07-11"],
+        },
+      ],
+    );
+  });
+
+  it("derives visible month status from generation, publish, review, and hard rules", () => {
+    const base = {
+      inMonth: true,
+      isSunday: false,
+      scheduleStatus: null,
+      hasGeneratedContent: false,
+      publishIssueCount: 0,
+      hardRequirementCount: 0,
+      requiredShortageCount: 0,
+    };
+
+    assert.deepEqual(getMonthDayPresentation(base), {
+      displayStatus: "NOT_GENERATED",
+      label: "Not generated",
+      tone: "gray",
+      needsReview: false,
+    });
+    assert.equal(
+      getMonthDayPresentation({
+        ...base,
+        scheduleStatus: "GENERATED",
+        hasGeneratedContent: true,
+      }).displayStatus,
+      "GENERATED_DRAFT",
+    );
+    assert.equal(
+      getMonthDayPresentation({
+        ...base,
+        scheduleStatus: "PUBLISHED",
+        hasGeneratedContent: true,
+      }).tone,
+      "green",
+    );
+    assert.equal(
+      getMonthDayPresentation({
+        ...base,
+        scheduleStatus: "GENERATED",
+        hasGeneratedContent: true,
+        publishIssueCount: 1,
+      }).displayStatus,
+      "NEEDS_REVIEW",
+    );
+    assert.equal(
+      getMonthDayPresentation({
+        ...base,
+        scheduleStatus: "PUBLISHED",
+        hasGeneratedContent: true,
+        hardRequirementCount: 2,
+      }).displayStatus,
+      "HARD_REQUIREMENTS_UNMET",
+    );
+    assert.equal(
+      getMonthDayPresentation({
+        ...base,
+        isSunday: true,
+      }).displayStatus,
+      "NOT_SCHEDULED",
+    );
+    assert.equal(
+      getMonthDayPresentation({
+        ...base,
+        hardRequirementCount: 20,
+      }).displayStatus,
+      "NOT_GENERATED",
+    );
   });
 });
 
@@ -5452,6 +5577,62 @@ describe("automated scheduling workflow foundations", () => {
         ["2026-06-02", "SKIP_PUBLISHED"],
         ["2026-06-03", "GENERATE"],
       ],
+    );
+  });
+
+  it("wires month actions to shared week generation with safe clear and progress UI", async () => {
+    const [workflow, actions, monthActions] = await Promise.all([
+      fs.readFile(
+        path.join(process.cwd(), "src", "lib", "db", "schedule-workflows.ts"),
+        "utf8",
+      ),
+      fs.readFile(
+        path.join(
+          process.cwd(),
+          "src",
+          "app",
+          "(app)",
+          "schedule",
+          "actions.ts",
+        ),
+        "utf8",
+      ),
+      fs.readFile(
+        path.join(
+          process.cwd(),
+          "src",
+          "components",
+          "schedule",
+          "month-schedule-actions.tsx",
+        ),
+        "utf8",
+      ),
+    ]);
+
+    assert.match(workflow, /for \(const week of generationWeeks\)/);
+    assert.ok(
+      workflow.indexOf("for (const date of saturdayDates)") <
+        workflow.indexOf("for (const date of nonSaturdayDates)"),
+    );
+    assert.match(
+      workflow,
+      /locked:\s*false[\s\S]*AssignmentSource\.GENERATED/,
+    );
+    assert.match(
+      workflow,
+      /source:\s*AssignmentSource\.MANUAL_OVERRIDE/,
+    );
+    assert.match(actions, /scheduleMonthAction[\s\S]*requireManager\(\)/);
+    assert.match(actions, /confirmPublishedOverwrite/);
+    assert.match(actions, /confirmClearPublished/);
+    assert.match(monthActions, /Generating month…/);
+    assert.match(monthActions, /Regenerating month…/);
+    assert.match(monthActions, /Publishing month…/);
+    assert.match(monthActions, /Unpublishing month…/);
+    assert.match(monthActions, /Clearing generated month…/);
+    assert.match(
+      monthActions,
+      /Assignments were preserved|Assignments will be preserved/,
     );
   });
 

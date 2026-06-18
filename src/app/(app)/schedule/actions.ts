@@ -16,6 +16,7 @@ import {
 import {
   clearGeneratedScheduleRange,
   generateScheduleRange,
+  getScheduleRangeGenerationPreview,
   publishScheduleRange,
   unpublishScheduleRange,
 } from "@/lib/db/schedule-workflows";
@@ -24,6 +25,10 @@ import {
   resolveScheduleRange,
   type ScheduleRangeMode,
 } from "@/lib/schedule/range";
+import type {
+  MonthActionOperation,
+  MonthActionState,
+} from "@/lib/schedule/month";
 import { todayIsoDate } from "@/lib/utils/date";
 
 function getDateFromForm(formData: FormData) {
@@ -209,6 +214,264 @@ export async function bulkGenerateScheduleAction(formData: FormData) {
   redirect(`/schedule/week?${params.toString()}`);
 }
 
+export async function scheduleMonthAction(
+  _previousState: MonthActionState,
+  formData: FormData,
+): Promise<MonthActionState> {
+  const actor = await requireManager();
+  const operation = monthActionOperation(formData.get("operation"));
+  const date = getDateFromForm(formData);
+  const range = resolveScheduleRange({ mode: "MONTH", date });
+
+  try {
+    if (operation === "GENERATE" || operation === "REGENERATE") {
+      const preview = await getScheduleRangeGenerationPreview(range);
+      const overwritePublished = formData.get("overwritePublished") === "on";
+
+      if (
+        operation === "GENERATE" &&
+        preview.generatedDraftDates.length > 0
+      ) {
+        return {
+          outcome: "blocked",
+          operation,
+          message:
+            "This month already contains generated drafts. Use Regenerate month to confirm replacing generated output while preserving manual and locked overrides.",
+          metrics: [
+            {
+              label: "Existing generated drafts",
+              value: preview.generatedDraftDates.length,
+            },
+          ],
+          issues: preview.generatedDraftDates,
+          weekSummaries: [],
+        };
+      }
+
+      if (
+        overwritePublished &&
+        formData.get("confirmPublishedOverwrite") !== "on"
+      ) {
+        return {
+          outcome: "blocked",
+          operation,
+          message:
+            "Confirm published overwrite before regenerating published days.",
+          metrics: [
+            {
+              label: "Published days in month",
+              value: preview.publishedDates.length,
+            },
+          ],
+          issues: preview.publishedDates,
+          weekSummaries: [],
+        };
+      }
+
+      const summary = await generateScheduleRange({
+        ...range,
+        seedPrefix:
+          operation === "REGENERATE"
+            ? "clinic-month-regenerate"
+            : "clinic-month",
+        overwritePublished,
+        actorEmployeeId: auditActorId(actor),
+      });
+
+      revalidateSchedulePaths();
+
+      return {
+        outcome:
+          summary.hardRequirementIssues > 0 ||
+          summary.requiredSlotsUnfilled > 0
+            ? "blocked"
+            : "success",
+        operation,
+        message:
+          summary.hardRequirementIssues > 0 ||
+          summary.requiredSlotsUnfilled > 0
+            ? "Month generation finished, but review is required before publishing."
+            : "Month generation finished successfully.",
+        metrics: [
+          { label: "Weeks processed", value: summary.weeksProcessed },
+          {
+            label: "Days processed",
+            value:
+              summary.datesProcessed + summary.publishedDatesSkipped.length,
+          },
+          { label: "Days created", value: summary.scheduleDaysCreated },
+          { label: "Days regenerated", value: summary.datesRegenerated },
+          {
+            label: "Published days skipped",
+            value: summary.publishedDatesSkipped.length,
+          },
+          { label: "Shift blocks", value: summary.shiftBlocks },
+          { label: "Clinic slots", value: summary.clinicSlots },
+          { label: "Background slots", value: summary.backgroundSlots },
+          { label: "Assignments", value: summary.assignmentsFilled },
+          {
+            label: "Required unfilled",
+            value: summary.requiredSlotsUnfilled,
+          },
+          {
+            label: "Hard requirements",
+            value: summary.hardRequirementIssues,
+          },
+          { label: "Under-target employees", value: summary.employeesUnderTarget },
+          { label: "BG minimum issues", value: summary.bgMinimumIssues },
+          { label: "Work-pattern issues", value: summary.workPatternIssues },
+          { label: "Saturday issues", value: summary.saturdayIssues },
+        ],
+        issues: [
+          ...summary.configurationWarnings,
+          ...summary.datesNeedingManualReview.map(
+            (reviewDate) => `${reviewDate} needs manager review.`,
+          ),
+        ],
+        weekSummaries: summary.weekSummaries,
+      };
+    }
+
+    if (operation === "PUBLISH") {
+      const summary = await publishScheduleRange({
+        ...range,
+        actorEmployeeId: auditActorId(actor),
+        overrideReason: String(formData.get("overrideReason") || "") || null,
+      });
+
+      revalidateSchedulePaths();
+
+      return {
+        outcome:
+          summary.skippedDates.length > 0 ? "blocked" : "success",
+        operation,
+        message:
+          summary.skippedDates.length > 0
+            ? "Some or all days could not be published. Review the reasons below, or provide an override reason for hard requirements."
+            : "All publishable days in the month are published.",
+        metrics: [
+          { label: "Published", value: summary.publishedDates.length },
+          {
+            label: "Already published",
+            value: summary.alreadyPublishedDates.length,
+          },
+          { label: "Blocked", value: summary.skippedDates.length },
+        ],
+        issues: summary.skippedDates.map(
+          (item) => `${item.date}: ${item.reason}`,
+        ),
+        weekSummaries: [],
+      };
+    }
+
+    if (operation === "UNPUBLISH") {
+      const summary = await unpublishScheduleRange({
+        ...range,
+        actorEmployeeId: auditActorId(actor),
+      });
+
+      revalidateSchedulePaths();
+
+      return {
+        outcome: "success",
+        operation,
+        message:
+          "Published days were returned to draft status. Assignments were preserved.",
+        metrics: [
+          { label: "Unpublished", value: summary.unpublishedDates.length },
+          {
+            label: "Already draft",
+            value: summary.skippedNotPublishedDates.length,
+          },
+        ],
+        issues: [],
+        weekSummaries: [],
+      };
+    }
+
+    if (formData.get("confirmClear") !== "on") {
+      return {
+        outcome: "blocked",
+        operation,
+        message:
+          "Confirm that generated assignments, generated slots, and safe empty generated shift blocks may be cleared.",
+        metrics: [],
+        issues: [],
+        weekSummaries: [],
+      };
+    }
+
+    const includePublished = formData.get("includePublished") === "on";
+
+    if (
+      includePublished &&
+      formData.get("confirmClearPublished") !== "on"
+    ) {
+      return {
+        outcome: "blocked",
+        operation,
+        message:
+          "Confirm that published dates may be unpublished and cleared.",
+        metrics: [],
+        issues: [],
+        weekSummaries: [],
+      };
+    }
+
+    const summary = await clearGeneratedScheduleRange({
+      ...range,
+      includePublished,
+      actorEmployeeId: auditActorId(actor),
+    });
+
+    revalidateSchedulePaths();
+
+    return {
+      outcome: "success",
+      operation,
+      message:
+        "Generated month output was cleared. Manual and locked overrides were preserved.",
+      metrics: [
+        { label: "Days cleared", value: summary.datesCleared.length },
+        {
+          label: "Published days skipped",
+          value: summary.publishedDatesSkipped.length,
+        },
+        {
+          label: "Published days unpublished",
+          value: summary.publishedDatesUnpublished.length,
+        },
+        { label: "Assignments removed", value: summary.assignmentsRemoved },
+        { label: "Generated slots cancelled", value: summary.taskSlotsCancelled },
+        {
+          label: "Empty blocks deactivated",
+          value: summary.shiftBlocksDeactivated,
+        },
+        { label: "Manual slots preserved", value: summary.manualSlotsPreserved },
+        {
+          label: "Locked assignments preserved",
+          value: summary.lockedAssignmentsPreserved,
+        },
+      ],
+      issues: summary.publishedDatesSkipped.map(
+        (skippedDate) =>
+          `${skippedDate} stayed published and was not cleared.`,
+      ),
+      weekSummaries: [],
+    };
+  } catch (error) {
+    return {
+      outcome: "error",
+      operation,
+      message:
+        error instanceof Error ? error.message : "The month action failed.",
+      metrics: [],
+      issues: [],
+      weekSummaries: [],
+    };
+  }
+}
+
 export async function publishScheduleRangeAction(formData: FormData) {
   const actor = await requireManager();
   const date = getDateFromForm(formData);
@@ -330,4 +593,26 @@ function scheduleRangeMode(value: FormDataEntryValue | null): ScheduleRangeMode 
   return value === "WEEK" || value === "MONTH" || value === "CUSTOM"
     ? value
     : "DAY";
+}
+
+function monthActionOperation(
+  value: FormDataEntryValue | null,
+): MonthActionOperation {
+  if (
+    value === "GENERATE" ||
+    value === "REGENERATE" ||
+    value === "PUBLISH" ||
+    value === "UNPUBLISH" ||
+    value === "CLEAR"
+  ) {
+    return value;
+  }
+
+  throw new Error("Invalid month action.");
+}
+
+function revalidateSchedulePaths() {
+  revalidatePath("/schedule");
+  revalidatePath("/schedule/week");
+  revalidatePath("/schedule/calendar");
 }

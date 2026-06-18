@@ -95,6 +95,49 @@ export function planScheduleRange(input: {
   }));
 }
 
+export function planScheduleGeneration(input: {
+  startDate: string;
+  endDate: string;
+  publishedDates?: string[];
+  overwritePublished?: boolean;
+}) {
+  const datesToGenerate: string[] = [];
+  const schedulableDates: string[] = [];
+  const skippedSundays: string[] = [];
+  const publishedDatesSkipped: string[] = [];
+  const publishedDatesOverwritten: string[] = [];
+
+  for (const item of planScheduleRange(input)) {
+    if (parseIsoDate(item.date).getUTCDay() === 0) {
+      skippedSundays.push(item.date);
+      continue;
+    }
+
+    schedulableDates.push(item.date);
+
+    if (item.action === "SKIP_PUBLISHED") {
+      publishedDatesSkipped.push(item.date);
+      continue;
+    }
+
+    datesToGenerate.push(item.date);
+
+    if (item.overwritesPublished) {
+      publishedDatesOverwritten.push(item.date);
+    }
+  }
+
+  return {
+    datesToGenerate,
+    schedulableDates,
+    skippedSundays,
+    publishedDatesSkipped,
+    publishedDatesOverwritten,
+    weeks: groupScheduleDatesByClinicWeek(schedulableDates),
+    generationWeeks: groupScheduleDatesByClinicWeek(datesToGenerate),
+  };
+}
+
 export function planUnpublishScheduleRange(input: {
   startDate: string;
   endDate: string;
@@ -108,4 +151,23 @@ export function planUnpublishScheduleRange(input: {
       ? ("UNPUBLISH" as const)
       : ("SKIP_NOT_PUBLISHED" as const),
   }));
+}
+
+export function groupScheduleDatesByClinicWeek(dates: string[]) {
+  const datesByWeekStart = new Map<string, string[]>();
+
+  for (const date of [...new Set(dates)].sort()) {
+    const weekStart = clinicWeekRange(date).startDate;
+    const weekDates = datesByWeekStart.get(weekStart) ?? [];
+
+    weekDates.push(date);
+    datesByWeekStart.set(weekStart, weekDates);
+  }
+
+  return [...datesByWeekStart.entries()]
+    .sort(([left], [right]) => left.localeCompare(right))
+    .map(([weekStart, weekDates]) => ({
+      ...clinicWeekRange(weekStart),
+      dates: weekDates,
+    }));
 }

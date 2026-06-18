@@ -21,8 +21,9 @@ import {
 } from "@/lib/db/schedule";
 import {
   clinicWeekRange,
+  groupScheduleDatesByClinicWeek,
   monthCalendarRange,
-  planScheduleRange,
+  planScheduleGeneration,
   planUnpublishScheduleRange,
 } from "@/lib/schedule/range";
 import {
@@ -43,12 +44,17 @@ import {
   getPatientFairnessRepairDiagnosticsForRange,
   repairPatientFairnessForRange,
 } from "@/lib/db/patient-fairness-repair";
+import {
+  getMonthDayPresentation,
+  type MonthGenerationWeekSummary,
+} from "@/lib/schedule/month";
 
 export type BulkGenerationSummary = {
   startDate: string;
   endDate: string;
   datesProcessed: number;
   datesGenerated: number;
+  weeksProcessed: number;
   scheduleDaysCreated: number;
   scheduleDaysUpdated: number;
   shiftBlocks: number;
@@ -82,7 +88,9 @@ export type BulkGenerationSummary = {
   hardRequirementIssues: number;
   bgMinimumIssues: number;
   workPatternIssues: number;
+  saturdayIssues: number;
   unmatchedTargetIssues: number;
+  weekSummaries: MonthGenerationWeekSummary[];
   datesNeedingManualReview: string[];
   generationDiagnostics: Array<{
     date: string;
@@ -124,6 +132,52 @@ export type BulkGenerationSummary = {
   configurationWarnings: string[];
 };
 
+export async function getScheduleRangeGenerationPreview(input: {
+  startDate: string;
+  endDate: string;
+}) {
+  const days = await getDb().scheduleDay.findMany({
+    where: {
+      date: {
+        gte: parseIsoDate(input.startDate),
+        lte: parseIsoDate(input.endDate),
+      },
+    },
+    orderBy: { date: "asc" },
+    select: {
+      date: true,
+      status: true,
+      shiftBlocks: {
+        where: { active: true },
+        select: { id: true },
+        take: 1,
+      },
+      taskSlots: {
+        where: { status: { not: TaskSlotStatus.CANCELLED } },
+        select: { id: true },
+        take: 1,
+      },
+    },
+  });
+
+  return {
+    generatedDraftDates: days
+      .filter(
+        (day) =>
+          day.status !== "PUBLISHED" &&
+          (day.status === "GENERATED" ||
+            day.status === "NEEDS_REGENERATION" ||
+            day.status === "LOCKED" ||
+            day.shiftBlocks.length > 0 ||
+            day.taskSlots.length > 0),
+      )
+      .map((day) => toIsoDate(day.date)),
+    publishedDates: days
+      .filter((day) => day.status === "PUBLISHED")
+      .map((day) => toIsoDate(day.date)),
+  };
+}
+
 export async function generateScheduleRange(input: {
   startDate: string;
   endDate: string;
@@ -143,7 +197,7 @@ export async function generateScheduleRange(input: {
   const publishedDates = existing
     .filter((day) => day.status === "PUBLISHED")
     .map((day) => toIsoDate(day.date));
-  const plan = planScheduleRange({
+  const generationPlan = planScheduleGeneration({
     startDate: input.startDate,
     endDate: input.endDate,
     publishedDates,
@@ -154,6 +208,7 @@ export async function generateScheduleRange(input: {
     endDate: input.endDate,
     datesProcessed: 0,
     datesGenerated: 0,
+    weeksProcessed: 0,
     scheduleDaysCreated: 0,
     scheduleDaysUpdated: 0,
     shiftBlocks: 0,
@@ -187,7 +242,9 @@ export async function generateScheduleRange(input: {
     hardRequirementIssues: 0,
     bgMinimumIssues: 0,
     workPatternIssues: 0,
+    saturdayIssues: 0,
     unmatchedTargetIssues: 0,
+    weekSummaries: [],
     datesNeedingManualReview: [],
     generationDiagnostics: [],
     skippedClosedDates: [],
@@ -219,24 +276,17 @@ export async function generateScheduleRange(input: {
     backgroundSkippedPeriods: [],
     configurationWarnings: await getGenerationConfigurationWarnings(),
   };
-  const datesToGenerate: string[] = [];
-
-  for (const item of plan) {
-    if (parseIsoDate(item.date).getUTCDay() === 0) {
-      summary.skippedSundays.push(item.date);
-      continue;
-    }
-
-    if (item.action === "SKIP_PUBLISHED") {
-      summary.publishedDatesSkipped.push(item.date);
-      continue;
-    }
-
-    datesToGenerate.push(item.date);
-    if (item.overwritesPublished) {
-      summary.publishedDatesOverwritten.push(item.date);
-    }
-  }
+  const {
+    datesToGenerate,
+    skippedSundays,
+    publishedDatesSkipped,
+    publishedDatesOverwritten,
+    weeks: plannedWeeks,
+    generationWeeks,
+  } = generationPlan;
+  summary.skippedSundays = skippedSundays;
+  summary.publishedDatesSkipped = publishedDatesSkipped;
+  summary.publishedDatesOverwritten = publishedDatesOverwritten;
 
   const beforeBoards = new Map(
     await Promise.all(
@@ -275,51 +325,57 @@ export async function generateScheduleRange(input: {
     string,
     Awaited<ReturnType<typeof generateScheduleForDate>>
   >();
-  const saturdayDates = datesToGenerate.filter(
-    (date) => parseIsoDate(date).getUTCDay() === 6,
-  );
-  const nonSaturdayDates = datesToGenerate.filter(
-    (date) => parseIsoDate(date).getUTCDay() !== 6,
-  );
+  const topOffSummariesByWeekStart = new Map<
+    string,
+    Awaited<ReturnType<typeof topOffBackgroundAssignmentsForRange>>
+  >();
+  summary.weeksProcessed = plannedWeeks.length;
 
-  for (const date of saturdayDates) {
-    const result = await generateScheduleForDate({
-      date,
-      seed: `${input.seedPrefix}:${date}`,
-      actorEmployeeId: input.actorEmployeeId,
-    });
-    generationResults.set(date, result);
-  }
+  for (const week of generationWeeks) {
+    const saturdayDates = week.dates.filter(
+      (date) => parseIsoDate(date).getUTCDay() === 6,
+    );
+    const nonSaturdayDates = week.dates.filter(
+      (date) => parseIsoDate(date).getUTCDay() !== 6,
+    );
 
-  if (saturdayDates.length > 0) {
-    const saturdayRepairSummary = await enforceWorkPatternRequirementsForRange({
-      startDate: input.startDate,
-      endDate: input.endDate,
-      allowedDates: saturdayDates,
-      mode: "SATURDAY_ONLY",
-      actorEmployeeId: input.actorEmployeeId,
-    });
-    summary.workPatternTopOffSlotsCreated += saturdayRepairSummary.slotsCreated;
-    summary.workPatternAssignmentsCreated +=
-      saturdayRepairSummary.assignmentsCreated;
-    summary.workPatternSwapsMade += saturdayRepairSummary.swapsMade;
-    summary.workPatternUnresolved += saturdayRepairSummary.unresolved.length;
-  }
+    for (const date of saturdayDates) {
+      const result = await generateScheduleForDate({
+        date,
+        seed: `${input.seedPrefix}:${date}`,
+        actorEmployeeId: input.actorEmployeeId,
+      });
+      generationResults.set(date, result);
+    }
 
-  for (const date of nonSaturdayDates) {
-    const result = await generateScheduleForDate({
-      date,
-      seed: `${input.seedPrefix}:${date}`,
-      actorEmployeeId: input.actorEmployeeId,
-    });
-    generationResults.set(date, result);
-  }
+    if (saturdayDates.length > 0) {
+      const saturdayRepairSummary = await enforceWorkPatternRequirementsForRange({
+        startDate: week.startDate,
+        endDate: week.endDate,
+        allowedDates: saturdayDates,
+        mode: "SATURDAY_ONLY",
+        actorEmployeeId: input.actorEmployeeId,
+      });
+      summary.workPatternTopOffSlotsCreated += saturdayRepairSummary.slotsCreated;
+      summary.workPatternAssignmentsCreated +=
+        saturdayRepairSummary.assignmentsCreated;
+      summary.workPatternSwapsMade += saturdayRepairSummary.swapsMade;
+      summary.workPatternUnresolved += saturdayRepairSummary.unresolved.length;
+    }
 
-  if (datesToGenerate.length > 0) {
+    for (const date of nonSaturdayDates) {
+      const result = await generateScheduleForDate({
+        date,
+        seed: `${input.seedPrefix}:${date}`,
+        actorEmployeeId: input.actorEmployeeId,
+      });
+      generationResults.set(date, result);
+    }
+
     const workPatternSummary = await enforceWorkPatternRequirementsForRange({
-      startDate: input.startDate,
-      endDate: input.endDate,
-      allowedDates: datesToGenerate,
+      startDate: week.startDate,
+      endDate: week.endDate,
+      allowedDates: week.dates,
       actorEmployeeId: input.actorEmployeeId,
     });
     summary.workPatternTopOffSlotsCreated += workPatternSummary.slotsCreated;
@@ -329,31 +385,31 @@ export async function generateScheduleRange(input: {
     summary.workPatternUnresolved += workPatternSummary.unresolved.length;
 
     const topOffSummary = await topOffBackgroundAssignmentsForRange({
-      startDate: input.startDate,
-      endDate: input.endDate,
-      allowedDates: datesToGenerate,
+      startDate: week.startDate,
+      endDate: week.endDate,
+      allowedDates: week.dates,
       actorEmployeeId: input.actorEmployeeId,
     });
+    topOffSummariesByWeekStart.set(week.startDate, topOffSummary);
 
-    summary.backgroundTopOffSlotsCreated = topOffSummary.slotsCreated;
-    summary.backgroundTopOffAssignmentsCreated = topOffSummary.assignmentsCreated;
-    summary.backgroundRoleMixSwapsMade = topOffSummary.roleMixSwapsMade;
-    summary.backgroundTopOffIncompleteEmployees =
+    summary.backgroundTopOffSlotsCreated += topOffSummary.slotsCreated;
+    summary.backgroundTopOffAssignmentsCreated += topOffSummary.assignmentsCreated;
+    summary.backgroundRoleMixSwapsMade += topOffSummary.roleMixSwapsMade;
+    summary.backgroundTopOffIncompleteEmployees +=
       topOffSummary.employeesMissingBackground.length +
       topOffSummary.employeesUnderExpectedHours.length;
     summary.configurationWarnings.push(...topOffSummary.configurationWarnings);
 
     const patientFairnessSummary = await repairPatientFairnessForRange({
-      startDate: input.startDate,
-      endDate: input.endDate,
-      allowedDates: datesToGenerate,
+      startDate: week.startDate,
+      endDate: week.endDate,
+      allowedDates: week.dates,
       actorEmployeeId: input.actorEmployeeId,
     });
-    summary.patientRangeSwapsMade =
-      patientFairnessSummary.rangeSwapsMade;
-    summary.patientDiversitySwapsMade =
+    summary.patientRangeSwapsMade += patientFairnessSummary.rangeSwapsMade;
+    summary.patientDiversitySwapsMade +=
       patientFairnessSummary.diversitySwapsMade;
-    summary.patientRepairBlockedEmployees =
+    summary.patientRepairBlockedEmployees +=
       patientFairnessSummary.diagnostics.filter(
         (diagnostic) => diagnostic.repairState === "BLOCKED",
       ).length;
@@ -453,16 +509,37 @@ export async function generateScheduleRange(input: {
     }
   }
 
-  const targetSummary = await getRangeWeeklyTargetSummary(datesToGenerate);
-  summary.employeesUnderTarget = targetSummary.underTarget;
-  summary.employeesOverTarget = targetSummary.overTarget;
   const hardRequirementSummary = await getRangeWeeklyHardRequirementSummary({
     startDate: input.startDate,
     endDate: input.endDate,
   });
+  summary.weekSummaries = buildMonthGenerationWeekSummaries({
+    plannedWeeks,
+    beforeBoards,
+    publishedDatesSkipped: summary.publishedDatesSkipped,
+    hardRequirementWeeks: hardRequirementSummary.weeks,
+    topOffSummariesByWeekStart,
+  });
+  summary.employeesUnderTarget = summary.weekSummaries.reduce(
+    (count, week) => count + week.employeesUnderTarget.length,
+    0,
+  );
+  summary.employeesOverTarget = hardRequirementSummary.weeks.reduce(
+    (count, week) =>
+      count +
+      week.summary.employeeDiagnostics.filter(
+        (diagnostic) =>
+          diagnostic.workPattern.totalHours >
+          diagnostic.workPattern.expectedHours,
+      ).length,
+    0,
+  );
   summary.hardRequirementIssues = hardRequirementSummary.issues.length;
   summary.bgMinimumIssues = hardRequirementSummary.bgMinimumIssues.length;
   summary.workPatternIssues = hardRequirementSummary.workPatternIssues.length;
+  summary.saturdayIssues = hardRequirementSummary.issues.filter(
+    (issue) => issue.code === "SATURDAY_PATTERN_UNMET",
+  ).length;
   summary.unmatchedTargetIssues =
     hardRequirementSummary.unmatchedTargetIssues.length;
   summary.patientBelowMinimum =
@@ -1127,7 +1204,13 @@ export async function getScheduleWeekData(anchorDate: string) {
 
 export async function getScheduleCalendarData(anchorDate: string) {
   const range = monthCalendarRange(anchorDate);
-  const [scheduleDays, ptoRequests, nptoRequests, configurationWarnings] =
+  const [
+    scheduleDays,
+    ptoRequests,
+    nptoRequests,
+    hardRequirements,
+    configurationWarnings,
+  ] =
     await Promise.all([
       getDb().scheduleDay.findMany({
         where: {
@@ -1164,7 +1247,7 @@ export async function getScheduleCalendarData(anchorDate: string) {
               },
             },
             include: {
-              taskType: { select: { name: true } },
+              taskType: { select: { name: true, isBackground: true } },
               shiftBlock: {
                 select: {
                   name: true,
@@ -1196,10 +1279,20 @@ export async function getScheduleCalendarData(anchorDate: string) {
         },
         select: { startDate: true, endDate: true },
       }),
+      getRangeWeeklyHardRequirementSummary({
+        startDate: range.gridStartDate,
+        endDate: range.gridEndDate,
+      }),
       getGenerationConfigurationWarnings(),
     ]);
   const scheduleDaysByDate = new Map(
     scheduleDays.map((day) => [toIsoDate(day.date), day]),
+  );
+  const hardRequirementsByWeekStart = new Map(
+    hardRequirements.weeks.map((week) => [
+      week.range.startDate,
+      week.summary,
+    ]),
   );
   const calendarDays = enumerateIsoDates(
     range.gridStartDate,
@@ -1209,30 +1302,76 @@ export async function getScheduleCalendarData(anchorDate: string) {
     const publishIssues = scheduleDay
       ? getSchedulePublishIssues(scheduleDay)
       : [];
+    const weekHardRequirements = hardRequirementsByWeekStart.get(
+      clinicWeekRange(date).startDate,
+    );
+    const inMonth = date >= range.monthStartDate && date <= range.monthEndDate;
+    const isSunday = parseIsoDate(date).getUTCDay() === 0;
+    const taskSlots = scheduleDay?.taskSlots ?? [];
+    const clinicSlots = taskSlots.filter(
+      (slot) => !slot.taskType.isBackground,
+    );
+    const filledClinicSlotCount = clinicSlots.filter(
+      (slot) => slot.assignments.length >= slot.requiredStaff,
+    ).length;
+    const unfilledClinicSlotCount =
+      clinicSlots.length - filledClinicSlotCount;
+    const backgroundSlotCount = taskSlots.filter(
+      (slot) => slot.taskType.isBackground,
+    ).length;
+    const requiredShortageCount = taskSlots.filter(
+      (slot) =>
+        slot.requirementLevel === "REQUIRED" &&
+        slot.assignments.length < slot.requiredStaff,
+    ).length;
+    const hardRequirementCount = weekHardRequirements?.issues.length ?? 0;
+    const presentation = getMonthDayPresentation({
+      inMonth,
+      isSunday,
+      scheduleStatus: scheduleDay?.status,
+      hasGeneratedContent: Boolean(
+        scheduleDay &&
+          (scheduleDay.shiftBlocks.length > 0 || scheduleDay.taskSlots.length > 0),
+      ),
+      publishIssueCount: publishIssues.length,
+      hardRequirementCount,
+      requiredShortageCount,
+    });
 
     return {
       date,
-      inMonth: date >= range.monthStartDate && date <= range.monthEndDate,
+      inMonth,
+      isSunday,
       status: scheduleDay?.status ?? ("NOT_GENERATED" as const),
       scenario: scheduleDay?.scenario ?? null,
       shiftBlockCount: scheduleDay?.shiftBlocks.length ?? 0,
-      taskSlotCount: scheduleDay?.taskSlots.length ?? 0,
+      taskSlotCount: taskSlots.length,
       assignmentCount:
-        scheduleDay?.taskSlots.reduce(
+        taskSlots.reduce(
           (count, slot) => count + slot.assignments.length,
           0,
-        ) ?? 0,
+        ),
+      filledClinicSlotCount,
+      unfilledClinicSlotCount,
+      backgroundSlotCount,
       shortageCount:
-        scheduleDay?.taskSlots.filter((slot) => slot.status === "SHORTAGE")
-          .length ?? 0,
-      unfilledRequiredCount:
-        scheduleDay?.taskSlots.filter(
-          (slot) =>
-            slot.requirementLevel === "REQUIRED" &&
-            slot.assignments.length < slot.requiredStaff,
-        ).length ?? 0,
+        taskSlots.filter((slot) => slot.status === "SHORTAGE").length,
+      unfilledRequiredCount: requiredShortageCount,
+      requiredShortageCount,
+      hardRequirementCount,
+      hardRequirementMessages:
+        weekHardRequirements?.issues.slice(0, 3).map((issue) => issue.message) ??
+        [],
+      publishIssueCount: publishIssues.length,
       ptoCount: countRequestsOnDate(date, ptoRequests),
       nptoCount: countRequestsOnDate(date, nptoRequests),
+      publishStatus:
+        scheduleDay?.status === "PUBLISHED"
+          ? ("PUBLISHED" as const)
+          : scheduleDay
+            ? ("DRAFT" as const)
+            : ("NOT_GENERATED" as const),
+      ...presentation,
       canPublish: Boolean(
         scheduleDay &&
           scheduleDay.status !== "PUBLISHED" &&
@@ -1241,10 +1380,36 @@ export async function getScheduleCalendarData(anchorDate: string) {
       canUnpublish: scheduleDay?.status === "PUBLISHED",
     };
   });
+  const inMonthDays = calendarDays.filter((day) => day.inMonth);
 
   return {
     range,
     configurationWarnings,
+    monthSummary: {
+      notGenerated: inMonthDays.filter(
+        (day) =>
+          !day.isSunday &&
+          day.shiftBlockCount === 0 &&
+          day.taskSlotCount === 0,
+      ).length,
+      generatedDraft: inMonthDays.filter(
+        (day) =>
+          day.status !== "PUBLISHED" &&
+          (day.shiftBlockCount > 0 || day.taskSlotCount > 0),
+      ).length,
+      published: inMonthDays.filter(
+        (day) => day.status === "PUBLISHED",
+      ).length,
+      needsReview: inMonthDays.filter(
+        (day) => day.displayStatus === "NEEDS_REVIEW",
+      ).length,
+      hardRequirementsUnmet: inMonthDays.filter(
+        (day) => day.displayStatus === "HARD_REQUIREMENTS_UNMET",
+      ).length,
+      notScheduled: inMonthDays.filter(
+        (day) => day.displayStatus === "NOT_SCHEDULED",
+      ).length,
+    },
     weeks: chunk(calendarDays, 7),
   };
 }
@@ -1319,24 +1484,95 @@ async function getGenerationConfigurationWarnings() {
   return warnings;
 }
 
-async function getRangeWeeklyTargetSummary(dates: string[]) {
-  const weekStarts = [
-    ...new Set(dates.map((date) => clinicWeekRange(date).startDate)),
-  ].sort();
-  let underTarget = 0;
-  let overTarget = 0;
+function buildMonthGenerationWeekSummaries(input: {
+  plannedWeeks: ReturnType<typeof groupScheduleDatesByClinicWeek>;
+  beforeBoards: Map<string, Awaited<ReturnType<typeof getScheduleBoard>>>;
+  publishedDatesSkipped: string[];
+  hardRequirementWeeks: Awaited<
+    ReturnType<typeof getRangeWeeklyHardRequirementSummary>
+  >["weeks"];
+  topOffSummariesByWeekStart: Map<
+    string,
+    Awaited<ReturnType<typeof topOffBackgroundAssignmentsForRange>>
+  >;
+}) {
+  const hardRequirementsByWeekStart = new Map(
+    input.hardRequirementWeeks.map((week) => [week.range.startDate, week.summary]),
+  );
+  const publishedDatesSkipped = new Set(input.publishedDatesSkipped);
 
-  for (const weekStart of weekStarts) {
-    const week = await getScheduleWeekData(weekStart);
-    underTarget += week.weeklyHourWarnings.filter(
-      (warning) => warning.status === "BELOW_TARGET",
-    ).length;
-    overTarget += week.weeklyHourWarnings.filter(
-      (warning) => warning.status === "ABOVE_TARGET",
-    ).length;
-  }
+  return input.plannedWeeks.map((week) => {
+    const hardRequirements = hardRequirementsByWeekStart.get(week.startDate);
+    const topOffSummary = input.topOffSummariesByWeekStart.get(week.startDate);
+    const exactTopOffReasons = new Map(
+      (topOffSummary?.employeesUnderExpectedHours ?? []).map((employee) => [
+        employee.employeeId,
+        employee.reason,
+      ]),
+    );
+    const issuesByEmployeeId = new Map<string, string[]>();
 
-  return { underTarget, overTarget };
+    for (const issue of hardRequirements?.issues ?? []) {
+      if (!issue.employeeId || issue.code === "BELOW_EXPECTED_HOURS") {
+        continue;
+      }
+
+      const issues = issuesByEmployeeId.get(issue.employeeId) ?? [];
+      issues.push(issue.message);
+      issuesByEmployeeId.set(issue.employeeId, issues);
+    }
+
+    const employeesUnderTarget =
+      hardRequirements?.employeeDiagnostics
+        .filter(
+          (diagnostic) =>
+            diagnostic.workPattern.totalHours <
+            diagnostic.workPattern.expectedHours,
+        )
+        .map((diagnostic) => {
+          const blockers = issuesByEmployeeId.get(diagnostic.employeeId) ?? [];
+          const exactReason = exactTopOffReasons.get(diagnostic.employeeId);
+
+          if (exactReason && !blockers.includes(exactReason)) {
+            blockers.push(exactReason);
+          }
+
+          return {
+            employeeId: diagnostic.employeeId,
+            employeeName: diagnostic.employeeName,
+            scheduledHours: diagnostic.workPattern.totalHours,
+            targetHours: diagnostic.workPattern.expectedHours,
+            blockers,
+          };
+        }) ?? [];
+
+    return {
+      startDate: week.startDate,
+      endDate: week.endDate,
+      daysProcessed: week.dates.filter(
+        (date) => !publishedDatesSkipped.has(date),
+      ).length,
+      daysCreated: week.dates.filter(
+        (date) =>
+          !publishedDatesSkipped.has(date) && !input.beforeBoards.get(date),
+      ).length,
+      daysRegenerated: week.dates.filter(
+        (date) =>
+          !publishedDatesSkipped.has(date) && Boolean(input.beforeBoards.get(date)),
+      ).length,
+      daysSkippedPublished: week.dates.filter((date) =>
+        publishedDatesSkipped.has(date),
+      ).length,
+      employeesUnderTarget,
+      hardRequirementIssues: hardRequirements?.issues.length ?? 0,
+      bgMinimumIssues: hardRequirements?.bgMinimumIssues.length ?? 0,
+      workPatternIssues: hardRequirements?.workPatternIssues.length ?? 0,
+      saturdayIssues:
+        hardRequirements?.issues.filter(
+          (issue) => issue.code === "SATURDAY_PATTERN_UNMET",
+        ).length ?? 0,
+    } satisfies MonthGenerationWeekSummary;
+  });
 }
 
 function chunk<T>(items: T[], size: number) {
