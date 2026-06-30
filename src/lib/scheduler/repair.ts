@@ -59,6 +59,7 @@ export function tryRepairRequiredAssignment(input: {
     )
     .filter(
       (candidate) =>
+        !(candidate.taskType.isBackground && candidate.slot.protectedFromPull) &&
         candidate.assignment.date === input.targetSlot.date &&
         overlaps(
           slotStart(candidate.slot),

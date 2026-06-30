@@ -1,5 +1,6 @@
 import { selectAssignment, toExistingAssignment } from "./assignment";
 import { dateToWeekday } from "./constraints";
+import { isCanonicalBgTaskType } from "@/lib/schedule/bg-role";
 import { EMPLOYEE_BG_MINIMUM_SOURCE } from "@/lib/schedule/employee-bg-minimum";
 import { tryRepairRequiredAssignment } from "./repair";
 import type {
@@ -176,6 +177,20 @@ export function generateSchedule(input: GenerateScheduleInput) {
     }
   }
 
+  repairs.push(
+    ...repairRequiredCoverageFromMovableBackground({
+      seed: input.seed,
+      employees: input.employees,
+      rules: input.rules ?? [],
+      fairness: input.fairness,
+      assignments,
+      occupiedAssignments,
+      conflicts,
+      slotsById,
+      taskTypesById,
+    }),
+  );
+
   return {
     assignments: sortAssignments(assignments),
     conflicts,
@@ -266,6 +281,227 @@ function requirementPriority(slot: SchedulerTaskSlot) {
       return 3;
     default:
       return 0;
+  }
+}
+
+function repairRequiredCoverageFromMovableBackground(input: {
+  seed: string;
+  employees: GenerateScheduleInput["employees"];
+  rules: NonNullable<GenerateScheduleInput["rules"]>;
+  fairness: GenerateScheduleInput["fairness"];
+  assignments: ScheduleAssignment[];
+  occupiedAssignments: ExistingAssignment[];
+  conflicts: ScheduleConflict[];
+  slotsById: Map<string, SchedulerTaskSlot>;
+  taskTypesById: Map<string, SchedulerTaskType>;
+}) {
+  const repairs: ScheduleRepair[] = [];
+  const employeesById = new Map(
+    input.employees.map((employee) => [employee.id, employee]),
+  );
+
+  for (const conflict of [...input.conflicts]) {
+    const targetSlot = input.slotsById.get(conflict.slotId);
+    const targetTaskType = input.taskTypesById.get(conflict.taskTypeId);
+
+    if (
+      !targetSlot ||
+      !targetTaskType ||
+      targetSlot.requirementLevel !== "REQUIRED" ||
+      targetTaskType.isBackground
+    ) {
+      continue;
+    }
+
+    const requiredStaff = Math.max(1, targetSlot.requiredStaff ?? 1);
+    const assignedStaff = input.assignments.filter(
+      (assignment) => assignment.slotId === targetSlot.id,
+    ).length;
+    let missingStaff = requiredStaff - assignedStaff;
+
+    if (missingStaff <= 0) {
+      removeConflict(input.conflicts, conflict.slotId);
+      continue;
+    }
+
+    const movableBackgroundAssignments = input.assignments
+      .map((assignment) => {
+        const slot = input.slotsById.get(assignment.slotId);
+        const taskType = input.taskTypesById.get(assignment.taskTypeId);
+        const employee = employeesById.get(assignment.employeeId);
+
+        return slot && taskType && employee
+          ? { assignment, slot, taskType, employee }
+          : null;
+      })
+      .filter(
+        (
+          candidate,
+        ): candidate is {
+          assignment: ScheduleAssignment;
+          slot: SchedulerTaskSlot;
+          taskType: SchedulerTaskType;
+          employee: GenerateScheduleInput["employees"][number];
+        } => Boolean(candidate),
+      )
+      .filter((candidate) =>
+        canMoveBackgroundAssignmentToRequiredCoverage({
+          candidate,
+          targetSlot,
+          assignments: input.assignments,
+          taskTypesById: input.taskTypesById,
+        }),
+      )
+      .sort(compareMovableBackgroundCandidates);
+
+    for (const background of movableBackgroundAssignments) {
+      if (missingStaff <= 0) {
+        break;
+      }
+
+      const occupiedWithoutBackground = input.occupiedAssignments.filter(
+        (assignment) =>
+          !(
+            assignment.slotId === background.assignment.slotId &&
+            assignment.employeeId === background.assignment.employeeId
+          ),
+      );
+      const selection = selectAssignment({
+        seed: `${input.seed}:required-coverage-bg-repair:${targetSlot.id}:${background.assignment.slotId}`,
+        slot: targetSlot,
+        taskType: targetTaskType,
+        employees: [background.employee],
+        rules: input.rules,
+        fairness: input.fairness,
+        assignments: occupiedWithoutBackground,
+      });
+
+      if (!selection.assignment) {
+        continue;
+      }
+
+      removeAssignment(
+        input.assignments,
+        input.occupiedAssignments,
+        background.assignment,
+      );
+      input.assignments.push(selection.assignment);
+      input.occupiedAssignments.push(
+        toExistingAssignment(selection.assignment, targetSlot, targetTaskType),
+      );
+      missingStaff -= 1;
+      repairs.push({
+        targetSlotId: targetSlot.id,
+        displacedSlotId: background.slot.id,
+        strategy: "PULL_BACKGROUND",
+        employeeId: background.assignment.employeeId,
+        replacementEmployeeId: null,
+      });
+    }
+
+    if (missingStaff <= 0) {
+      removeConflict(input.conflicts, conflict.slotId);
+    }
+  }
+
+  return repairs;
+}
+
+function canMoveBackgroundAssignmentToRequiredCoverage(input: {
+  candidate: {
+    assignment: ScheduleAssignment;
+    slot: SchedulerTaskSlot;
+    taskType: SchedulerTaskType;
+    employee: GenerateScheduleInput["employees"][number];
+  };
+  targetSlot: SchedulerTaskSlot;
+  assignments: ScheduleAssignment[];
+  taskTypesById: Map<string, SchedulerTaskType>;
+}) {
+  const { assignment, slot, taskType, employee } = input.candidate;
+
+  if (assignment.source === "LOCKED" || assignment.date !== input.targetSlot.date) {
+    return false;
+  }
+
+  if (!taskType.isBackground || slot.requirementLevel === "REQUIRED") {
+    return false;
+  }
+
+  if (
+    slot.protectedFromPull ||
+    slot.source === EMPLOYEE_BG_MINIMUM_SOURCE ||
+    slot.source === "MANUAL"
+  ) {
+    return false;
+  }
+
+  if (!isCanonicalBgTaskType(taskType)) {
+    return true;
+  }
+
+  const requiredBackgroundAssignments =
+    employee.requiredBackgroundAssignments ?? 0;
+
+  if (requiredBackgroundAssignments <= 0) {
+    return true;
+  }
+
+  const currentLiteralBgCount =
+    (employee.scheduledBackgroundAssignmentsThisWeek ?? 0) +
+    input.assignments.filter((currentAssignment) => {
+      if (currentAssignment.employeeId !== employee.id) {
+        return false;
+      }
+
+      const currentTaskType = input.taskTypesById.get(
+        currentAssignment.taskTypeId,
+      );
+
+      return currentTaskType ? isCanonicalBgTaskType(currentTaskType) : false;
+    }).length;
+
+  return currentLiteralBgCount > requiredBackgroundAssignments;
+}
+
+function compareMovableBackgroundCandidates(
+  left: {
+    assignment: ScheduleAssignment;
+    slot: SchedulerTaskSlot;
+    taskType: SchedulerTaskType;
+  },
+  right: {
+    assignment: ScheduleAssignment;
+    slot: SchedulerTaskSlot;
+    taskType: SchedulerTaskType;
+  },
+) {
+  return (
+    backgroundMovePriority(left.slot) - backgroundMovePriority(right.slot) ||
+    (left.slot.paidHours ?? 0) - (right.slot.paidHours ?? 0) ||
+    left.slot.date.localeCompare(right.slot.date) ||
+    (left.slot.startMinute ?? 0) - (right.slot.startMinute ?? 0) ||
+    left.slot.id.localeCompare(right.slot.id)
+  );
+}
+
+function backgroundMovePriority(slot: SchedulerTaskSlot) {
+  if (slot.source?.includes("TOP_OFF")) {
+    return 0;
+  }
+
+  if (slot.source === "BACKGROUND_DEFINITION") {
+    return 1;
+  }
+
+  return 2;
+}
+
+function removeConflict(conflicts: ScheduleConflict[], slotId: string) {
+  const conflictIndex = conflicts.findIndex((conflict) => conflict.slotId === slotId);
+
+  if (conflictIndex >= 0) {
+    conflicts.splice(conflictIndex, 1);
   }
 }
 

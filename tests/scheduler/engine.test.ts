@@ -4672,6 +4672,238 @@ describe("Current Easton hard requirements", () => {
     );
   });
 
+  it("pulls movable optional BG into required clinic coverage before leaving a shortage", () => {
+    const result = generateSchedule({
+      seed: "clinic-before-extra-bg",
+      employees: [
+        {
+          id: "pcp-bg-1",
+          fullName: "PCP and BG 1",
+          skillIds: ["pcp"],
+          availability: [{ weekday: 1, startMinute: 0, endMinute: 24 * 60 }],
+          targetWeeklyHours: 4,
+          julyWeekSkeleton: {
+            employeeId: "pcp-bg-1",
+            groupLabel: "Test",
+            targetHours: 4,
+            allowedShiftBlockIds: ["mon-am", "mon-pm"],
+            requiredShiftBlockIds: [],
+            forbiddenShiftBlockIds: [],
+            requiredSaturdayShiftBlockId: null,
+            requiredExtraHourWeekdays: [],
+            plannedDays: [
+              {
+                date: "2026-07-06",
+                kind: "NORMAL_FULL_DAY",
+                allowedShiftBlockIds: ["mon-am", "mon-pm"],
+                requiredShiftBlockIds: [],
+              },
+            ],
+          },
+        },
+        {
+          id: "pcp-bg-2",
+          fullName: "PCP and BG 2",
+          skillIds: ["pcp"],
+          availability: [{ weekday: 1, startMinute: 0, endMinute: 24 * 60 }],
+          targetWeeklyHours: 4,
+          julyWeekSkeleton: {
+            employeeId: "pcp-bg-2",
+            groupLabel: "Test",
+            targetHours: 4,
+            allowedShiftBlockIds: ["mon-am", "mon-pm"],
+            requiredShiftBlockIds: [],
+            forbiddenShiftBlockIds: [],
+            requiredSaturdayShiftBlockId: null,
+            requiredExtraHourWeekdays: [],
+            plannedDays: [
+              {
+                date: "2026-07-06",
+                kind: "NORMAL_FULL_DAY",
+                allowedShiftBlockIds: ["mon-am", "mon-pm"],
+                requiredShiftBlockIds: [],
+              },
+            ],
+          },
+        },
+      ],
+      taskTypes: [
+        {
+          id: "background",
+          code: "BACKGROUND",
+          name: "Background",
+          requiredSkillIds: [],
+          isBackground: true,
+        },
+        {
+          id: "pcp",
+          code: "PCP",
+          name: "PCP",
+          requiredSkillIds: ["pcp"],
+          isPatientFacing: true,
+          isClinical: true,
+        },
+      ],
+      slots: [
+        {
+          id: "required-pcp",
+          date: "2026-07-06",
+          shiftBlockId: "mon-am",
+          shiftCategory: "AM",
+          paidHours: 4,
+          taskTypeId: "pcp",
+          slotIndex: 1,
+          requiredStaff: 2,
+          startMinute: 8 * 60,
+          endMinute: 12 * 60,
+          requirementLevel: "REQUIRED",
+        },
+        {
+          id: "optional-bg-1",
+          date: "2026-07-06",
+          shiftBlockId: "mon-pm",
+          shiftCategory: "PM",
+          paidHours: 4,
+          taskTypeId: "background",
+          slotIndex: 1,
+          source: "GENERATED_BACKGROUND_TOP_OFF",
+          startMinute: 13 * 60,
+          endMinute: 17 * 60,
+          requirementLevel: "OPTIONAL",
+          reservedEmployeeIds: ["pcp-bg-1"],
+          protectedFromPull: false,
+        },
+        {
+          id: "optional-bg-2",
+          date: "2026-07-06",
+          shiftBlockId: "mon-pm",
+          shiftCategory: "PM",
+          paidHours: 4,
+          taskTypeId: "background",
+          slotIndex: 2,
+          source: "GENERATED_BACKGROUND_TOP_OFF",
+          startMinute: 13 * 60,
+          endMinute: 17 * 60,
+          requirementLevel: "OPTIONAL",
+          reservedEmployeeIds: ["pcp-bg-2"],
+          protectedFromPull: false,
+        },
+      ],
+    });
+
+    assert.equal(result.conflicts.length, 0);
+    assert.deepEqual(
+      result.assignments
+        .filter((assignment) => assignment.slotId === "required-pcp")
+        .map((assignment) => assignment.employeeId)
+        .sort(),
+      ["pcp-bg-1", "pcp-bg-2"],
+    );
+    assert.equal(
+      result.assignments.some((assignment) =>
+        assignment.slotId.startsWith("optional-bg"),
+      ),
+      false,
+    );
+    assert.equal(
+      result.repairs.filter((repair) => repair.strategy === "PULL_BACKGROUND")
+        .length,
+      2,
+    );
+  });
+
+  it("does not pull literal BG when that would drop the employee below their BG minimum", () => {
+    const result = generateSchedule({
+      seed: "preserve-required-literal-bg",
+      employees: [
+        {
+          id: "pcp-bg",
+          fullName: "PCP and BG",
+          skillIds: ["pcp"],
+          availability: [{ weekday: 1, startMinute: 0, endMinute: 24 * 60 }],
+          targetWeeklyHours: 4,
+          requiredBackgroundAssignments: 1,
+          julyWeekSkeleton: {
+            employeeId: "pcp-bg",
+            groupLabel: "Test",
+            targetHours: 4,
+            allowedShiftBlockIds: ["mon-am", "mon-pm"],
+            requiredShiftBlockIds: [],
+            forbiddenShiftBlockIds: [],
+            requiredSaturdayShiftBlockId: null,
+            requiredExtraHourWeekdays: [],
+            plannedDays: [
+              {
+                date: "2026-07-06",
+                kind: "NORMAL_FULL_DAY",
+                allowedShiftBlockIds: ["mon-am", "mon-pm"],
+                requiredShiftBlockIds: [],
+              },
+            ],
+          },
+        },
+      ],
+      taskTypes: [
+        {
+          id: "background",
+          code: "BACKGROUND",
+          name: "Background",
+          requiredSkillIds: [],
+          isBackground: true,
+        },
+        {
+          id: "pcp",
+          code: "PCP",
+          name: "PCP",
+          requiredSkillIds: ["pcp"],
+          isPatientFacing: true,
+          isClinical: true,
+        },
+      ],
+      slots: [
+        {
+          id: "required-pcp",
+          date: "2026-07-06",
+          shiftBlockId: "mon-am",
+          shiftCategory: "AM",
+          paidHours: 4,
+          taskTypeId: "pcp",
+          slotIndex: 1,
+          startMinute: 8 * 60,
+          endMinute: 12 * 60,
+          requirementLevel: "REQUIRED",
+        },
+        {
+          id: "literal-bg",
+          date: "2026-07-06",
+          shiftBlockId: "mon-pm",
+          shiftCategory: "PM",
+          paidHours: 4,
+          taskTypeId: "background",
+          slotIndex: 1,
+          source: "BACKGROUND_DEFINITION",
+          startMinute: 13 * 60,
+          endMinute: 17 * 60,
+          requirementLevel: "OPTIONAL",
+          reservedEmployeeIds: ["pcp-bg"],
+          protectedFromPull: false,
+        },
+      ],
+    });
+
+    assert.equal(
+      result.assignments.find((assignment) => assignment.slotId === "literal-bg")
+        ?.employeeId,
+      "pcp-bg",
+    );
+    assert.equal(
+      result.conflicts.find((conflict) => conflict.slotId === "required-pcp")
+        ?.reason,
+      "No compatible available employee",
+    );
+    assert.equal(result.repairs.length, 0);
+  });
+
   it("can reserve five literal BG minimum slots while filling exactly 40 hours", () => {
     const dates = [
       "2026-07-06",

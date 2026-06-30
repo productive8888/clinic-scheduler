@@ -23,7 +23,11 @@ import {
   type SchedulerTaskSlot,
   type SchedulerTaskType,
 } from "@/lib/scheduler";
-import { getConstraintRejections, overlaps } from "@/lib/scheduler/constraints";
+import {
+  getConstraintRejections,
+  hasRequiredSkills,
+  overlaps,
+} from "@/lib/scheduler/constraints";
 import { isShortNoticeScheduleChange } from "@/lib/schedule/short-notice";
 import { buildJulySaturdayReservationPlan } from "@/lib/schedule/july-saturday-reservations";
 import { buildJulyWeekSkeletons } from "@/lib/schedule/july-week-planner";
@@ -1761,26 +1765,40 @@ async function reserveEmployeeBackgroundMinimumSlotsForDate(input: {
 
   for (const entry of employeesWithMissingBg) {
     let missing = entry.missing;
+    let remainingReservationsToday = Math.min(
+      missing,
+      maxBackgroundMinimumReservationsForDate({
+        employee: entry.employee,
+        date: input.date,
+        missing,
+      }),
+    );
 
-    while (missing > 0) {
+    while (remainingReservationsToday > 0) {
       const candidate = selectBackgroundMinimumShiftBlock({
         employee: entry.employee,
         date: input.date,
         shiftBlocks: input.scheduleDay.shiftBlocks,
         backgroundTaskType: input.backgroundTaskType,
+        slots: input.slots,
+        taskTypes: input.taskTypes,
         assignments: simulatedAssignments,
         reusableBgMinimumSlotsByShiftBlock,
         usedReusableSlotIds,
       });
 
       if (!candidate) {
-        unresolved.push({
-          employeeId: entry.employee.id,
-          employeeName: entry.employee.fullName,
-          required: entry.required,
-          assigned: entry.required - missing,
-          reason: "No legal weekday background slot remains inside the Current Easton skeleton.",
-        });
+        if (
+          remainingBackgroundMinimumReservationDays(entry.employee, input.date) <= 1
+        ) {
+          unresolved.push({
+            employeeId: entry.employee.id,
+            employeeName: entry.employee.fullName,
+            required: entry.required,
+            assigned: entry.required - missing,
+            reason: "No legal weekday background slot remains inside the Current Easton skeleton.",
+          });
+        }
         break;
       }
 
@@ -1824,6 +1842,7 @@ async function reserveEmployeeBackgroundMinimumSlotsForDate(input: {
         shiftBlockId: reservedSlot.shiftBlockId ?? candidate.shiftBlock.id,
       });
       missing -= 1;
+      remainingReservationsToday -= 1;
     }
   }
 
@@ -1838,6 +1857,40 @@ async function reserveEmployeeBackgroundMinimumSlotsForDate(input: {
       protectedExistingBgMinimumSlotIds,
     }),
   };
+}
+
+function maxBackgroundMinimumReservationsForDate(input: {
+  employee: SchedulerEmployee;
+  date: string;
+  missing: number;
+}) {
+  const remainingDays = remainingBackgroundMinimumReservationDays(
+    input.employee,
+    input.date,
+  );
+
+  return Math.max(1, Math.ceil(input.missing / remainingDays));
+}
+
+function remainingBackgroundMinimumReservationDays(
+  employee: SchedulerEmployee,
+  date: string,
+) {
+  if (!employee.julyWeekSkeleton) {
+    return 1;
+  }
+
+  const remainingDays = employee.julyWeekSkeleton.plannedDays.filter((day) => {
+    if (day.date < date || day.kind === "OFF") {
+      return false;
+    }
+
+    const weekday = parseIsoDate(day.date).getUTCDay();
+
+    return weekday > 0 && weekday < 6 && day.allowedShiftBlockIds.length > 0;
+  }).length;
+
+  return Math.max(1, remainingDays);
 }
 
 function requiredBackgroundAssignmentsForEmployee(employee: SchedulerEmployee) {
@@ -1878,6 +1931,8 @@ function selectBackgroundMinimumShiftBlock(input: {
   date: string;
   shiftBlocks: ScheduleBoardShiftBlock[];
   backgroundTaskType: SchedulerTaskType;
+  slots: SchedulerTaskSlot[];
+  taskTypes: Map<string, SchedulerTaskType>;
   assignments: ExistingAssignment[];
   reusableBgMinimumSlotsByShiftBlock: Map<string, SchedulerTaskSlot[]>;
   usedReusableSlotIds: Set<string>;
@@ -1891,6 +1946,18 @@ function selectBackgroundMinimumShiftBlock(input: {
     .filter((block) => isWeekdayBackgroundMinimumShiftBlock(input.employee, block))
     .sort(
       (left, right) =>
+        requiredClinicDemandForEmployeeOnShiftBlock({
+          employee: input.employee,
+          shiftBlockId: left.id,
+          slots: input.slots,
+          taskTypes: input.taskTypes,
+        }) -
+          requiredClinicDemandForEmployeeOnShiftBlock({
+            employee: input.employee,
+            shiftBlockId: right.id,
+            slots: input.slots,
+            taskTypes: input.taskTypes,
+          }) ||
         Number(requiredShiftBlockIds.has(right.id)) -
           Number(requiredShiftBlockIds.has(left.id)) ||
         left.startMinute - right.startMinute ||
@@ -1927,6 +1994,31 @@ function selectBackgroundMinimumShiftBlock(input: {
   }
 
   return null;
+}
+
+function requiredClinicDemandForEmployeeOnShiftBlock(input: {
+  employee: SchedulerEmployee;
+  shiftBlockId: string;
+  slots: SchedulerTaskSlot[];
+  taskTypes: Map<string, SchedulerTaskType>;
+}) {
+  return input.slots
+    .filter(
+      (slot) =>
+        slot.shiftBlockId === input.shiftBlockId &&
+        slot.requirementLevel === "REQUIRED",
+    )
+    .reduce((count, slot) => {
+      const taskType = input.taskTypes.get(slot.taskTypeId);
+
+      if (!taskType || taskType.isBackground) {
+        return count;
+      }
+
+      return hasRequiredSkills(input.employee, taskType, slot)
+        ? count + Math.max(1, slot.requiredStaff ?? 1)
+        : count;
+    }, 0);
 }
 
 function isWeekdayBackgroundMinimumShiftBlock(
