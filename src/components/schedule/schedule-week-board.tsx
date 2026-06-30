@@ -479,6 +479,10 @@ function StaffSummaryTable({
                         ? ` missing ${row.missingBackgroundAssignments}`
                         : ""}
                     </strong>
+                    <span>BG inside target</span>
+                    <strong className={bgInsideTargetTone(row.bgMinimumInsideTargetStatus)}>
+                      {bgInsideTargetLabel(row.bgMinimumInsideTargetStatus)}
+                    </strong>
                     <span>All background-class</span>
                     <strong>{row.backgroundAssignmentCount}</strong>
                     <span>Required extra</span>
@@ -701,6 +705,32 @@ function patientRangeLabel(status: PatientFairnessRangeStatus) {
   }
 
   return "OK";
+}
+
+function bgInsideTargetTone(status: string) {
+  switch (status) {
+    case "MISSING_BG":
+      return "text-rose-700";
+    case "MET_OVER_TARGET":
+      return "text-amber-700";
+    case "MET_INSIDE_TARGET":
+      return "text-emerald-700";
+    default:
+      return "text-slate-500";
+  }
+}
+
+function bgInsideTargetLabel(status: string) {
+  switch (status) {
+    case "MISSING_BG":
+      return "Missing inside target";
+    case "MET_OVER_TARGET":
+      return "Met but over target";
+    case "MET_INSIDE_TARGET":
+      return "Met inside target";
+    default:
+      return "Not required";
+  }
 }
 
 function formatLabel(value: string) {

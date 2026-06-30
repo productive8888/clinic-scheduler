@@ -418,7 +418,13 @@ export async function generateScheduleRange(input: {
     summary.backgroundTopOffIncompleteEmployees +=
       topOffSummary.employeesMissingBackground.length +
       topOffSummary.employeesUnderExpectedHours.length;
-    summary.configurationWarnings.push(...topOffSummary.configurationWarnings);
+    summary.configurationWarnings.push(
+      ...topOffSummary.configurationWarnings,
+      ...topOffSummary.employeesMissingBackground.map(
+        (employee) =>
+          `${employee.employeeName} remains ${employee.assigned}/${employee.required} literal BG inside their weekly target: ${employee.reason}`,
+      ),
+    );
 
     const patientFairnessSummary = await repairPatientFairnessForRange({
       startDate: week.startDate,
@@ -1257,6 +1263,18 @@ export async function getScheduleWeekData(anchorDate: string) {
         target?.requiredBackgroundAssignments ?? 0,
       missingBackgroundAssignments:
         diagnostic?.missingBackgroundAssignments ?? 0,
+      bgMinimumSatisfiedInsideTargetHours:
+        (target?.requiredBackgroundAssignments ?? 0) === 0 ||
+        ((diagnostic?.missingBackgroundAssignments ?? 0) === 0 &&
+          row.totalHours <= row.targetHours),
+      bgMinimumInsideTargetStatus:
+        (target?.requiredBackgroundAssignments ?? 0) === 0
+          ? ("NOT_REQUIRED" as const)
+          : (diagnostic?.missingBackgroundAssignments ?? 0) > 0
+            ? ("MISSING_BG" as const)
+            : row.totalHours > row.targetHours
+              ? ("MET_OVER_TARGET" as const)
+              : ("MET_INSIDE_TARGET" as const),
       extraHourWeekdays: target?.extraHourWeekdays ?? [],
       satisfiedExtraHourWeekdays:
         diagnostic?.workPattern.satisfiedExtraHourWeekdays ?? [],
@@ -1641,12 +1659,18 @@ function buildMonthGenerationWeekSummaries(input: {
     ).length;
     const validationStatus =
       skippedPublishedCount > 0 ? ("PARTIAL" as const) : ("FULL" as const);
-    const exactTopOffReasons = new Map(
-      (topOffSummary?.employeesUnderExpectedHours ?? []).map((employee) => [
+    const exactTopOffReasons = new Map<string, string>();
+
+    for (const employee of topOffSummary?.employeesUnderExpectedHours ?? []) {
+      exactTopOffReasons.set(employee.employeeId, employee.reason);
+    }
+
+    for (const employee of topOffSummary?.employeesMissingBackground ?? []) {
+      exactTopOffReasons.set(
         employee.employeeId,
-        employee.reason,
-      ]),
-    );
+        `${employee.employeeName} remains ${employee.assigned}/${employee.required} literal BG inside their weekly target: ${employee.reason}`,
+      );
+    }
     const issuesByEmployeeId = new Map<string, string[]>();
 
     for (const issue of hardRequirements?.issues ?? []) {

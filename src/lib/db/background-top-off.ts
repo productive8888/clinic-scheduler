@@ -110,8 +110,10 @@ export type BackgroundTopOffSummary = {
   roleMixSwapDetails: Array<{
     missingEmployeeId: string;
     missingEmployeeName: string;
-    excessEmployeeId: string;
-    excessEmployeeName: string;
+    excessEmployeeId?: string;
+    excessEmployeeName?: string;
+    replacementEmployeeId?: string;
+    replacementEmployeeName?: string;
     movedRoleCode: string;
     backgroundShiftName: string | null | undefined;
     displacedShiftName: string | null | undefined;
@@ -500,9 +502,30 @@ export async function topOffBackgroundAssignmentsForRange(input: {
           progress = true;
           continue;
         }
+
+        const backfill = await convertRequiredCoverageAssignmentToBackgroundWithBackfill({
+          missingEmployee: employee,
+          employees,
+          states,
+          hasMissingWorkPatternByEmployeeId,
+          taskSlots,
+          shiftBlocks,
+          backgroundTask,
+          allAssignments,
+          actorEmployeeId: input.actorEmployeeId,
+        });
+
+        if (backfill.converted) {
+          summary.slotsCreated += backfill.slotCreated ? 1 : 0;
+          summary.assignmentsCreated += 1;
+          summary.roleMixSwapsMade += 1;
+          summary.roleMixSwapDetails.push(backfill.detail);
+          progress = true;
+          continue;
+        }
       }
 
-      const existingSlot = findExistingBackgroundSlot({
+      const existingSlot = selectExistingBackgroundTopOffSlot({
         employee,
         taskSlots,
         allAssignments,
@@ -584,6 +607,8 @@ export async function topOffBackgroundAssignmentsForRange(input: {
     employees,
     states,
     taskSlots,
+    shiftBlocks,
+    backgroundTask,
     allAssignments,
     hasMissingWorkPatternByEmployeeId,
   });
@@ -592,9 +617,12 @@ export async function topOffBackgroundAssignmentsForRange(input: {
     const state = states.get(employee.id)!;
     const blockerReason = explainTopOffBlocker({
       employee,
+      employees,
+      states,
       state,
       hasMissingWorkPattern:
         hasMissingWorkPatternByEmployeeId.get(employee.id) ?? false,
+      hasMissingWorkPatternByEmployeeId,
       taskSlots,
       shiftBlocks,
       backgroundTask,
@@ -747,7 +775,7 @@ function employeesNeedingTopOff(
     });
 }
 
-function findExistingBackgroundSlot(input: {
+export function selectExistingBackgroundTopOffSlot(input: {
   employee: TopOffEmployee;
   taskSlots: TopOffSlot[];
   allAssignments: ExistingAssignment[];
@@ -1051,6 +1079,169 @@ async function swapLiteralBackgroundFromExcessEmployee(input: {
   };
 }
 
+async function convertRequiredCoverageAssignmentToBackgroundWithBackfill(input: {
+  missingEmployee: TopOffEmployee;
+  employees: TopOffEmployee[];
+  states: Map<string, TopOffEmployeeState>;
+  hasMissingWorkPatternByEmployeeId?: Map<string, boolean>;
+  taskSlots: TopOffSlot[];
+  shiftBlocks: TopOffShiftBlock[];
+  backgroundTask: TopOffTaskType;
+  allAssignments: ExistingAssignment[];
+  actorEmployeeId?: string | null;
+}) {
+  const candidate = selectBackgroundMinimumBackfillCandidate(input);
+
+  if (!candidate) {
+    return { converted: false as const, slotCreated: false };
+  }
+
+  let backgroundSlot = candidate.backgroundSlot;
+  let slotCreated = false;
+
+  if (!backgroundSlot) {
+    const created = await createTopOffSlot({
+      shiftBlock: candidate.shiftBlock,
+      taskTypeId: input.backgroundTask.id,
+    });
+    backgroundSlot = {
+      id: created.id,
+      date: candidate.shiftBlock.date,
+      scheduleDayId: candidate.shiftBlock.scheduleDayId,
+      shiftBlockId: candidate.shiftBlock.id,
+      shiftTemplateId: candidate.shiftBlock.shiftTemplateId,
+      shiftCategory: candidate.shiftBlock.shiftCategory,
+      shiftName: candidate.shiftBlock.name,
+      paidHours: candidate.shiftBlock.paidHours,
+      taskTypeId: input.backgroundTask.id,
+      slotIndex: created.slotIndex,
+      requirementLevel: "OPTIONAL",
+      startMinute: candidate.shiftBlock.startMinute,
+      endMinute: candidate.shiftBlock.endMinute,
+      minStaff: 0,
+      requiredStaff: 1,
+      requiredSkillIds: [],
+      eligibleEmployeeIds: [],
+      canBePulledForClinic: true,
+      protectedFromPull: false,
+      taskType: input.backgroundTask,
+      source: GENERATED_BACKGROUND_TOP_OFF_SOURCE,
+      currentAssignmentCount: 0,
+      assignments: [],
+    };
+    input.taskSlots.push(backgroundSlot);
+    slotCreated = true;
+  }
+
+  const [backgroundAssignment, replacementAssignment] = await getDb().$transaction(
+    async (tx) => {
+      await tx.assignment.update({
+        where: { id: candidate.missingAssignment.id },
+        data: {
+          status: AssignmentStatus.REMOVED,
+          removedAt: new Date(),
+        },
+      });
+
+      const createdBackgroundAssignment = await tx.assignment.create({
+        data: {
+          taskSlotId: backgroundSlot.id,
+          employeeId: input.missingEmployee.id,
+          source: AssignmentSource.GENERATED,
+          locked: false,
+          assignedByEmployeeId: input.actorEmployeeId ?? undefined,
+          notes:
+            "Generated by converting covered work to literal BG while preserving required coverage.",
+        },
+      });
+
+      const createdReplacementAssignment = await tx.assignment.create({
+        data: {
+          taskSlotId: candidate.sourceSlot.id,
+          employeeId: candidate.replacementEmployee.id,
+          source: AssignmentSource.GENERATED,
+          locked: false,
+          assignedByEmployeeId: input.actorEmployeeId ?? undefined,
+          notes:
+            "Generated backfill for work displaced by weekly literal BG repair.",
+        },
+      });
+
+      await tx.taskSlot.update({
+        where: { id: candidate.sourceSlot.id },
+        data: {
+          status: TaskSlotStatus.FILLED,
+          notes:
+            "Generated assignment backfilled coverage while another employee moved to literal BG.",
+        },
+      });
+
+      await tx.taskSlot.update({
+        where: { id: backgroundSlot.id },
+        data: {
+          status: TaskSlotStatus.FILLED,
+          notes: null,
+        },
+      });
+
+      return [createdBackgroundAssignment, createdReplacementAssignment] as const;
+    },
+  );
+
+  candidate.sourceSlot.assignments = candidate.sourceSlot.assignments
+    .filter((assignment) => assignment.id !== candidate.missingAssignment.id)
+    .concat({
+      id: replacementAssignment.id,
+      employeeId: candidate.replacementEmployee.id,
+      locked: false,
+      source: AssignmentSource.GENERATED,
+    });
+  backgroundSlot.currentAssignmentCount += 1;
+  backgroundSlot.assignments.push({
+    id: backgroundAssignment.id,
+    employeeId: input.missingEmployee.id,
+    locked: false,
+    source: AssignmentSource.GENERATED,
+  });
+  removeExistingAssignment(input.allAssignments, {
+    employeeId: input.missingEmployee.id,
+    slotId: candidate.sourceSlot.id,
+  });
+  input.allAssignments.push(
+    toExistingAssignmentForSlot(backgroundSlot, input.missingEmployee.id, false),
+    toExistingAssignmentForSlot(
+      candidate.sourceSlot,
+      candidate.replacementEmployee.id,
+      false,
+    ),
+  );
+  input.states.get(input.missingEmployee.id)!.backgroundAssignments += 1;
+  const replacementState = input.states.get(candidate.replacementEmployee.id);
+
+  if (replacementState) {
+    const shiftKey = shiftKeyForSlot(candidate.sourceSlot);
+
+    if (!replacementState.shiftKeys.has(shiftKey)) {
+      replacementState.shiftKeys.add(shiftKey);
+      replacementState.hours += candidate.sourceSlot.paidHours ?? 0;
+    }
+  }
+
+  return {
+    converted: true as const,
+    slotCreated,
+    detail: {
+      missingEmployeeId: input.missingEmployee.id,
+      missingEmployeeName: input.missingEmployee.fullName,
+      replacementEmployeeId: candidate.replacementEmployee.id,
+      replacementEmployeeName: candidate.replacementEmployee.fullName,
+      movedRoleCode: candidate.sourceSlot.taskType.code,
+      backgroundShiftName: backgroundSlot.shiftName,
+      displacedShiftName: candidate.sourceSlot.shiftName,
+    },
+  };
+}
+
 export function selectLiteralBgSwapCandidate(input: {
   missingEmployee: TopOffEmployee;
   employees: TopOffEmployee[];
@@ -1138,6 +1329,150 @@ export function selectLiteralBgSwapCandidate(input: {
       });
     })
     .sort(compareLiteralBgSwapCandidates);
+
+  return candidates[0] ?? null;
+}
+
+export function selectBackgroundMinimumBackfillCandidate(input: {
+  missingEmployee: TopOffEmployee;
+  employees: TopOffEmployee[];
+  states: Map<string, TopOffEmployeeState>;
+  hasMissingWorkPatternByEmployeeId?: Map<string, boolean>;
+  taskSlots: TopOffSlot[];
+  shiftBlocks: TopOffShiftBlock[];
+  backgroundTask: TopOffTaskType;
+  allAssignments: ExistingAssignment[];
+}) {
+  const missingState = input.states.get(input.missingEmployee.id);
+
+  if (
+    !missingState ||
+    missingState.backgroundAssignments >=
+      input.missingEmployee.requiredBackgroundAssignments ||
+    missingState.hours < input.missingEmployee.expectedHours ||
+    input.hasMissingWorkPatternByEmployeeId?.get(input.missingEmployee.id)
+  ) {
+    return null;
+  }
+
+  const candidates = input.taskSlots
+    .flatMap((sourceSlot) => {
+      const missingAssignment = sourceSlot.assignments.find(
+        (assignment) => assignment.employeeId === input.missingEmployee.id,
+      );
+
+      if (
+        !missingAssignment ||
+        !canUseSourceSlotForBackfilledBgConversion(sourceSlot, missingAssignment)
+      ) {
+        return [];
+      }
+
+      const shiftBlock = input.shiftBlocks.find(
+        (block) => block.id === sourceSlot.shiftBlockId,
+      );
+
+      if (!shiftBlock) {
+        return [];
+      }
+
+      const baseAssignments = withoutExistingAssignment(input.allAssignments, {
+        employeeId: input.missingEmployee.id,
+        slotId: sourceSlot.id,
+      });
+      const backgroundSlot =
+        findOpenBackgroundSlotOnShift({
+          sourceSlot,
+          taskSlots: input.taskSlots,
+        }) ?? null;
+      const candidateBackgroundSlot =
+        backgroundSlot ?? slotForTopOffExplanation(input.backgroundTask, shiftBlock);
+      const missingRejections = getConstraintRejections(
+        input.missingEmployee,
+        input.backgroundTask,
+        candidateBackgroundSlot,
+        baseAssignments,
+      );
+
+      if (missingRejections.length > 0) {
+        return [];
+      }
+
+      const missingIntoBg = toExistingAssignmentForSlot(
+        candidateBackgroundSlot,
+        input.missingEmployee.id,
+        missingAssignment.locked,
+      );
+
+      return input.employees.flatMap((replacementEmployee) => {
+        if (
+          replacementEmployee.id === input.missingEmployee.id ||
+          input.hasMissingWorkPatternByEmployeeId?.get(replacementEmployee.id)
+        ) {
+          return [];
+        }
+
+        const replacementState = input.states.get(replacementEmployee.id);
+
+        if (!replacementState) {
+          return [];
+        }
+
+        const wouldAddHours = replacementState.shiftKeys.has(
+          shiftKeyForSlot(sourceSlot),
+        )
+          ? 0
+          : sourceSlot.paidHours ?? 0;
+
+        if (replacementState.hours + wouldAddHours > replacementEmployee.expectedHours) {
+          return [];
+        }
+
+        const replacementRejections = getConstraintRejections(
+          replacementEmployee,
+          sourceSlot.taskType,
+          sourceSlot,
+          [...baseAssignments, missingIntoBg],
+        );
+
+        if (replacementRejections.length > 0) {
+          return [];
+        }
+
+        const repairedAssignments = [
+          ...baseAssignments,
+          missingIntoBg,
+          toExistingAssignmentForSlot(sourceSlot, replacementEmployee.id, false),
+        ];
+        const missingPattern = validateEmployeeWeekPattern({
+          employee: input.missingEmployee,
+          assignments: toWorkPatternAssignments(
+            repairedAssignments.filter(
+              (assignment) => assignment.employeeId === input.missingEmployee.id,
+            ),
+          ),
+        });
+
+        if (
+          !missingPattern.hasRequiredSaturday ||
+          missingPattern.missingExtraHourWeekdays.length > 0
+        ) {
+          return [];
+        }
+
+        return [
+          {
+            missingEmployee: input.missingEmployee,
+            missingAssignment,
+            replacementEmployee,
+            sourceSlot,
+            shiftBlock,
+            backgroundSlot,
+          },
+        ];
+      });
+    })
+    .sort(compareBackfillCandidates);
 
   return candidates[0] ?? null;
 }
@@ -1256,6 +1591,8 @@ export function buildLiteralBgRoleMixDiagnostics(input: {
   employees: TopOffEmployee[];
   states: Map<string, TopOffEmployeeState>;
   taskSlots: TopOffSlot[];
+  shiftBlocks?: TopOffShiftBlock[];
+  backgroundTask?: TopOffTaskType;
   allAssignments: ExistingAssignment[];
   hasMissingWorkPatternByEmployeeId?: Map<string, boolean>;
 }) {
@@ -1279,6 +1616,14 @@ export function buildLiteralBgRoleMixDiagnostics(input: {
       const literalBgRequired = targetRoleCounts.BACKGROUND ?? 0;
       const missing = Math.max(0, literalBgRequired - literalBgAssigned);
       const excess = Math.max(0, literalBgAssigned - literalBgRequired);
+      const convertibleAssignments =
+        missing && state
+          ? listOwnLiteralBgConversionCandidates({
+              employee,
+              taskSlots: input.taskSlots,
+              allAssignments: input.allAssignments,
+            })
+          : [];
       const swap = missing
         ? selectLiteralBgSwapCandidate({
             missingEmployee: employee,
@@ -1290,6 +1635,20 @@ export function buildLiteralBgRoleMixDiagnostics(input: {
             allAssignments: input.allAssignments,
           })
         : null;
+      const backfill =
+        missing && input.shiftBlocks && input.backgroundTask
+          ? selectBackgroundMinimumBackfillCandidate({
+              missingEmployee: employee,
+              employees: input.employees,
+              states: input.states,
+              hasMissingWorkPatternByEmployeeId:
+                input.hasMissingWorkPatternByEmployeeId,
+              taskSlots: input.taskSlots,
+              shiftBlocks: input.shiftBlocks,
+              backgroundTask: input.backgroundTask,
+              allAssignments: input.allAssignments,
+            })
+          : null;
 
       return {
         employeeId: employee.id,
@@ -1300,24 +1659,23 @@ export function buildLiteralBgRoleMixDiagnostics(input: {
         literalBgAssigned,
         literalBgMissing: missing,
         literalBgExcess: excess,
-        convertibleAssignments:
-          missing && state
-            ? listOwnLiteralBgConversionCandidates({
-                employee,
-                taskSlots: input.taskSlots,
-                allAssignments: input.allAssignments,
-              })
-            : [],
+        convertibleAssignments,
         swapConclusion: missing
-          ? swap
+          ? convertibleAssignments.length > 0
+            ? `Feasible direct conversion found: ${convertibleAssignments[0].taskTypeCode} -> literal BG.`
+            : backfill
+              ? `Feasible required-coverage backfill found with ${backfill.replacementEmployee.fullName}: ${backfill.sourceSlot.taskType.code} -> literal BG.`
+              : swap
             ? `Feasible swap found with ${swap.excessEmployee.fullName}: ${swap.sourceSlot.taskType.code} <-> literal BG.`
-            : `Impossible because ${explainLiteralBgSwapBlockers({
-                missingEmployee: employee,
+            : `Impossible because ${literalBgDiagnosticBlockers({
+                employee,
                 employees: input.employees,
                 states: input.states,
                 hasMissingWorkPatternByEmployeeId:
                   input.hasMissingWorkPatternByEmployeeId,
                 taskSlots: input.taskSlots,
+                shiftBlocks: input.shiftBlocks,
+                backgroundTask: input.backgroundTask,
                 allAssignments: input.allAssignments,
               })}`
           : excess > 0
@@ -1331,6 +1689,54 @@ export function buildLiteralBgRoleMixDiagnostics(input: {
     );
 }
 
+function literalBgDiagnosticBlockers(input: {
+  employee: TopOffEmployee;
+  employees: TopOffEmployee[];
+  states: Map<string, TopOffEmployeeState>;
+  hasMissingWorkPatternByEmployeeId?: Map<string, boolean>;
+  taskSlots: TopOffSlot[];
+  shiftBlocks?: TopOffShiftBlock[];
+  backgroundTask?: TopOffTaskType;
+  allAssignments: ExistingAssignment[];
+}) {
+  const blockers = [
+    `two-person swap: ${explainLiteralBgSwapBlockers({
+      missingEmployee: input.employee,
+      employees: input.employees,
+      states: input.states,
+      hasMissingWorkPatternByEmployeeId: input.hasMissingWorkPatternByEmployeeId,
+      taskSlots: input.taskSlots,
+      allAssignments: input.allAssignments,
+    })}`,
+  ];
+
+  if (input.shiftBlocks && input.backgroundTask) {
+    blockers.unshift(
+      `direct conversion: ${explainBackgroundConversionBlockers({
+        employee: input.employee,
+        taskSlots: input.taskSlots,
+        shiftBlocks: input.shiftBlocks,
+        backgroundTask: input.backgroundTask,
+        allAssignments: input.allAssignments,
+      })}`,
+    );
+    blockers.push(
+      `required coverage backfill: ${explainBackgroundBackfillBlockers({
+        missingEmployee: input.employee,
+        employees: input.employees,
+        states: input.states,
+        hasMissingWorkPatternByEmployeeId: input.hasMissingWorkPatternByEmployeeId,
+        taskSlots: input.taskSlots,
+        shiftBlocks: input.shiftBlocks,
+        backgroundTask: input.backgroundTask,
+        allAssignments: input.allAssignments,
+      })}`,
+    );
+  }
+
+  return blockers.join(" ");
+}
+
 function canUseSourceSlotForLiteralBgSwap(
   slot: TopOffSlot,
   assignment: TopOffAssignment,
@@ -1339,7 +1745,7 @@ function canUseSourceSlotForLiteralBgSwap(
     return false;
   }
 
-  if (slot.taskType.isEndoscopy || slot.shiftCategory === "ENDO") {
+  if (isSaturdayOrEndoscopySlot(slot)) {
     return false;
   }
 
@@ -1348,6 +1754,20 @@ function canUseSourceSlotForLiteralBgSwap(
   }
 
   return isMovableTopOffAssignment(assignment);
+}
+
+function canUseSourceSlotForBackfilledBgConversion(
+  slot: TopOffSlot,
+  assignment: TopOffAssignment,
+) {
+  if (!canUseSourceSlotForLiteralBgSwap(slot, assignment)) {
+    return false;
+  }
+
+  return (
+    slot.requirementLevel === "REQUIRED" &&
+    slot.currentAssignmentCount <= (slot.requiredStaff ?? 1)
+  );
 }
 
 function canDonateLiteralBgForSwap(
@@ -1390,6 +1810,25 @@ function compareLiteralBgSwapCandidates(
   );
 }
 
+function compareBackfillCandidates(
+  left: NonNullable<ReturnType<typeof selectBackgroundMinimumBackfillCandidate>>,
+  right: NonNullable<ReturnType<typeof selectBackgroundMinimumBackfillCandidate>>,
+) {
+  const leftState = left.replacementEmployee.expectedHours;
+  const rightState = right.replacementEmployee.expectedHours;
+
+  return (
+    conversionPenalty(left.sourceSlot) - conversionPenalty(right.sourceSlot) ||
+    left.shiftBlock.date.localeCompare(right.shiftBlock.date) ||
+    (left.shiftBlock.startMinute ?? 0) - (right.shiftBlock.startMinute ?? 0) ||
+    left.replacementEmployee.fullName.localeCompare(
+      right.replacementEmployee.fullName,
+    ) ||
+    leftState - rightState ||
+    left.sourceSlot.taskType.name.localeCompare(right.sourceSlot.taskType.name)
+  );
+}
+
 function listOwnLiteralBgConversionCandidates(input: {
   employee: TopOffEmployee;
   taskSlots: TopOffSlot[];
@@ -1401,7 +1840,7 @@ function listOwnLiteralBgConversionCandidates(input: {
         (candidate) => candidate.employeeId === input.employee.id,
       );
 
-      return assignment && canUseSourceSlotForLiteralBgSwap(slot, assignment);
+      return assignment && canConvertSourceSlotToBackground(slot, assignment);
     })
     .filter((slot) => {
       const simulatedAssignments = withoutExistingAssignment(input.allAssignments, {
@@ -1520,6 +1959,157 @@ function explainLiteralBgSwapBlockers(input: {
     : "no movable non-BG assignment could be paired with excess literal BG.";
 }
 
+function explainBackgroundBackfillBlockers(input: {
+  missingEmployee: TopOffEmployee;
+  employees: TopOffEmployee[];
+  states: Map<string, TopOffEmployeeState>;
+  hasMissingWorkPatternByEmployeeId?: Map<string, boolean>;
+  taskSlots: TopOffSlot[];
+  shiftBlocks: TopOffShiftBlock[];
+  backgroundTask: TopOffTaskType;
+  allAssignments: ExistingAssignment[];
+}) {
+  const assignedSlots = input.taskSlots.filter((slot) =>
+    slot.assignments.some(
+      (assignment) => assignment.employeeId === input.missingEmployee.id,
+    ),
+  );
+
+  if (assignedSlots.length === 0) {
+    return "the employee has no assignment that can be moved into literal BG.";
+  }
+
+  const reasons: string[] = [];
+
+  for (const sourceSlot of assignedSlots) {
+    const missingAssignment = sourceSlot.assignments.find(
+      (assignment) => assignment.employeeId === input.missingEmployee.id,
+    );
+
+    if (!missingAssignment) {
+      continue;
+    }
+
+    if (isCanonicalBgTaskType(sourceSlot.taskType)) {
+      reasons.push(`${sourceSlot.shiftName}: already literal BG.`);
+      continue;
+    }
+
+    if (isSaturdayOrEndoscopySlot(sourceSlot)) {
+      reasons.push(
+        `${sourceSlot.shiftName}: Saturday/Endoscopy assignment is preserved.`,
+      );
+      continue;
+    }
+
+    if (!isMovableTopOffAssignment(missingAssignment)) {
+      reasons.push(`${sourceSlot.shiftName}: assignment is locked or not movable.`);
+      continue;
+    }
+
+    if (sourceSlot.source === "MANUAL") {
+      reasons.push(`${sourceSlot.shiftName}: manual assignment is preserved.`);
+      continue;
+    }
+
+    if (sourceSlot.protectedFromPull) {
+      reasons.push(`${sourceSlot.shiftName}: protected assignment is preserved.`);
+      continue;
+    }
+
+    if (
+      sourceSlot.requirementLevel !== "REQUIRED" ||
+      sourceSlot.currentAssignmentCount > (sourceSlot.requiredStaff ?? 1)
+    ) {
+      reasons.push(
+        `${sourceSlot.shiftName}: does not need required coverage backfill.`,
+      );
+      continue;
+    }
+
+    const shiftBlock = input.shiftBlocks.find(
+      (block) => block.id === sourceSlot.shiftBlockId,
+    );
+
+    if (!shiftBlock) {
+      reasons.push(`${sourceSlot.shiftName}: shift block was not found.`);
+      continue;
+    }
+
+    const baseAssignments = withoutExistingAssignment(input.allAssignments, {
+      employeeId: input.missingEmployee.id,
+      slotId: sourceSlot.id,
+    });
+    const backgroundSlot =
+      findOpenBackgroundSlotOnShift({
+        sourceSlot,
+        taskSlots: input.taskSlots,
+      }) ?? slotForTopOffExplanation(input.backgroundTask, shiftBlock);
+    const missingRejections = getConstraintRejections(
+      input.missingEmployee,
+      input.backgroundTask,
+      backgroundSlot,
+      baseAssignments,
+    );
+
+    if (missingRejections.length > 0) {
+      reasons.push(`${sourceSlot.shiftName}: ${missingRejections.join(", ")}.`);
+      continue;
+    }
+
+    const missingIntoBg = toExistingAssignmentForSlot(
+      backgroundSlot,
+      input.missingEmployee.id,
+      missingAssignment.locked,
+    );
+    const replacementReasons = input.employees
+      .filter((employee) => employee.id !== input.missingEmployee.id)
+      .map((employee) => {
+        const state = input.states.get(employee.id);
+
+        if (!state) {
+          return `${employee.fullName}: no weekly state.`;
+        }
+
+        if (input.hasMissingWorkPatternByEmployeeId?.get(employee.id)) {
+          return `${employee.fullName}: missing required work-pattern shift.`;
+        }
+
+        const wouldAddHours = state.shiftKeys.has(shiftKeyForSlot(sourceSlot))
+          ? 0
+          : sourceSlot.paidHours ?? 0;
+
+        if (state.hours + wouldAddHours > employee.expectedHours) {
+          return `${employee.fullName}: would exceed ${employee.expectedHours} hours.`;
+        }
+
+        const rejections = getConstraintRejections(
+          employee,
+          sourceSlot.taskType,
+          sourceSlot,
+          [...baseAssignments, missingIntoBg],
+        );
+
+        return rejections.length > 0
+          ? `${employee.fullName}: ${rejections.join(", ")}.`
+          : null;
+      })
+      .filter((reason): reason is string => Boolean(reason));
+
+    reasons.push(
+      replacementReasons.length > 0
+        ? `${sourceSlot.shiftName}: no legal replacement (${[
+            ...new Set(replacementReasons),
+          ]
+            .slice(0, 4)
+            .join("; ")}).`
+        : `${sourceSlot.shiftName}: no replacement employee was available.`,
+    );
+  }
+
+  return [...new Set(reasons)].slice(0, 6).join(" ");
+}
+
 function assignedRoleCountsByEmployeeIdFromSlots(taskSlots: TopOffSlot[]) {
   const countsByEmployeeId = new Map<string, Record<string, number>>();
 
@@ -1603,7 +2193,7 @@ function canConvertSourceSlotToBackground(
     return false;
   }
 
-  if (slot.taskType.isEndoscopy || slot.shiftCategory === "ENDO") {
+  if (isSaturdayOrEndoscopySlot(slot)) {
     return false;
   }
 
@@ -1623,6 +2213,15 @@ function canConvertSourceSlotToBackground(
   }
 
   return true;
+}
+
+function isSaturdayOrEndoscopySlot(slot: TopOffSlot) {
+  return (
+    slot.taskType.isEndoscopy ||
+    slot.shiftCategory === "ENDO" ||
+    slot.shiftCategory === "SATURDAY" ||
+    new Date(`${slot.date}T00:00:00.000Z`).getUTCDay() === 6
+  );
 }
 
 function explainBackgroundConversionBlockers(input: {
@@ -1840,8 +2439,11 @@ function canAssignTopOffSlot(
 
 function explainTopOffBlocker(input: {
   employee: TopOffEmployee;
+  employees: TopOffEmployee[];
+  states: Map<string, TopOffEmployeeState>;
   state: TopOffEmployeeState;
   hasMissingWorkPattern: boolean;
+  hasMissingWorkPatternByEmployeeId: Map<string, boolean>;
   taskSlots: TopOffSlot[];
   shiftBlocks: TopOffShiftBlock[];
   backgroundTask: TopOffTaskType;
@@ -1859,13 +2461,33 @@ function explainTopOffBlocker(input: {
     input.state.backgroundAssignments < input.employee.requiredBackgroundAssignments &&
     input.state.hours >= input.employee.expectedHours
   ) {
-    return explainBackgroundConversionBlockers({
+    const conversionReason = explainBackgroundConversionBlockers({
       employee: input.employee,
       taskSlots: input.taskSlots,
       shiftBlocks: input.shiftBlocks,
       backgroundTask: input.backgroundTask,
       allAssignments: input.allAssignments,
     });
+    const swapReason = explainLiteralBgSwapBlockers({
+      missingEmployee: input.employee,
+      employees: input.employees,
+      states: input.states,
+      hasMissingWorkPatternByEmployeeId: input.hasMissingWorkPatternByEmployeeId,
+      taskSlots: input.taskSlots,
+      allAssignments: input.allAssignments,
+    });
+    const backfillReason = explainBackgroundBackfillBlockers({
+      missingEmployee: input.employee,
+      employees: input.employees,
+      states: input.states,
+      hasMissingWorkPatternByEmployeeId: input.hasMissingWorkPatternByEmployeeId,
+      taskSlots: input.taskSlots,
+      shiftBlocks: input.shiftBlocks,
+      backgroundTask: input.backgroundTask,
+      allAssignments: input.allAssignments,
+    });
+
+    return `${conversionReason} Two-person swap unavailable because ${swapReason} Required coverage backfill unavailable because ${backfillReason}`;
   }
 
   const legalBlock = findLegalShiftBlockForNewSlot({

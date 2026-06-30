@@ -33,6 +33,8 @@ import {
 } from "../../src/lib/db/easton-import";
 import {
   buildLiteralBgRoleMixDiagnostics,
+  selectExistingBackgroundTopOffSlot,
+  selectBackgroundMinimumBackfillCandidate,
   selectBackgroundMinimumConversionCandidate,
   selectLiteralBgSwapCandidate,
 } from "../../src/lib/db/background-top-off";
@@ -4135,7 +4137,7 @@ describe("Current Easton hard requirements", () => {
 
       assert.equal(
         result.bgMinimumIssues[0]?.message,
-        "Giulia has 0/1 required BG assignments.",
+        "Giulia has 0/1 required BG assignments inside their 40-hour target.",
       );
     }
 
@@ -4578,6 +4580,39 @@ describe("Current Easton hard requirements", () => {
     assert.equal(result.assignments[0]?.employeeId, "needs-bg");
   });
 
+  it("selects literal BG top-off for an under-40 employee missing BG", () => {
+    const employee = topOffEmployee({
+      id: "under-bg",
+      fullName: "Under BG",
+      required: 2,
+      assignedBg: 1,
+    });
+    const backgroundTask = bgTaskType();
+    const backgroundSlot = topOffSlot({
+      id: "open-bg",
+      date: "2026-07-07",
+      shiftBlockId: "tue-pm",
+      shiftName: "Tuesday 1300-1700",
+      taskType: backgroundTask,
+      requirementLevel: "OPTIONAL",
+      requiredStaff: 1,
+    });
+    backgroundSlot.currentAssignmentCount = 0;
+    const candidate = selectExistingBackgroundTopOffSlot({
+      employee,
+      taskSlots: [backgroundSlot],
+      allAssignments: fillerAssignments(employee.id, "under-bg", 36),
+      state: {
+        hours: 36,
+        backgroundAssignments: 1,
+        shiftKeys: new Set(),
+      },
+    } as never);
+
+    assert.equal(candidate?.id, "open-bg");
+    assert.equal(candidate?.taskType.code, "BACKGROUND");
+  });
+
   it("selects flexible non-required work for BG minimum conversion inside the same skeleton", () => {
     const employee = {
       id: "easton",
@@ -4754,6 +4789,202 @@ describe("Current Easton hard requirements", () => {
 
     assert.equal(candidate?.sourceSlot.id, "flex-support");
     assert.equal(candidate?.backgroundSlot?.id, "pm-background");
+  });
+
+  it("finds a required-coverage backfill for a 40-hour employee missing literal BG", () => {
+    const backgroundTask = bgTaskType();
+    const clinicTask = {
+      id: "clinic",
+      code: "NEW_GI",
+      name: "New GI",
+      requiredSkillIds: ["clinic"],
+      isBackground: false,
+      isPatientFacing: true,
+      isClinical: true,
+      isSkilled: false,
+      isEndoscopy: false,
+      isFloat: false,
+    };
+    const missingEmployee = topOffEmployee({
+      id: "easton",
+      fullName: "Easton Liaw",
+      required: 5,
+      assignedBg: 4,
+      skillIds: ["clinic"],
+    });
+    const replacementEmployee = topOffEmployee({
+      id: "replacement",
+      fullName: "Replacement Employee",
+      required: 0,
+      assignedBg: 0,
+      skillIds: ["clinic"],
+    });
+    const sourceSlot = topOffSlot({
+      id: "required-gi",
+      date: "2026-07-09",
+      shiftBlockId: "thu-am",
+      shiftName: "Thursday 0800-1200",
+      taskType: clinicTask,
+      requirementLevel: "REQUIRED",
+      requiredStaff: 1,
+    });
+    sourceSlot.assignments = [
+      topOffAssignment(missingEmployee.id, "required-gi-assignment"),
+    ];
+    sourceSlot.currentAssignmentCount = 1;
+    const employees = [missingEmployee, replacementEmployee];
+    const states = new Map<string, TestTopOffState>([
+      [
+        missingEmployee.id,
+        {
+          hours: 40,
+          backgroundAssignments: 4,
+          shiftKeys: new Set(["2026-07-09:thu-am"]),
+        },
+      ],
+      [
+        replacementEmployee.id,
+        { hours: 36, backgroundAssignments: 0, shiftKeys: new Set() },
+      ],
+    ]);
+    const allAssignments = [
+      existingFromTopOffSlot(sourceSlot, missingEmployee.id),
+      ...fillerAssignments(missingEmployee.id, "easton", 36),
+      ...fillerAssignments(replacementEmployee.id, "replacement", 36),
+    ];
+    const candidate = selectBackgroundMinimumBackfillCandidate({
+      missingEmployee,
+      employees,
+      states,
+      taskSlots: [sourceSlot],
+      shiftBlocks: [
+        {
+          id: "thu-am",
+          scheduleDayId: "day",
+          date: "2026-07-09",
+          name: "Thursday 0800-1200",
+          shiftTemplateId: null,
+          shiftCategory: "AM",
+          startMinute: 8 * 60,
+          endMinute: 12 * 60,
+          paidHours: 4,
+        },
+      ],
+      backgroundTask,
+      allAssignments,
+    } as never);
+
+    assert.equal(candidate?.missingEmployee.fullName, "Easton Liaw");
+    assert.equal(candidate?.replacementEmployee.id, replacementEmployee.id);
+    assert.equal(candidate?.sourceSlot.id, "required-gi");
+    assert.equal(candidate?.shiftBlock.id, "thu-am");
+    assert.equal(states.get(missingEmployee.id)?.hours, 40);
+  });
+
+  it("does not backfill required coverage by pushing a replacement over 40 hours", () => {
+    const backgroundTask = bgTaskType();
+    const clinicTask = {
+      id: "clinic",
+      code: "NEW_GI",
+      name: "New GI",
+      requiredSkillIds: ["clinic"],
+      isBackground: false,
+      isPatientFacing: true,
+      isClinical: true,
+      isSkilled: false,
+      isEndoscopy: false,
+      isFloat: false,
+    };
+    const missingEmployee = topOffEmployee({
+      id: "easton",
+      fullName: "Easton Liaw",
+      required: 5,
+      assignedBg: 4,
+      skillIds: ["clinic"],
+    });
+    const replacementEmployee = topOffEmployee({
+      id: "replacement",
+      fullName: "Already Full",
+      required: 0,
+      assignedBg: 0,
+      skillIds: ["clinic"],
+    });
+    const sourceSlot = topOffSlot({
+      id: "required-gi",
+      date: "2026-07-09",
+      shiftBlockId: "thu-am",
+      shiftName: "Thursday 0800-1200",
+      taskType: clinicTask,
+      requirementLevel: "REQUIRED",
+      requiredStaff: 1,
+    });
+    sourceSlot.assignments = [
+      topOffAssignment(missingEmployee.id, "required-gi-assignment"),
+    ];
+    sourceSlot.currentAssignmentCount = 1;
+    const states = new Map<string, TestTopOffState>([
+      [
+        missingEmployee.id,
+        {
+          hours: 40,
+          backgroundAssignments: 4,
+          shiftKeys: new Set(["2026-07-09:thu-am"]),
+        },
+      ],
+      [
+        replacementEmployee.id,
+        { hours: 40, backgroundAssignments: 0, shiftKeys: new Set() },
+      ],
+    ]);
+    const allAssignments = [
+      existingFromTopOffSlot(sourceSlot, missingEmployee.id),
+      ...fillerAssignments(missingEmployee.id, "easton", 36),
+      ...fillerAssignments(replacementEmployee.id, "replacement", 40),
+    ];
+    const candidate = selectBackgroundMinimumBackfillCandidate({
+      missingEmployee,
+      employees: [missingEmployee, replacementEmployee],
+      states,
+      taskSlots: [sourceSlot],
+      shiftBlocks: [
+        {
+          id: "thu-am",
+          scheduleDayId: "day",
+          date: "2026-07-09",
+          name: "Thursday 0800-1200",
+          shiftTemplateId: null,
+          shiftCategory: "AM",
+          startMinute: 8 * 60,
+          endMinute: 12 * 60,
+          paidHours: 4,
+        },
+      ],
+      backgroundTask,
+      allAssignments,
+    } as never);
+    const diagnostic = buildLiteralBgRoleMixDiagnostics({
+      employees: [missingEmployee, replacementEmployee],
+      states,
+      taskSlots: [sourceSlot],
+      shiftBlocks: [
+        {
+          id: "thu-am",
+          scheduleDayId: "day",
+          date: "2026-07-09",
+          name: "Thursday 0800-1200",
+          shiftTemplateId: null,
+          shiftCategory: "AM",
+          startMinute: 8 * 60,
+          endMinute: 12 * 60,
+          paidHours: 4,
+        },
+      ],
+      backgroundTask,
+      allAssignments,
+    } as never).find((item) => item.employeeId === missingEmployee.id);
+
+    assert.equal(candidate, null);
+    assert.match(diagnostic?.swapConclusion ?? "", /would exceed 40 hours/);
   });
 
   it("finds feasible role-mix swaps for Angela, Giulia, and Nicole style BG deficits", () => {
@@ -5065,6 +5296,93 @@ describe("Current Easton hard requirements", () => {
           isClinical: true,
           isBackground: false,
           isEndoscopy: true,
+        },
+      ],
+    } as never);
+
+    assert.equal(candidate, null);
+  });
+
+  it("does not convert regular Saturday assignments to satisfy literal BG minimums", () => {
+    const employee = {
+      id: "saturday",
+      fullName: "Saturday Employee",
+      active: true,
+      skillIds: [],
+      availability: [{ weekday: 6, startMinute: 0, endMinute: 24 * 60 }],
+      expectedHours: 40,
+      requiredBackgroundAssignments: 3,
+    };
+    const backgroundTask = bgTaskType();
+    const saturdayTask = {
+      id: "pcp",
+      code: "PCP",
+      name: "PCP",
+      requiredSkillIds: [],
+      isBackground: false,
+      isPatientFacing: true,
+      isClinical: true,
+      isSkilled: false,
+      isEndoscopy: false,
+      isFloat: false,
+    };
+    const candidate = selectBackgroundMinimumConversionCandidate({
+      employee,
+      taskSlots: [
+        {
+          id: "sat-regular",
+          date: "2026-07-11",
+          scheduleDayId: "day",
+          shiftBlockId: "sat-regular",
+          shiftCategory: "SATURDAY",
+          shiftName: "Saturday 0800-1400",
+          paidHours: 6,
+          taskTypeId: "pcp",
+          slotIndex: 1,
+          requirementLevel: "DESIRED",
+          startMinute: 8 * 60,
+          endMinute: 14 * 60,
+          minStaff: 0,
+          requiredStaff: 1,
+          requiredSkillIds: [],
+          eligibleEmployeeIds: [],
+          taskType: saturdayTask,
+          source: "STAFFING_RULE",
+          currentAssignmentCount: 1,
+          assignments: [
+            { id: "sat-assignment", employeeId: "saturday", locked: false },
+          ],
+        },
+      ],
+      shiftBlocks: [
+        {
+          id: "sat-regular",
+          scheduleDayId: "day",
+          date: "2026-07-11",
+          name: "Saturday 0800-1400",
+          shiftTemplateId: null,
+          shiftCategory: "SATURDAY",
+          startMinute: 8 * 60,
+          endMinute: 14 * 60,
+          paidHours: 6,
+        },
+      ],
+      backgroundTask,
+      allAssignments: [
+        {
+          slotId: "sat-regular",
+          employeeId: "saturday",
+          date: "2026-07-11",
+          taskTypeId: "pcp",
+          startMinute: 8 * 60,
+          endMinute: 14 * 60,
+          shiftBlockId: "sat-regular",
+          shiftCategory: "SATURDAY",
+          paidHours: 6,
+          isPatientFacing: true,
+          isClinical: true,
+          isBackground: false,
+          isEndoscopy: false,
         },
       ],
     } as never);

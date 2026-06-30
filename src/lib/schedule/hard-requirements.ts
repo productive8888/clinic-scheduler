@@ -215,7 +215,7 @@ export function evaluateWeeklyHardRequirements(input: {
         code: "BG_MINIMUM_UNMET",
         employeeId: target.employeeId,
         employeeName: target.employeeName,
-        message: `${target.employeeName} has ${backgroundAssignments}/${target.requiredBackgroundAssignments} required BG assignments.`,
+        message: `${target.employeeName} has ${backgroundAssignments}/${target.requiredBackgroundAssignments} required BG assignments inside their ${formatHours(target.expectedWeeklyHours)}-hour target.`,
       });
     }
 
