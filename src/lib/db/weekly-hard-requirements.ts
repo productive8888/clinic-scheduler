@@ -19,16 +19,21 @@ import {
   toIsoDate,
 } from "@/lib/utils/date";
 import { clinicWeekRange } from "@/lib/schedule/range";
+import { eastonTargetPatternCodeForDate } from "@/lib/schedule/easton-model";
+import { isSchedulingRequiredEmployee } from "@/lib/schedule/employees";
 
 export async function getWeeklyHardRequirementSummary(input: {
   startDate: string;
   endDate: string;
 }) {
+  const eastonTargetPatternCode = eastonTargetPatternCodeForDate(input.endDate);
   const [targets, employees, scheduleDays] = await Promise.all([
     getDb().employeeScheduleTarget.findMany({
       where: {
         pattern: {
-          code: "EASTON_JULY_ACTIVE_TARGETS",
+          code:
+            eastonTargetPatternCode ??
+            "__NO_ACTIVE_EASTON_TARGET_PATTERN__",
           active: true,
         },
       },
@@ -91,8 +96,12 @@ export async function getWeeklyHardRequirementSummary(input: {
     }),
   ]);
 
+  const schedulingRequiredEmployees = employees.filter(
+    isSchedulingRequiredEmployee,
+  );
+
   const hardTargets: WeeklyHardRequirementTarget[] = [
-    ...employees.map((employee) => {
+    ...schedulingRequiredEmployees.map((employee) => {
       const importedTarget = findEastonTargetForEmployee(employee, targets);
       const workPattern = getEffectiveWorkPattern({
         employeeWorkPattern: employee.workPattern,

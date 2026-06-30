@@ -11,6 +11,7 @@ import {
 } from "@/lib/easton-import/parser";
 import { findEmployeeForEastonTarget } from "@/lib/easton-import/employee-targets";
 import { eastonWorkPatternGroups } from "@/lib/easton-import/work-patterns";
+import { ACTIVE_EASTON_TARGET_PATTERN_CODE } from "@/lib/schedule/easton-model";
 import {
   REQUIRED_CONFIGURABLE_SKILLS,
   REQUIRED_TASK_SKILL_CODES,
@@ -515,7 +516,7 @@ export async function applyEastonDefaultsFromWorkbook(input: {
         data: {
           active: false,
           notes:
-            "Archived by July Easton import. Allergy Shots is not an active July generation role.",
+            "Archived by Current Easton import. Allergy Shots is not an active Current Easton generation role.",
         },
       });
     }
@@ -666,7 +667,7 @@ export async function applyEastonDefaultsFromWorkbook(input: {
       data: {
         active: false,
         notes:
-          "Archived by July Easton import. Use the exact July group patterns imported from the active Shifts by GY target sheet.",
+          "Archived by Current Easton import. Use the exact Current Easton group patterns imported from the active Shifts by GY target sheet.",
       },
     });
 
@@ -756,25 +757,25 @@ export async function applyEastonDefaultsFromWorkbook(input: {
         data: {
           active: false,
           description:
-            "Legacy June reference pattern archived. July generation uses Shifts + Hours and Shifts by GY only.",
+            "Legacy June reference pattern archived. Current Easton generation uses Shifts + Hours and Shifts by GY only.",
         },
       });
     }
 
     const pattern = await tx.schedulePattern.upsert({
-      where: { code: "EASTON_JULY_ACTIVE_TARGETS" },
+      where: { code: ACTIVE_EASTON_TARGET_PATTERN_CODE },
       update: {
-        name: "Easton July active targets",
+        name: "Current Easton active targets",
         description:
-          `Active July scheduling model parsed from Shifts + Hours and ${preview.activeEmployeeTargetSheetName ?? "the active Shifts by GY target sheet"}. Contains employee targets only; it does not hardcode sample assignments.`,
+          `Current Easton scheduling model parsed from Shifts + Hours and ${preview.activeEmployeeTargetSheetName ?? "the active Shifts by GY target sheet"}. Contains employee targets only; it does not hardcode sample assignments.`,
         source: "EASTON_SPREADSHEET",
         active: true,
       },
       create: {
-        code: "EASTON_JULY_ACTIVE_TARGETS",
-        name: "Easton July active targets",
+        code: ACTIVE_EASTON_TARGET_PATTERN_CODE,
+        name: "Current Easton active targets",
         description:
-          `Active July scheduling model parsed from Shifts + Hours and ${preview.activeEmployeeTargetSheetName ?? "the active Shifts by GY target sheet"}. Contains employee targets only; it does not hardcode sample assignments.`,
+          `Current Easton scheduling model parsed from Shifts + Hours and ${preview.activeEmployeeTargetSheetName ?? "the active Shifts by GY target sheet"}. Contains employee targets only; it does not hardcode sample assignments.`,
         source: "EASTON_SPREADSHEET",
         active: true,
         createdByEmployeeId: input.actorEmployeeId ?? null,
@@ -846,7 +847,7 @@ export async function applyEastonDefaultsFromWorkbook(input: {
           patternId: pattern.id,
           employeeId,
           employeeName: target.employeeName,
-          periodLabel: "Easton July active model",
+          periodLabel: "Current Easton active model",
           workPatternCode: target.workPatternCode,
           activeTargetSheetName: target.activeTargetSheetName,
           scheduleEligibility: target.scheduleEligibility,
@@ -884,7 +885,7 @@ export async function applyEastonDefaultsFromWorkbook(input: {
         status: "APPLIED",
         summary: previewSummaryJson(preview),
         warnings: [
-          "Allergy Shots is deprecated for July generation; historical records remain, but active generated July staffing uses GI, Allergy, and PCP patient-facing roles.",
+          "Allergy Shots is deprecated for Current Easton generation; historical records remain, but active generated Current Easton staffing uses GI, Allergy, and PCP patient-facing roles.",
           ...preview.warnings,
           ...skippedPullNames.map(
             (name) => `Skipped background pull rule for missing employee: ${name}`,

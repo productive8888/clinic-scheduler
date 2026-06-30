@@ -180,19 +180,19 @@ function warningForConstraintReason(reason: string): ManualAssignmentWarning | n
       return {
         code: "WORK_PATTERN_SHIFT",
         message:
-          "This Saturday shift does not match the employee's configured July work-pattern group.",
+          "This Saturday shift does not match the employee's configured Current Easton work-pattern group.",
       };
-    case "Outside July work skeleton":
+    case "Outside Current Easton work skeleton":
       return {
         code: "WORK_PATTERN_SHIFT",
         message:
-          "This shift is outside the employee's planned July work-week skeleton.",
+          "This shift is outside the employee's planned Current Easton work-week skeleton.",
       };
-    case "Would exceed July skeleton target hours":
+    case "Would exceed Current Easton skeleton target hours":
       return {
         code: "ABOVE_EXPECTED_HOURS",
         message:
-          "This would put the employee above their planned July weekly target hours.",
+          "This would put the employee above their planned Current Easton weekly target hours.",
       };
     default:
       return null;

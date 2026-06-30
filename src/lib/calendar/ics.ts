@@ -33,6 +33,11 @@ function buildEventLines(event: CalendarAssignmentEvent, generatedAt: Date) {
   const description = [
     `Task: ${event.taskTypeName}`,
     `Employee: ${event.employeeName}`,
+    `Work type: ${formatEnumLabel(event.workCategory)}`,
+    event.shiftLabel ? `Shift: ${event.shiftLabel}` : null,
+    event.shiftCategory
+      ? `Shift category: ${formatEnumLabel(event.shiftCategory)}`
+      : null,
     `Date: ${event.date}`,
     `Time: ${formatEventTime(event)}`,
     `Scenario: ${formatEnumLabel(String(event.scenario))}`,
@@ -58,7 +63,11 @@ function buildEventLines(event: CalendarAssignmentEvent, generatedAt: Date) {
 
   lines.push(`SUMMARY:${escapeIcsText(summary)}`);
   lines.push(`DESCRIPTION:${escapeIcsText(description.join("\\n"))}`);
-  lines.push(`CATEGORIES:${escapeIcsText(event.taskTypeName)}`);
+  lines.push(
+    `CATEGORIES:${escapeIcsText(event.workCategory)},${escapeIcsText(
+      event.taskTypeName,
+    )}`,
+  );
 
   if (event.employeeEmail) {
     lines.push(

@@ -39,21 +39,21 @@ export function MonthScheduleActions({
     const formData = new FormData(event.currentTarget);
     let confirmation: string | null = null;
 
-    if (operation === "REGENERATE") {
+    if (
+      operation === "FULL_REGENERATE" ||
+      operation === "REGENERATE"
+    ) {
       confirmation =
-        "Regenerate this month? Generated output will be replaced, while manual and locked overrides remain.";
+        "Unpublish, clear, and regenerate this full month? Generated output will be replaced, while manual and locked overrides remain.";
+    } else if (operation === "PARTIAL_GENERATE") {
+      confirmation =
+        "Run partial generation? Published days will be skipped and weekly balancing will not be authoritative for affected weeks.";
     } else if (operation === "UNPUBLISH") {
       confirmation =
         "Unpublish every published day in this month? Assignments will be preserved.";
     } else if (operation === "CLEAR") {
       confirmation =
         "Clear generated output for this month? This removes generated assignments and safe generated slots.";
-    } else if (
-      operation === "GENERATE" &&
-      formData.get("overwritePublished") === "on"
-    ) {
-      confirmation =
-        "Generate this month and overwrite confirmed published days?";
     } else if (
       operation === "PUBLISH" &&
       hardRequirementDayCount > 0 &&
@@ -115,27 +115,16 @@ export function MonthScheduleActions({
               Generate or regenerate
             </h3>
             <p className="mt-1 text-sm text-slate-500">
-              Use Regenerate when drafts already exist. Published days remain
-              untouched unless both overwrite confirmations are selected.
+              A complete run can rebalance every week. Partial generation is
+              available when published days must remain untouched.
             </p>
-            <div className="mt-3 grid gap-2 text-sm text-slate-700 sm:grid-cols-2">
-              <label className="flex items-center gap-2">
-                <input
-                  type="checkbox"
-                  name="overwritePublished"
-                  className="size-4 accent-emerald-700"
-                />
-                Overwrite published days
-              </label>
-              <label className="flex items-center gap-2 text-rose-800">
-                <input
-                  type="checkbox"
-                  name="confirmPublishedOverwrite"
-                  className="size-4 accent-rose-700"
-                />
-                Confirm published overwrite
-              </label>
-            </div>
+            {publishedDayCount > 0 ? (
+              <p className="mt-3 rounded-md border border-amber-200 bg-amber-50 p-3 text-sm text-amber-950">
+                This month contains {publishedDayCount} published{" "}
+                {publishedDayCount === 1 ? "day" : "days"}. Skipping them
+                makes the affected weekly validation partial.
+              </p>
+            ) : null}
           </div>
           <div className="flex flex-wrap gap-2">
             <MonthActionButton
@@ -147,12 +136,20 @@ export function MonthScheduleActions({
               Generate month
             </MonthActionButton>
             <MonthActionButton
-              operation="REGENERATE"
-              pendingLabel="Regenerating month…"
+              operation="PARTIAL_GENERATE"
+              pendingLabel="Running partial generation…"
               className="inline-flex h-10 items-center gap-2 rounded-md border border-emerald-300 bg-white px-4 text-sm font-semibold text-emerald-800 hover:bg-emerald-50 disabled:cursor-wait disabled:bg-emerald-50"
             >
               <RotateCcw size={16} aria-hidden="true" />
-              Regenerate month
+              Skip published (partial)
+            </MonthActionButton>
+            <MonthActionButton
+              operation="FULL_REGENERATE"
+              pendingLabel="Rebuilding full month…"
+              className="inline-flex h-10 items-center gap-2 rounded-md border border-rose-300 bg-white px-4 text-sm font-semibold text-rose-800 hover:bg-rose-50 disabled:cursor-wait disabled:bg-rose-50"
+            >
+              <RotateCcw size={16} aria-hidden="true" />
+              Unpublish, clear, regenerate full month
             </MonthActionButton>
           </div>
         </div>
@@ -333,11 +330,17 @@ function MonthActionResult({
                 {week.daysRegenerated} regenerated /{" "}
                 {week.daysSkippedPublished} published skipped
               </p>
-              <p className="mt-2 text-xs font-semibold">
-                Hard {week.hardRequirementIssues} · BG {week.bgMinimumIssues} ·
-                Work pattern {week.workPatternIssues} · Saturday{" "}
-                {week.saturdayIssues}
-              </p>
+              {week.validationStatus === "PARTIAL" ? (
+                <p className="mt-2 text-xs font-semibold text-amber-800">
+                  Partial generation — {week.validationMessage}
+                </p>
+              ) : (
+                <p className="mt-2 text-xs font-semibold">
+                  Hard {week.hardRequirementIssues} · BG {week.bgMinimumIssues} ·
+                  Work pattern {week.workPatternIssues} · Saturday{" "}
+                  {week.saturdayIssues}
+                </p>
+              )}
               {week.employeesUnderTarget.length > 0 ? (
                 <ul className="mt-2 grid gap-2 text-xs">
                   {week.employeesUnderTarget.map((employee) => (

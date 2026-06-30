@@ -9,7 +9,10 @@ export type CalendarAssignmentEvent = {
   employeeEmail?: string | null;
   taskTypeName: string;
   taskTypeCode: string;
+  workCategory: "CLINIC" | "BACKGROUND";
   slotLabel?: string | null;
+  shiftLabel?: string | null;
+  shiftCategory?: string | null;
   date: string;
   startMinute?: number | null;
   endMinute?: number | null;
@@ -37,7 +40,12 @@ export type CalendarExportTaskSlot = {
   taskType: {
     name: string;
     code: string;
+    isBackground?: boolean;
   };
+  shiftBlock?: {
+    name?: string | null;
+    shiftCategory?: string | null;
+  } | null;
   assignments: CalendarExportAssignment[];
 };
 
@@ -56,11 +64,13 @@ export type CalendarExportAssignment = {
 export function buildAssignmentCalendarEvents(input: {
   scheduleDays: CalendarExportScheduleDay[];
   employeeId?: string | null;
+  includeStatuses?: string[];
 }) {
   const events: CalendarAssignmentEvent[] = [];
+  const includeStatuses = new Set(input.includeStatuses ?? ["PUBLISHED"]);
 
   for (const day of input.scheduleDays) {
-    if (day.status !== "PUBLISHED") {
+    if (!includeStatuses.has(day.status)) {
       continue;
     }
 
@@ -84,7 +94,12 @@ export function buildAssignmentCalendarEvents(input: {
           employeeEmail: assignment.employee.email,
           taskTypeName: slot.taskType.name,
           taskTypeCode: slot.taskType.code,
+          workCategory: slot.taskType.isBackground
+            ? "BACKGROUND"
+            : "CLINIC",
           slotLabel: slot.label,
+          shiftLabel: slot.shiftBlock?.name ?? null,
+          shiftCategory: slot.shiftBlock?.shiftCategory ?? null,
           date,
           startMinute: slot.startMinute,
           endMinute: slot.endMinute,

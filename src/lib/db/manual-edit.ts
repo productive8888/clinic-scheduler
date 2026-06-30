@@ -15,6 +15,7 @@ import {
   getEffectiveWorkPattern,
 } from "@/lib/schedule/easton-work-pattern-resolution";
 import { withEastonDerivedAvailability } from "@/lib/schedule/easton-derived-availability";
+import { ACTIVE_EASTON_TARGET_PATTERN_CODE } from "@/lib/schedule/easton-model";
 import {
   evaluateWeeklyHardRequirements,
   type WeeklyHardRequirementAssignment,
@@ -777,7 +778,7 @@ async function loadManualEditContext(
     getDb().employeeScheduleTarget.findMany({
       where: {
         scheduleEligibility: "ACTIVE_SCHEDULED",
-        pattern: { code: "EASTON_JULY_ACTIVE_TARGETS", active: true },
+        pattern: { code: ACTIVE_EASTON_TARGET_PATTERN_CODE, active: true },
       },
       orderBy: [{ employeeName: "asc" }, { id: "asc" }],
     }),

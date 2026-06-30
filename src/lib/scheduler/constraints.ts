@@ -182,11 +182,11 @@ export function getConstraintRejections(
   }
 
   if (violatesJulyWeekSkeleton(employee, slot)) {
-    reasons.push("Outside July work skeleton");
+    reasons.push("Outside Current Easton work skeleton");
   }
 
   if (wouldExceedJulySkeletonTargetHours(employee, slot, assignments)) {
-    reasons.push("Would exceed July skeleton target hours");
+    reasons.push("Would exceed Current Easton skeleton target hours");
   }
 
   if (violatesSaturdayWorkPattern(employee, slot)) {

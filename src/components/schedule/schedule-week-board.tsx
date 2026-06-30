@@ -5,18 +5,17 @@ import {
   CheckCircle2,
   ChevronLeft,
   ChevronRight,
-  Download,
   PencilLine,
-  RefreshCw,
 } from "lucide-react";
 import Link from "next/link";
 import {
-  bulkGenerateScheduleAction,
   clearGeneratedScheduleRangeAction,
   publishScheduleRangeAction,
   unpublishScheduleRangeAction,
 } from "@/app/(app)/schedule/actions";
 import { PendingSubmitButton } from "@/components/forms/pending-submit-button";
+import { ScheduleIcsExport } from "@/components/schedule/schedule-ics-export";
+import { WeekScheduleActions } from "@/components/schedule/week-schedule-actions";
 import { backgroundTaskDisplayName } from "@/lib/background/display";
 import type { getScheduleWeekData } from "@/lib/db/schedule-workflows";
 import { weekdayShortName } from "@/lib/easton-import/work-patterns";
@@ -51,6 +50,9 @@ export function ScheduleWeekBoard({
     (count, day) => count + day.backgroundSlotCount,
     0,
   );
+  const publishedDayCount = data.days.filter(
+    (day) => day.status === "PUBLISHED",
+  ).length;
 
   return (
     <div className="grid gap-6">
@@ -104,18 +106,6 @@ export function ScheduleWeekBoard({
               Go
             </button>
           </form>
-          <form action={bulkGenerateScheduleAction}>
-            <input type="hidden" name="date" value={data.range.startDate} />
-            <input type="hidden" name="mode" value="WEEK" />
-            <input type="hidden" name="seedPrefix" value="clinic-week" />
-            <PendingSubmitButton
-              pendingLabel="Generating..."
-              className="inline-flex h-10 items-center gap-2 rounded-md bg-emerald-700 px-4 text-sm font-semibold text-white hover:bg-emerald-800 disabled:cursor-wait disabled:bg-emerald-600"
-            >
-              <RefreshCw size={16} aria-hidden="true" />
-              Generate this week
-            </PendingSubmitButton>
-          </form>
           <form action={publishScheduleRangeAction}>
             <input type="hidden" name="date" value={data.range.startDate} />
             <input type="hidden" name="mode" value="WEEK" />
@@ -158,15 +148,18 @@ export function ScheduleWeekBoard({
             <PencilLine size={16} aria-hidden="true" />
             Manual Edit
           </Link>
-          <Link
-            href="/api/exports/calendar/clinic"
-            className="inline-flex h-10 items-center gap-2 rounded-md border border-emerald-200 px-4 text-sm font-semibold text-emerald-800 hover:bg-emerald-50"
-          >
-            <Download size={16} aria-hidden="true" />
-            Export published calendar
-          </Link>
+          <ScheduleIcsExport
+            startDate={data.range.startDate}
+            endDate={data.range.endDate}
+            rangeLabel="week"
+          />
         </div>
       </section>
+
+      <WeekScheduleActions
+        date={data.range.startDate}
+        publishedDayCount={publishedDayCount}
+      />
 
       {hasSummary ? (
         <section className="grid gap-2 rounded-md border border-emerald-200 bg-emerald-50 p-4 text-sm text-emerald-950 sm:grid-cols-3 lg:grid-cols-6">
@@ -215,7 +208,9 @@ export function ScheduleWeekBoard({
 
       {data.hardRequirements.issues.length > 0 ? (
         <section className="rounded-md border border-rose-200 bg-rose-50 p-4 text-sm text-rose-950">
-          <h2 className="font-semibold">July hard requirements are unmet</h2>
+          <h2 className="font-semibold">
+            Current Easton requirements are unmet
+          </h2>
           <p className="mt-1 text-rose-900">
             Publish is blocked until BG minimums, work-pattern rules, and the
             2-5 patient-shift range are fixed, or a manager records an override.

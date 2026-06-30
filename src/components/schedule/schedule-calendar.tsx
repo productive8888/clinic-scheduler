@@ -7,6 +7,7 @@ import {
 } from "lucide-react";
 import Link from "next/link";
 import { MonthScheduleActions } from "@/components/schedule/month-schedule-actions";
+import { ScheduleIcsExport } from "@/components/schedule/schedule-ics-export";
 import type { getScheduleCalendarData } from "@/lib/db/schedule-workflows";
 import type { MonthDayTone } from "@/lib/schedule/month";
 import { addMonthsIsoDate, todayIsoDate } from "@/lib/utils/date";
@@ -19,7 +20,9 @@ export function ScheduleCalendar({ data }: { data: CalendarData }) {
   const nextMonth = addMonthsIsoDate(data.range.monthStartDate, 1);
   const monthDays = data.weeks.flat().filter((day) => day.inMonth);
   const generatedDayCount = monthDays.filter(
-    (day) => day.shiftBlockCount > 0 || day.taskSlotCount > 0,
+    (day) =>
+      day.status !== "PUBLISHED" &&
+      (day.shiftBlockCount > 0 || day.taskSlotCount > 0),
   ).length;
 
   return (
@@ -117,6 +120,21 @@ export function ScheduleCalendar({ data }: { data: CalendarData }) {
         publishedDayCount={monthDays.filter((day) => day.status === "PUBLISHED").length}
         hardRequirementDayCount={data.monthSummary.hardRequirementsUnmet}
       />
+
+      <section className="rounded-md border border-slate-200 bg-white p-4 shadow-sm">
+        <h2 className="font-semibold text-slate-950">Calendar export</h2>
+        <p className="mt-1 text-sm text-slate-500">
+          Download assignments for this displayed month. Published-only is the
+          default.
+        </p>
+        <div className="mt-3">
+          <ScheduleIcsExport
+            startDate={data.range.monthStartDate}
+            endDate={data.range.monthEndDate}
+            rangeLabel="month"
+          />
+        </div>
+      </section>
 
       {data.configurationWarnings.length > 0 ? (
         <section className="rounded-md border border-amber-200 bg-amber-50 p-4 text-sm text-amber-950">

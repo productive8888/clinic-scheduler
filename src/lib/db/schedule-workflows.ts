@@ -23,6 +23,7 @@ import {
   clinicWeekRange,
   groupScheduleDatesByClinicWeek,
   monthCalendarRange,
+  partialGenerationWeekStarts,
   planScheduleGeneration,
   planUnpublishScheduleRange,
 } from "@/lib/schedule/range";
@@ -52,6 +53,10 @@ import {
 export type BulkGenerationSummary = {
   startDate: string;
   endDate: string;
+  generationScope: "FULL" | "PARTIAL";
+  weeklyValidationPartial: boolean;
+  partialWeekStarts: string[];
+  validationMessage: string | null;
   datesProcessed: number;
   datesGenerated: number;
   weeksProcessed: number;
@@ -206,6 +211,10 @@ export async function generateScheduleRange(input: {
   const summary: BulkGenerationSummary = {
     startDate: input.startDate,
     endDate: input.endDate,
+    generationScope: "FULL",
+    weeklyValidationPartial: false,
+    partialWeekStarts: [],
+    validationMessage: null,
     datesProcessed: 0,
     datesGenerated: 0,
     weeksProcessed: 0,
@@ -287,6 +296,17 @@ export async function generateScheduleRange(input: {
   summary.skippedSundays = skippedSundays;
   summary.publishedDatesSkipped = publishedDatesSkipped;
   summary.publishedDatesOverwritten = publishedDatesOverwritten;
+  summary.partialWeekStarts = partialGenerationWeekStarts({
+    weeks: plannedWeeks,
+    publishedDatesSkipped,
+  });
+  summary.weeklyValidationPartial = summary.partialWeekStarts.length > 0;
+  summary.generationScope = summary.weeklyValidationPartial
+    ? "PARTIAL"
+    : "FULL";
+  summary.validationMessage = summary.weeklyValidationPartial
+    ? "Weekly validation is partial because published days were skipped."
+    : null;
 
   const beforeBoards = new Map(
     await Promise.all(
@@ -513,6 +533,10 @@ export async function generateScheduleRange(input: {
     startDate: input.startDate,
     endDate: input.endDate,
   });
+  const partialWeekStarts = new Set(summary.partialWeekStarts);
+  const fullyValidatedRequirementWeeks = hardRequirementSummary.weeks.filter(
+    (week) => !partialWeekStarts.has(week.range.startDate),
+  );
   summary.weekSummaries = buildMonthGenerationWeekSummaries({
     plannedWeeks,
     beforeBoards,
@@ -526,32 +550,58 @@ export async function generateScheduleRange(input: {
   );
   summary.employeesOverTarget = hardRequirementSummary.weeks.reduce(
     (count, week) =>
-      count +
-      week.summary.employeeDiagnostics.filter(
-        (diagnostic) =>
-          diagnostic.workPattern.totalHours >
-          diagnostic.workPattern.expectedHours,
-      ).length,
+      partialWeekStarts.has(week.range.startDate)
+        ? count
+        : count +
+          week.summary.employeeDiagnostics.filter(
+            (diagnostic) =>
+              diagnostic.workPattern.totalHours >
+              diagnostic.workPattern.expectedHours,
+          ).length,
     0,
   );
-  summary.hardRequirementIssues = hardRequirementSummary.issues.length;
-  summary.bgMinimumIssues = hardRequirementSummary.bgMinimumIssues.length;
-  summary.workPatternIssues = hardRequirementSummary.workPatternIssues.length;
-  summary.saturdayIssues = hardRequirementSummary.issues.filter(
+  const fullyValidatedIssues = fullyValidatedRequirementWeeks.flatMap(
+    (week) => week.summary.issues,
+  );
+  summary.hardRequirementIssues = fullyValidatedIssues.length;
+  summary.bgMinimumIssues = fullyValidatedRequirementWeeks.reduce(
+    (count, week) => count + week.summary.bgMinimumIssues.length,
+    0,
+  );
+  summary.workPatternIssues = fullyValidatedRequirementWeeks.reduce(
+    (count, week) => count + week.summary.workPatternIssues.length,
+    0,
+  );
+  summary.saturdayIssues = fullyValidatedIssues.filter(
     (issue) => issue.code === "SATURDAY_PATTERN_UNMET",
   ).length;
-  summary.unmatchedTargetIssues =
-    hardRequirementSummary.unmatchedTargetIssues.length;
-  summary.patientBelowMinimum =
-    hardRequirementSummary.patientSummary.belowMinimum;
-  summary.patientAboveMaximum =
-    hardRequirementSummary.patientSummary.aboveMaximum;
-  summary.patientMissingGi = hardRequirementSummary.patientSummary.missingGi;
-  summary.patientMissingAllergy =
-    hardRequirementSummary.patientSummary.missingAllergy;
-  summary.patientMissingPcp = hardRequirementSummary.patientSummary.missingPcp;
-  const workPatternDiagnostics =
-    hardRequirementSummary.employeeDiagnostics.filter(
+  summary.unmatchedTargetIssues = fullyValidatedRequirementWeeks.reduce(
+    (count, week) => count + week.summary.unmatchedTargetIssues.length,
+    0,
+  );
+  summary.patientBelowMinimum = fullyValidatedRequirementWeeks.reduce(
+    (count, week) => count + week.summary.patientSummary.belowMinimum,
+    0,
+  );
+  summary.patientAboveMaximum = fullyValidatedRequirementWeeks.reduce(
+    (count, week) => count + week.summary.patientSummary.aboveMaximum,
+    0,
+  );
+  summary.patientMissingGi = fullyValidatedRequirementWeeks.reduce(
+    (count, week) => count + week.summary.patientSummary.missingGi,
+    0,
+  );
+  summary.patientMissingAllergy = fullyValidatedRequirementWeeks.reduce(
+    (count, week) => count + week.summary.patientSummary.missingAllergy,
+    0,
+  );
+  summary.patientMissingPcp = fullyValidatedRequirementWeeks.reduce(
+    (count, week) => count + week.summary.patientSummary.missingPcp,
+    0,
+  );
+  const workPatternDiagnostics = fullyValidatedRequirementWeeks
+    .flatMap((week) => week.summary.employeeDiagnostics)
+    .filter(
       (diagnostic) => diagnostic.workPattern.requirement,
     );
   summary.workPatternEmployees = workPatternDiagnostics.length;
@@ -569,15 +619,97 @@ export async function generateScheduleRange(input: {
     (diagnostic) => diagnostic.workPattern.missingExtraHourWeekdays.length > 0,
   ).length;
 
-  if (hardRequirementSummary.issues.length > 0) {
+  if (fullyValidatedIssues.length > 0) {
+    const fullyValidatedDates = plannedWeeks
+      .filter((week) => !partialWeekStarts.has(week.startDate))
+      .flatMap((week) => week.dates);
     summary.datesNeedingManualReview = [
-      ...new Set([...summary.datesNeedingManualReview, ...datesToGenerate]),
+      ...new Set([
+        ...summary.datesNeedingManualReview,
+        ...fullyValidatedDates,
+      ]),
     ].sort();
   }
 
   await writeAuditLog({
     actorEmployeeId: input.actorEmployeeId,
     action: "schedule.bulk_generate",
+    entityType: "ScheduleRange",
+    entityId: `${input.startDate}:${input.endDate}`,
+    after: summary,
+  });
+
+  return summary;
+}
+
+export type FullScheduleRegenerationSummary = {
+  stage: "COMPLETE";
+  unpublish: Awaited<ReturnType<typeof unpublishScheduleRange>>;
+  clear: ClearGeneratedScheduleSummary;
+  generation: BulkGenerationSummary;
+};
+
+export class FullScheduleRegenerationError extends Error {
+  constructor(
+    public readonly stage: "UNPUBLISH" | "CLEAR" | "GENERATE",
+    cause: unknown,
+  ) {
+    super(
+      `Full regeneration failed during ${stage.toLowerCase()}: ${
+        cause instanceof Error ? cause.message : "Unknown error"
+      }`,
+      { cause },
+    );
+    this.name = "FullScheduleRegenerationError";
+  }
+}
+
+export async function regenerateFullScheduleRange(input: {
+  startDate: string;
+  endDate: string;
+  seedPrefix: string;
+  actorEmployeeId?: string | null;
+}): Promise<FullScheduleRegenerationSummary> {
+  let unpublish: Awaited<ReturnType<typeof unpublishScheduleRange>>;
+
+  try {
+    unpublish = await unpublishScheduleRange(input);
+  } catch (error) {
+    throw new FullScheduleRegenerationError("UNPUBLISH", error);
+  }
+
+  let clear: ClearGeneratedScheduleSummary;
+
+  try {
+    clear = await clearGeneratedScheduleRange({
+      ...input,
+      includePublished: false,
+    });
+  } catch (error) {
+    throw new FullScheduleRegenerationError("CLEAR", error);
+  }
+
+  let generation: BulkGenerationSummary;
+
+  try {
+    generation = await generateScheduleRange({
+      ...input,
+      overwritePublished: false,
+    });
+  } catch (error) {
+    throw new FullScheduleRegenerationError("GENERATE", error);
+  }
+
+  const summary = {
+    stage: "COMPLETE" as const,
+    unpublish,
+    clear,
+    generation,
+  };
+
+  await writeAuditLog({
+    actorEmployeeId: input.actorEmployeeId,
+    action: "schedule.full_range_regenerate",
     entityType: "ScheduleRange",
     entityId: `${input.startDate}:${input.endDate}`,
     after: summary,
@@ -1504,6 +1636,11 @@ function buildMonthGenerationWeekSummaries(input: {
   return input.plannedWeeks.map((week) => {
     const hardRequirements = hardRequirementsByWeekStart.get(week.startDate);
     const topOffSummary = input.topOffSummariesByWeekStart.get(week.startDate);
+    const skippedPublishedCount = week.dates.filter((date) =>
+      publishedDatesSkipped.has(date),
+    ).length;
+    const validationStatus =
+      skippedPublishedCount > 0 ? ("PARTIAL" as const) : ("FULL" as const);
     const exactTopOffReasons = new Map(
       (topOffSummary?.employeesUnderExpectedHours ?? []).map((employee) => [
         employee.employeeId,
@@ -1523,7 +1660,9 @@ function buildMonthGenerationWeekSummaries(input: {
     }
 
     const employeesUnderTarget =
-      hardRequirements?.employeeDiagnostics
+      validationStatus === "PARTIAL"
+        ? []
+        : hardRequirements?.employeeDiagnostics
         .filter(
           (diagnostic) =>
             diagnostic.workPattern.totalHours <
@@ -1549,6 +1688,11 @@ function buildMonthGenerationWeekSummaries(input: {
     return {
       startDate: week.startDate,
       endDate: week.endDate,
+      validationStatus,
+      validationMessage:
+        validationStatus === "PARTIAL"
+          ? "Weekly validation is partial because published days were skipped."
+          : null,
       daysProcessed: week.dates.filter(
         (date) => !publishedDatesSkipped.has(date),
       ).length,
@@ -1560,17 +1704,26 @@ function buildMonthGenerationWeekSummaries(input: {
         (date) =>
           !publishedDatesSkipped.has(date) && Boolean(input.beforeBoards.get(date)),
       ).length,
-      daysSkippedPublished: week.dates.filter((date) =>
-        publishedDatesSkipped.has(date),
-      ).length,
+      daysSkippedPublished: skippedPublishedCount,
       employeesUnderTarget,
-      hardRequirementIssues: hardRequirements?.issues.length ?? 0,
-      bgMinimumIssues: hardRequirements?.bgMinimumIssues.length ?? 0,
-      workPatternIssues: hardRequirements?.workPatternIssues.length ?? 0,
+      hardRequirementIssues:
+        validationStatus === "PARTIAL"
+          ? 0
+          : hardRequirements?.issues.length ?? 0,
+      bgMinimumIssues:
+        validationStatus === "PARTIAL"
+          ? 0
+          : hardRequirements?.bgMinimumIssues.length ?? 0,
+      workPatternIssues:
+        validationStatus === "PARTIAL"
+          ? 0
+          : hardRequirements?.workPatternIssues.length ?? 0,
       saturdayIssues:
-        hardRequirements?.issues.filter(
-          (issue) => issue.code === "SATURDAY_PATTERN_UNMET",
-        ).length ?? 0,
+        validationStatus === "PARTIAL"
+          ? 0
+          : hardRequirements?.issues.filter(
+              (issue) => issue.code === "SATURDAY_PATTERN_UNMET",
+            ).length ?? 0,
     } satisfies MonthGenerationWeekSummary;
   });
 }

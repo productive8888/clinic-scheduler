@@ -85,6 +85,7 @@ import {
 import { buildStaffingAnalytics } from "../../src/lib/analytics/staffing";
 import { buildAssignmentCalendarEvents } from "../../src/lib/calendar/events";
 import { buildIcsCalendar } from "../../src/lib/calendar/ics";
+import { icsResponse } from "../../src/lib/calendar/http";
 import { selectDefaultTaskTypesForScenario } from "../../src/lib/schedule/scenarios";
 import { validateManualAssignment } from "../../src/lib/schedule/manual-validation";
 import { applyManualEditBatchToState } from "../../src/lib/schedule/manual-edit-state";
@@ -93,11 +94,18 @@ import {
   clinicWeekRange,
   groupScheduleDatesByClinicWeek,
   monthCalendarRange,
+  partialGenerationWeekStarts,
+  PUBLISHED_DAYS_PARTIAL_GENERATION_WARNING,
   planScheduleGeneration,
   planScheduleRange,
   planUnpublishScheduleRange,
   resolveScheduleRange,
 } from "../../src/lib/schedule/range";
+import {
+  ACTIVE_EASTON_TARGET_PATTERN_CODE,
+  eastonTargetPatternCodeForDate,
+  isActiveEastonModelDate,
+} from "../../src/lib/schedule/easton-model";
 import { getMonthDayPresentation } from "../../src/lib/schedule/month";
 import {
   buildWeekStaffSummary,
@@ -213,7 +221,7 @@ function patientFairnessTarget(employeeId: string, employeeName: string) {
     requiresWorkPattern: false,
     requiredBackgroundAssignments: 0,
     extraHourWeekdays: [],
-    expectedWeeklyHours: 0,
+    expectedWeeklyHours: 40,
   };
 }
 
@@ -1728,6 +1736,29 @@ describe("Easton full-week generation foundations", () => {
         },
       ],
     );
+    assert.deepEqual(
+      partialGenerationWeekStarts({
+        weeks: plan.weeks,
+        publishedDatesSkipped: plan.publishedDatesSkipped,
+      }),
+      ["2026-07-06"],
+    );
+  });
+
+  it("keeps the active Easton model in force for Current Easton dates after July", () => {
+    assert.equal(isActiveEastonModelDate("2026-06-30"), false);
+    assert.equal(isActiveEastonModelDate("2026-07-01"), true);
+    assert.equal(isActiveEastonModelDate("2026-08-03"), true);
+    assert.equal(isActiveEastonModelDate("2026-08-31"), true);
+    assert.equal(
+      eastonTargetPatternCodeForDate("2026-08-03"),
+      ACTIVE_EASTON_TARGET_PATTERN_CODE,
+    );
+    assert.equal(
+      eastonTargetPatternCodeForDate("2026-08-31"),
+      ACTIVE_EASTON_TARGET_PATTERN_CODE,
+    );
+    assert.equal(julyPatientShiftGroupFromTaskCode("PCP"), "PCP");
   });
 
   it("derives visible month status from generation, publish, review, and hard rules", () => {
@@ -2756,7 +2787,7 @@ describe("Easton policy helpers", () => {
     );
     assert.equal(
       preview.warnings.some((warning) =>
-        warning.includes("Allergy Shots is deprecated for July generation"),
+        warning.includes("Allergy Shots is deprecated for Current Easton generation"),
       ),
       true,
     );
@@ -2816,7 +2847,7 @@ describe("Easton policy helpers", () => {
   });
 });
 
-describe("Easton July hard requirements", () => {
+describe("Current Easton hard requirements", () => {
   type TestTopOffTaskType = {
     id: string;
     code: string;
@@ -3045,7 +3076,7 @@ describe("Easton July hard requirements", () => {
     assert.equal(findEmployeeForEastonTarget(targets[0], employees), null);
   });
 
-  it("uses exact July target groups ahead of old generic Easton work patterns", () => {
+  it("uses exact Current Easton target groups ahead of old generic Easton work patterns", () => {
     const workPattern = getEffectiveWorkPattern({
       employeeWorkPattern: {
         code: "EASTON_NON_ENDOSCOPY_SATURDAY",
@@ -3301,7 +3332,7 @@ describe("Easton July hard requirements", () => {
     assert.equal(result.conflicts[0]?.slotId, "mon-bg");
   });
 
-  it("treats old generic Easton patterns as non-authoritative without an exact July target", () => {
+  it("treats old generic Easton patterns as non-authoritative without an exact Current Easton target", () => {
     const workPattern = getEffectiveWorkPattern({
       employeeWorkPattern: {
         code: "EASTON_NON_ENDOSCOPY_SATURDAY",
@@ -3575,7 +3606,7 @@ describe("Easton July hard requirements", () => {
     assert.equal(
       result.conflicts.every((conflict) =>
         conflict.rejectedCandidates.some((candidate) =>
-          candidate.reasons.includes("Outside July work skeleton"),
+          candidate.reasons.includes("Outside Current Easton work skeleton"),
         ),
       ),
       true,
@@ -3687,7 +3718,7 @@ describe("Easton July hard requirements", () => {
     assert.equal(result.conflicts[0]?.slotId, "tue-early");
     assert.equal(
       result.conflicts[0]?.rejectedCandidates[0]?.reasons.includes(
-        "Outside July work skeleton",
+        "Outside Current Easton work skeleton",
       ),
       true,
     );
@@ -3755,7 +3786,7 @@ describe("Easton July hard requirements", () => {
           requiresWorkPattern: true,
           requiredBackgroundAssignments: 0,
           extraHourWeekdays: [],
-          expectedWeeklyHours: 0,
+          expectedWeeklyHours: 40,
         },
         {
           employeeId: "placeholder",
@@ -3773,6 +3804,95 @@ describe("Easton July hard requirements", () => {
     assert.equal(result.canPublish, false);
     assert.equal(result.workPatternIssues.length, 1);
     assert.equal(result.workPatternIssues[0]?.code, "WORK_PATTERN_MISSING");
+  });
+
+  it("excludes zero-hour employees from patient-shift minimum validation", () => {
+    const result = evaluateWeeklyHardRequirements({
+      targets: [
+        {
+          employeeId: "sean",
+          employeeName: "Sean Fei",
+          workPatternCode: "EASTON_GROUP_M_TH",
+          requiredBackgroundAssignments: 0,
+          extraHourWeekdays: [1, 4],
+          expectedWeeklyHours: 0,
+        },
+      ],
+      assignments: [],
+    });
+
+    assert.equal(result.patientRangeIssues.length, 0);
+    assert.equal(
+      result.issues.some((issue) => issue.code === "PATIENT_SHIFT_MINIMUM_UNMET"),
+      false,
+    );
+  });
+
+  it("excludes zero-hour employees from BG minimum validation", () => {
+    const result = evaluateWeeklyHardRequirements({
+      targets: [
+        {
+          employeeId: "john",
+          employeeName: "John Leung",
+          workPatternCode: "EASTON_GROUP_M_TH",
+          requiredBackgroundAssignments: 5,
+          extraHourWeekdays: [1, 4],
+          expectedWeeklyHours: 0,
+        },
+      ],
+      assignments: [],
+    });
+
+    assert.equal(result.bgMinimumIssues.length, 0);
+    assert.equal(
+      result.issues.some((issue) => issue.code === "BG_MINIMUM_UNMET"),
+      false,
+    );
+  });
+
+  it("excludes zero-hour employees from 40-hour validation", () => {
+    const result = evaluateWeeklyHardRequirements({
+      targets: [
+        {
+          employeeId: "john",
+          employeeName: "John Leung",
+          workPatternCode: "EASTON_GROUP_M_TH",
+          requiredBackgroundAssignments: 0,
+          extraHourWeekdays: [1, 4],
+          expectedWeeklyHours: 0,
+        },
+      ],
+      assignments: [],
+    });
+
+    assert.equal(
+      result.issues.some((issue) => issue.code === "BELOW_EXPECTED_HOURS"),
+      false,
+    );
+    assert.equal(
+      result.issues.some((issue) => issue.code === "ABOVE_EXPECTED_HOURS"),
+      false,
+    );
+  });
+
+  it("does not let zero-hour employees block publishing", () => {
+    const result = evaluateWeeklyHardRequirements({
+      targets: [
+        {
+          employeeId: "john",
+          employeeName: "John Leung",
+          workPatternCode: "EASTON_GROUP_M_TH",
+          requiresWorkPattern: true,
+          requiredBackgroundAssignments: 5,
+          extraHourWeekdays: [1, 4],
+          expectedWeeklyHours: 0,
+        },
+      ],
+      assignments: [],
+    });
+
+    assert.equal(result.canPublish, true);
+    assert.equal(result.issues.length, 0);
   });
 
   it("ignores special excluded Easton targets in hard requirement validation", () => {
@@ -3995,7 +4115,7 @@ describe("Easton July hard requirements", () => {
             workPatternCode: null,
             requiredBackgroundAssignments: 1,
             extraHourWeekdays: [],
-            expectedWeeklyHours: 0,
+            expectedWeeklyHours: 40,
           },
         ],
         assignments: [
@@ -4027,7 +4147,7 @@ describe("Easton July hard requirements", () => {
           workPatternCode: null,
           requiredBackgroundAssignments: 1,
           extraHourWeekdays: [],
-          expectedWeeklyHours: 0,
+          expectedWeeklyHours: 40,
         },
       ],
       assignments: [
@@ -5064,6 +5184,11 @@ describe("calendar exports", () => {
         taskType: {
           name: "Front Desk",
           code: "FRONT_DESK",
+          isBackground: false,
+        },
+        shiftBlock: {
+          name: "Monday 0900-1200",
+          shiftCategory: "AM",
         },
         assignments: [
           {
@@ -5105,6 +5230,11 @@ describe("calendar exports", () => {
         taskType: {
           name: "Civil Surgeon",
           code: "CIVIL_SURGEON",
+          isBackground: true,
+        },
+        shiftBlock: {
+          name: "Monday 0900-1200",
+          shiftCategory: "AM",
         },
         assignments: [
           {
@@ -5156,6 +5286,21 @@ describe("calendar exports", () => {
     );
   });
 
+  it("can include drafts explicitly and labels clinic/background work", () => {
+    const events = buildAssignmentCalendarEvents({
+      scheduleDays: [publishedCalendarDay, unpublishedCalendarDay],
+      includeStatuses: ["PUBLISHED", "GENERATED"],
+    });
+
+    assert.equal(events.length, 3);
+    assert.equal(events[0].workCategory, "CLINIC");
+    assert.equal(
+      events.find((event) => event.taskTypeName === "Civil Surgeon")
+        ?.workCategory,
+      "BACKGROUND",
+    );
+  });
+
   it("renders standards-shaped ICS event data for published assignments", () => {
     const events = buildAssignmentCalendarEvents({
       scheduleDays: [publishedCalendarDay, unpublishedCalendarDay],
@@ -5173,7 +5318,98 @@ describe("calendar exports", () => {
     assert.equal(ics.includes("SUMMARY:Front Desk - Alice Admin"), true);
     assert.equal(ics.includes("DTSTART:20260601T090000Z"), true);
     assert.equal(ics.includes("DTEND:20260601T120000Z"), true);
+    assert.equal(ics.includes("Employee: Alice Admin"), true);
+    assert.equal(ics.includes("Task: Front Desk"), true);
+    assert.equal(ics.includes("Work type: Clinic"), true);
+    assert.equal(ics.includes("Shift: Monday 0900-1200"), true);
+    assert.equal(ics.includes("CATEGORIES:CLINIC,Front Desk"), true);
     assert.equal(ics.includes("Civil Surgeon"), false);
+  });
+
+  it("returns week calendar downloads with the correct content type and filename", () => {
+    const response = icsResponse({
+      filename: "clinic-schedule-week-2026-08-03.ics",
+      body: "BEGIN:VCALENDAR\r\nEND:VCALENDAR\r\n",
+    });
+
+    assert.equal(
+      response.headers.get("Content-Type"),
+      "text/calendar; charset=utf-8",
+    );
+    assert.equal(
+      response.headers.get("Content-Disposition"),
+      'attachment; filename="clinic-schedule-week-2026-08-03.ics"',
+    );
+  });
+
+  it("returns month calendar downloads with the correct filename", () => {
+    const response = icsResponse({
+      filename: "clinic-schedule-month-2026-08.ics",
+      body: "BEGIN:VCALENDAR\r\nEND:VCALENDAR\r\n",
+    });
+
+    assert.equal(
+      response.headers.get("Content-Disposition"),
+      'attachment; filename="clinic-schedule-month-2026-08.ics"',
+    );
+  });
+
+  it("wires week and month ICS exports through the clinic calendar route", async () => {
+    const [route, exportButton, weekBoard, monthCalendar] = await Promise.all([
+      fs.readFile(
+        path.join(
+          process.cwd(),
+          "src",
+          "app",
+          "api",
+          "exports",
+          "calendar",
+          "clinic",
+          "route.ts",
+        ),
+        "utf8",
+      ),
+      fs.readFile(
+        path.join(
+          process.cwd(),
+          "src",
+          "components",
+          "schedule",
+          "schedule-ics-export.tsx",
+        ),
+        "utf8",
+      ),
+      fs.readFile(
+        path.join(
+          process.cwd(),
+          "src",
+          "components",
+          "schedule",
+          "schedule-week-board.tsx",
+        ),
+        "utf8",
+      ),
+      fs.readFile(
+        path.join(
+          process.cwd(),
+          "src",
+          "components",
+          "schedule",
+          "schedule-calendar.tsx",
+        ),
+        "utf8",
+      ),
+    ]);
+
+    assert.match(route, /clinic-schedule-week-\$\{input\.startDate\}\.ics/);
+    assert.match(route, /clinic-schedule-month-\$\{input\.startDate\.slice\(0, 7\)\}\.ics/);
+    assert.match(route, /draft-and-published/);
+    assert.match(exportButton, /startDate/);
+    assert.match(exportButton, /endDate/);
+    assert.match(exportButton, /status/);
+    assert.match(route, /No published assignments/);
+    assert.match(weekBoard, /rangeLabel="week"/);
+    assert.match(monthCalendar, /rangeLabel="month"/);
   });
 });
 
@@ -5580,6 +5816,33 @@ describe("automated scheduling workflow foundations", () => {
     );
   });
 
+  it("labels partial generation when published days are skipped", async () => {
+    const plan = planScheduleGeneration({
+      startDate: "2026-08-03",
+      endDate: "2026-08-08",
+      publishedDates: ["2026-08-05"],
+    });
+    const actions = await fs.readFile(
+      path.join(process.cwd(), "src", "app", "(app)", "schedule", "actions.ts"),
+      "utf8",
+    );
+
+    assert.deepEqual(plan.publishedDatesSkipped, ["2026-08-05"]);
+    assert.deepEqual(
+      partialGenerationWeekStarts({
+        weeks: plan.weeks,
+        publishedDatesSkipped: plan.publishedDatesSkipped,
+      }),
+      ["2026-08-03"],
+    );
+    assert.match(
+      PUBLISHED_DAYS_PARTIAL_GENERATION_WARNING,
+      /Recommended: Unpublish, clear, and regenerate full week\./,
+    );
+    assert.match(actions, /stayed published and was skipped/);
+    assert.match(actions, /Weekly validation may be incomplete or stale/);
+  });
+
   it("wires month actions to shared week generation with safe clear and progress UI", async () => {
     const [workflow, actions, monthActions] = await Promise.all([
       fs.readFile(
@@ -5622,17 +5885,63 @@ describe("automated scheduling workflow foundations", () => {
       workflow,
       /source:\s*AssignmentSource\.MANUAL_OVERRIDE/,
     );
+    assert.match(
+      workflow,
+      /regenerateFullScheduleRange[\s\S]*unpublishScheduleRange[\s\S]*clearGeneratedScheduleRange[\s\S]*generateScheduleRange/,
+    );
+    assert.match(
+      workflow,
+      /validationStatus === "PARTIAL"[\s\S]*employeesUnderTarget/,
+    );
     assert.match(actions, /scheduleMonthAction[\s\S]*requireManager\(\)/);
-    assert.match(actions, /confirmPublishedOverwrite/);
+    assert.match(actions, /PARTIAL_GENERATE/);
+    assert.match(actions, /regenerateFullScheduleRange/);
     assert.match(actions, /confirmClearPublished/);
     assert.match(monthActions, /Generating month…/);
-    assert.match(monthActions, /Regenerating month…/);
+    assert.match(monthActions, /Running partial generation…/);
+    assert.match(monthActions, /Rebuilding full month…/);
     assert.match(monthActions, /Publishing month…/);
     assert.match(monthActions, /Unpublishing month…/);
     assert.match(monthActions, /Clearing generated month…/);
     assert.match(
       monthActions,
       /Assignments were preserved|Assignments will be preserved/,
+    );
+  });
+
+  it("uses Current Easton wording for user-facing scheduling model copy", async () => {
+    const files = await Promise.all(
+      [
+        path.join(
+          process.cwd(),
+          "src",
+          "components",
+          "schedule",
+          "schedule-week-board.tsx",
+        ),
+        path.join(process.cwd(), "src", "lib", "schedule", "hard-requirements.ts"),
+        path.join(process.cwd(), "src", "lib", "easton-import", "work-patterns.ts"),
+        path.join(process.cwd(), "src", "lib", "easton-import", "parser.ts"),
+        path.join(
+          process.cwd(),
+          "src",
+          "app",
+          "(app)",
+          "admin",
+          "easton-import",
+          "page.tsx",
+        ),
+      ].map((filePath) => fs.readFile(filePath, "utf8")),
+    );
+    const text = files.join("\n");
+
+    assert.match(text, /Current Easton requirements are unmet/);
+    assert.match(text, /Current Easton patient shifts/);
+    assert.match(text, /Current Easton role targets/);
+    assert.match(text, /Current Easton scheduling model/);
+    assert.doesNotMatch(
+      text,
+      /July hard requirements|July patient shifts|July role targets|July model/,
     );
   });
 
@@ -5984,7 +6293,7 @@ describe("automated scheduling workflow foundations", () => {
     assert.equal(rows[0].exposure.GI, 1);
   });
 
-  it("counts July patient shifts only from GI, Allergy, and PCP roles", () => {
+  it("counts Current Easton patient shifts only from GI, Allergy, and PCP roles", () => {
     assert.equal(julyPatientShiftGroupFromTaskCode("NEW_GI"), "GI");
     assert.equal(julyPatientShiftGroupFromTaskCode("VIRTUAL_GI"), "GI");
     assert.equal(julyPatientShiftGroupFromTaskCode("GI"), "GI");
@@ -6058,7 +6367,7 @@ describe("automated scheduling workflow foundations", () => {
     assert.equal(row.roleCounts.PROCEDURE, 1);
   });
 
-  it("flags employees below two or above five strict July patient shifts", () => {
+  it("flags employees below two or above five strict Current Easton patient shifts", () => {
     const targets = [
       patientFairnessTarget("below", "Below Employee"),
       patientFairnessTarget("above", "Above Employee"),
@@ -6101,7 +6410,12 @@ describe("automated scheduling workflow foundations", () => {
 
   it("keeps missing GI Allergy PCP diversity as a soft warning", () => {
     const result = evaluateWeeklyHardRequirements({
-      targets: [patientFairnessTarget("employee", "Employee")],
+      targets: [
+        {
+          ...patientFairnessTarget("employee", "Employee"),
+          expectedWeeklyHours: 12,
+        },
+      ],
       assignments: [
         patientFairnessAssignment("employee", "NEW_GI", 0),
         patientFairnessAssignment("employee", "NEW_GI", 1),

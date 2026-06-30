@@ -23,6 +23,8 @@ import {
   type EmployeeScheduleTargetSource,
 } from "@/lib/schedule/easton-work-pattern-resolution";
 import { withEastonDerivedAvailability } from "@/lib/schedule/easton-derived-availability";
+import { eastonTargetPatternCodeForDate } from "@/lib/schedule/easton-model";
+import { isSchedulingRequiredEmployee } from "@/lib/schedule/employees";
 import { buildJulyWeekSkeletons } from "@/lib/schedule/july-week-planner";
 import { isCanonicalBgTaskType } from "@/lib/schedule/bg-role";
 import { parseIsoDate, toIsoDate } from "@/lib/utils/date";
@@ -158,6 +160,7 @@ export async function topOffBackgroundAssignmentsForRange(input: {
   allowedDates: string[];
   actorEmployeeId?: string | null;
 }) {
+  const eastonTargetPatternCode = eastonTargetPatternCodeForDate(input.endDate);
   const summary: BackgroundTopOffSummary = {
     startDate: input.startDate,
     endDate: input.endDate,
@@ -259,7 +262,9 @@ export async function topOffBackgroundAssignmentsForRange(input: {
       where: {
         scheduleEligibility: "ACTIVE_SCHEDULED",
         pattern: {
-          code: "EASTON_JULY_ACTIVE_TARGETS",
+          code:
+            eastonTargetPatternCode ??
+            "__NO_ACTIVE_EASTON_TARGET_PATTERN__",
           active: true,
         },
       },
@@ -274,9 +279,14 @@ export async function topOffBackgroundAssignmentsForRange(input: {
     return summary;
   }
 
-  let employees = rawEmployees.map((employee) =>
-    toTopOffEmployee(employee, findEastonTargetForEmployee(employee, scheduleTargets)),
-  );
+  let employees = rawEmployees
+    .filter(isSchedulingRequiredEmployee)
+    .map((employee) =>
+      toTopOffEmployee(
+        employee,
+        findEastonTargetForEmployee(employee, scheduleTargets),
+      ),
+    );
   const allAssignments: ExistingAssignment[] = [];
   const states = new Map<string, TopOffEmployeeState>(
     employees.map((employee) => [

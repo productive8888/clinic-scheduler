@@ -106,12 +106,16 @@ export function evaluateWeeklyHardRequirements(input: {
       continue;
     }
 
+    if (target.employeeId && target.expectedWeeklyHours <= 0) {
+      continue;
+    }
+
     if (!target.employeeId) {
       issues.push({
         code: "UNMATCHED_TARGET_EMPLOYEE",
         employeeId: null,
         employeeName: target.employeeName,
-        message: `${target.employeeName} has an imported July target but is not linked to an active employee.`,
+        message: `${target.employeeName} has an imported Current Easton target but is not linked to an active employee.`,
       });
       continue;
     }
@@ -121,7 +125,7 @@ export function evaluateWeeklyHardRequirements(input: {
         code: "WORK_PATTERN_MISSING",
         employeeId: target.employeeId,
         employeeName: target.employeeName,
-        message: `${target.employeeName} has imported July role targets but no recognized work-pattern group.`,
+        message: `${target.employeeName} has imported Current Easton role targets but no recognized work-pattern group.`,
       });
     }
 
@@ -181,7 +185,7 @@ export function evaluateWeeklyHardRequirements(input: {
         code: "PATIENT_SHIFT_MINIMUM_UNMET",
         employeeId: target.employeeId,
         employeeName: target.employeeName,
-        message: `${target.employeeName} has ${patientFairness.patientShiftCount} July patient shifts; the required range is ${JULY_PATIENT_SHIFT_MINIMUM}-${JULY_PATIENT_SHIFT_MAXIMUM} (GI, Allergy, or PCP only).`,
+        message: `${target.employeeName} has ${patientFairness.patientShiftCount} Current Easton patient shifts; the required range is ${JULY_PATIENT_SHIFT_MINIMUM}-${JULY_PATIENT_SHIFT_MAXIMUM} (GI, Allergy, or PCP only).`,
       });
     }
 
@@ -190,7 +194,7 @@ export function evaluateWeeklyHardRequirements(input: {
         code: "PATIENT_SHIFT_MAXIMUM_EXCEEDED",
         employeeId: target.employeeId,
         employeeName: target.employeeName,
-        message: `${target.employeeName} has ${patientFairness.patientShiftCount} July patient shifts; the required range is ${JULY_PATIENT_SHIFT_MINIMUM}-${JULY_PATIENT_SHIFT_MAXIMUM} (GI, Allergy, or PCP only).`,
+        message: `${target.employeeName} has ${patientFairness.patientShiftCount} Current Easton patient shifts; the required range is ${JULY_PATIENT_SHIFT_MINIMUM}-${JULY_PATIENT_SHIFT_MAXIMUM} (GI, Allergy, or PCP only).`,
       });
     }
 
@@ -248,7 +252,7 @@ export function evaluateWeeklyHardRequirements(input: {
           code: "FORBIDDEN_WORK_PATTERN_SHIFT",
           employeeId: target.employeeId,
           employeeName: target.employeeName,
-          message: `${target.employeeName} is assigned outside their July work pattern: ${forbiddenReason}.`,
+          message: `${target.employeeName} is assigned outside their Current Easton work pattern: ${forbiddenReason}.`,
         });
       }
     }

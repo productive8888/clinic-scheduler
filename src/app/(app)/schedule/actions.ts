@@ -18,17 +18,23 @@ import {
   generateScheduleRange,
   getScheduleRangeGenerationPreview,
   publishScheduleRange,
+  regenerateFullScheduleRange,
   unpublishScheduleRange,
 } from "@/lib/db/schedule-workflows";
 import { auditActorId, requireManager } from "@/lib/auth";
 import {
   resolveScheduleRange,
+  PUBLISHED_DAYS_PARTIAL_GENERATION_WARNING,
   type ScheduleRangeMode,
 } from "@/lib/schedule/range";
 import type {
   MonthActionOperation,
   MonthActionState,
 } from "@/lib/schedule/month";
+import type {
+  WeekActionOperation,
+  WeekActionState,
+} from "@/lib/schedule/week";
 import { todayIsoDate } from "@/lib/utils/date";
 
 function getDateFromForm(formData: FormData) {
@@ -166,6 +172,10 @@ export async function bulkGenerateScheduleAction(formData: FormData) {
   revalidatePath("/schedule/calendar");
   const params = new URLSearchParams({
     date: range.startDate,
+    generationScope: summary.generationScope,
+    validation:
+      summary.validationMessage ??
+      "Weekly validation completed for every generated week.",
     processed: String(summary.datesProcessed),
     daysCreated: String(summary.scheduleDaysCreated),
     daysRegenerated: String(summary.datesRegenerated),
@@ -214,6 +224,142 @@ export async function bulkGenerateScheduleAction(formData: FormData) {
   redirect(`/schedule/week?${params.toString()}`);
 }
 
+export async function scheduleWeekAction(
+  _previousState: WeekActionState,
+  formData: FormData,
+): Promise<WeekActionState> {
+  const actor = await requireManager();
+  const operation = weekActionOperation(formData.get("operation"));
+  const range = resolveScheduleRange({
+    mode: "WEEK",
+    date: getDateFromForm(formData),
+  });
+
+  try {
+    const preview = await getScheduleRangeGenerationPreview(range);
+
+    if (operation === "GENERATE" && preview.publishedDates.length > 0) {
+      return {
+        outcome: "blocked",
+        operation,
+        message: PUBLISHED_DAYS_PARTIAL_GENERATION_WARNING,
+        metrics: [
+          {
+            label: "Published days",
+            value: preview.publishedDates.length,
+          },
+        ],
+        issues: publishedSkippedIssues(preview.publishedDates, "week"),
+        weekSummaries: [],
+      };
+    }
+
+    const fullRegeneration =
+      operation === "FULL_REGENERATE"
+        ? await regenerateFullScheduleRange({
+            ...range,
+            seedPrefix: "clinic-week-full-regenerate",
+            actorEmployeeId: auditActorId(actor),
+          })
+        : null;
+    const summary =
+      fullRegeneration?.generation ??
+      (await generateScheduleRange({
+        ...range,
+        seedPrefix:
+          operation === "PARTIAL_GENERATE"
+            ? "clinic-week-partial"
+            : "clinic-week",
+        overwritePublished: false,
+        actorEmployeeId: auditActorId(actor),
+      }));
+    const isPartial = summary.generationScope === "PARTIAL";
+
+    revalidateSchedulePaths();
+
+    return {
+      outcome:
+        isPartial ||
+        summary.hardRequirementIssues > 0 ||
+        summary.requiredSlotsUnfilled > 0
+          ? "blocked"
+          : "success",
+      operation,
+      message: isPartial
+        ? "Partial generation. Weekly validation is partial because published days were skipped."
+        : operation === "FULL_REGENERATE"
+          ? "The full week was unpublished, cleared, and regenerated. Manual and locked overrides were preserved."
+          : "Week generation finished.",
+      metrics: [
+        {
+          label: "Days processed",
+          value: summary.datesProcessed,
+        },
+        {
+          label: "Published skipped",
+          value: summary.publishedDatesSkipped.length,
+        },
+        { label: "Assignments", value: summary.assignmentsFilled },
+        {
+          label: "Required unfilled",
+          value: summary.requiredSlotsUnfilled,
+        },
+        ...(isPartial
+          ? []
+          : [
+              {
+                label: "Under target",
+                value: summary.employeesUnderTarget,
+              },
+              {
+                label: "BG minimum issues",
+                value: summary.bgMinimumIssues,
+              },
+              {
+                label: "Work-pattern issues",
+                value: summary.workPatternIssues,
+              },
+            ]),
+        ...(fullRegeneration
+          ? [
+              {
+                label: "Days unpublished",
+                value: fullRegeneration.unpublish.unpublishedDates.length,
+              },
+              {
+                label: "Generated assignments cleared",
+                value: fullRegeneration.clear.assignmentsRemoved,
+              },
+              {
+                label: "Locked assignments preserved",
+                value: fullRegeneration.clear.lockedAssignmentsPreserved,
+              },
+            ]
+          : []),
+      ],
+      issues: [
+        ...(summary.validationMessage ? [summary.validationMessage] : []),
+        ...publishedSkippedIssues(summary.publishedDatesSkipped, "week"),
+        ...summary.configurationWarnings,
+        ...summary.datesNeedingManualReview.map(
+          (reviewDate) => `${reviewDate} needs manager review.`,
+        ),
+      ],
+      weekSummaries: summary.weekSummaries,
+    };
+  } catch (error) {
+    return {
+      outcome: "error",
+      operation,
+      message:
+        error instanceof Error ? error.message : "The week action failed.",
+      metrics: [],
+      issues: [],
+      weekSummaries: [],
+    };
+  }
+}
+
 export async function scheduleMonthAction(
   _previousState: MonthActionState,
   formData: FormData,
@@ -224,9 +370,13 @@ export async function scheduleMonthAction(
   const range = resolveScheduleRange({ mode: "MONTH", date });
 
   try {
-    if (operation === "GENERATE" || operation === "REGENERATE") {
+    if (
+      operation === "GENERATE" ||
+      operation === "PARTIAL_GENERATE" ||
+      operation === "FULL_REGENERATE" ||
+      operation === "REGENERATE"
+    ) {
       const preview = await getScheduleRangeGenerationPreview(range);
-      const overwritePublished = formData.get("overwritePublished") === "on";
 
       if (
         operation === "GENERATE" &&
@@ -236,7 +386,7 @@ export async function scheduleMonthAction(
           outcome: "blocked",
           operation,
           message:
-            "This month already contains generated drafts. Use Regenerate month to confirm replacing generated output while preserving manual and locked overrides.",
+            "This month already contains generated drafts. Use Unpublish, clear, regenerate full month to confirm replacing generated output while preserving manual and locked overrides.",
           metrics: [
             {
               label: "Existing generated drafts",
@@ -249,55 +399,70 @@ export async function scheduleMonthAction(
       }
 
       if (
-        overwritePublished &&
-        formData.get("confirmPublishedOverwrite") !== "on"
+        operation === "GENERATE" &&
+        preview.publishedDates.length > 0
       ) {
         return {
           outcome: "blocked",
           operation,
           message:
-            "Confirm published overwrite before regenerating published days.",
+            "This month has published days. Weekly balancing for 40 hours, Saturday rules, BG minimums, and work-pattern rules requires each whole week. Choose Partial generation to skip published days, or unpublish, clear, and regenerate the full month.",
           metrics: [
             {
               label: "Published days in month",
               value: preview.publishedDates.length,
             },
           ],
-          issues: preview.publishedDates,
+          issues: publishedSkippedIssues(preview.publishedDates, "month"),
           weekSummaries: [],
         };
       }
 
-      const summary = await generateScheduleRange({
-        ...range,
-        seedPrefix:
-          operation === "REGENERATE"
-            ? "clinic-month-regenerate"
-            : "clinic-month",
-        overwritePublished,
-        actorEmployeeId: auditActorId(actor),
-      });
+      const isFullRegeneration =
+        operation === "FULL_REGENERATE" || operation === "REGENERATE";
+      const fullRegeneration = isFullRegeneration
+        ? await regenerateFullScheduleRange({
+            ...range,
+            seedPrefix: "clinic-month-full-regenerate",
+            actorEmployeeId: auditActorId(actor),
+          })
+        : null;
+      const summary =
+        fullRegeneration?.generation ??
+        (await generateScheduleRange({
+          ...range,
+          seedPrefix:
+            operation === "PARTIAL_GENERATE"
+              ? "clinic-month-partial"
+              : "clinic-month",
+          overwritePublished: false,
+          actorEmployeeId: auditActorId(actor),
+        }));
+      const isPartial = summary.generationScope === "PARTIAL";
 
       revalidateSchedulePaths();
 
       return {
         outcome:
+          isPartial ||
           summary.hardRequirementIssues > 0 ||
           summary.requiredSlotsUnfilled > 0
             ? "blocked"
             : "success",
         operation,
-        message:
-          summary.hardRequirementIssues > 0 ||
-          summary.requiredSlotsUnfilled > 0
+        message: isPartial
+          ? "Partial generation. Weekly validation is partial because published days were skipped."
+          : isFullRegeneration
+            ? "The full month was unpublished, cleared, and regenerated. Manual and locked overrides were preserved."
+            : summary.hardRequirementIssues > 0 ||
+                summary.requiredSlotsUnfilled > 0
             ? "Month generation finished, but review is required before publishing."
             : "Month generation finished successfully.",
         metrics: [
           { label: "Weeks processed", value: summary.weeksProcessed },
           {
             label: "Days processed",
-            value:
-              summary.datesProcessed + summary.publishedDatesSkipped.length,
+            value: summary.datesProcessed,
           },
           { label: "Days created", value: summary.scheduleDaysCreated },
           { label: "Days regenerated", value: summary.datesRegenerated },
@@ -317,12 +482,40 @@ export async function scheduleMonthAction(
             label: "Hard requirements",
             value: summary.hardRequirementIssues,
           },
-          { label: "Under-target employees", value: summary.employeesUnderTarget },
-          { label: "BG minimum issues", value: summary.bgMinimumIssues },
-          { label: "Work-pattern issues", value: summary.workPatternIssues },
-          { label: "Saturday issues", value: summary.saturdayIssues },
+          ...(isPartial
+            ? []
+            : [
+                {
+                  label: "Under-target employees",
+                  value: summary.employeesUnderTarget,
+                },
+                { label: "BG minimum issues", value: summary.bgMinimumIssues },
+                {
+                  label: "Work-pattern issues",
+                  value: summary.workPatternIssues,
+                },
+                { label: "Saturday issues", value: summary.saturdayIssues },
+              ]),
+          ...(fullRegeneration
+            ? [
+                {
+                  label: "Days unpublished",
+                  value: fullRegeneration.unpublish.unpublishedDates.length,
+                },
+                {
+                  label: "Generated assignments cleared",
+                  value: fullRegeneration.clear.assignmentsRemoved,
+                },
+                {
+                  label: "Locked assignments preserved",
+                  value: fullRegeneration.clear.lockedAssignmentsPreserved,
+                },
+              ]
+            : []),
         ],
         issues: [
+          ...(summary.validationMessage ? [summary.validationMessage] : []),
+          ...publishedSkippedIssues(summary.publishedDatesSkipped, "month"),
           ...summary.configurationWarnings,
           ...summary.datesNeedingManualReview.map(
             (reviewDate) => `${reviewDate} needs manager review.`,
@@ -600,6 +793,8 @@ function monthActionOperation(
 ): MonthActionOperation {
   if (
     value === "GENERATE" ||
+    value === "PARTIAL_GENERATE" ||
+    value === "FULL_REGENERATE" ||
     value === "REGENERATE" ||
     value === "PUBLISH" ||
     value === "UNPUBLISH" ||
@@ -609,6 +804,36 @@ function monthActionOperation(
   }
 
   throw new Error("Invalid month action.");
+}
+
+function weekActionOperation(
+  value: FormDataEntryValue | null,
+): WeekActionOperation {
+  if (
+    value === "GENERATE" ||
+    value === "PARTIAL_GENERATE" ||
+    value === "FULL_REGENERATE"
+  ) {
+    return value;
+  }
+
+  throw new Error("Invalid week action.");
+}
+
+function publishedSkippedIssues(dates: string[], rangeLabel: "week" | "month") {
+  if (dates.length === 0) {
+    return [];
+  }
+
+  const recommendation =
+    rangeLabel === "week"
+      ? "Recommended: Unpublish, clear, and regenerate full week."
+      : "Recommended: Unpublish, clear, and regenerate full month.";
+
+  return [
+    ...dates.map((date) => `${date} stayed published and was skipped.`),
+    `Weekly validation may be incomplete or stale. ${recommendation}`,
+  ];
 }
 
 function revalidateSchedulePaths() {

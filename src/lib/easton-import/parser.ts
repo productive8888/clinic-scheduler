@@ -182,7 +182,7 @@ export async function parseEastonWorkbook(explicitPath?: string | null) {
 
   warnings.push(...primaryDemand.warnings);
   warnings.push(
-    "Allergy Shots is deprecated for July generation; historical records remain, but July staffing demand ignores Allergy Shots.",
+    "Allergy Shots is deprecated for Current Easton generation; historical records remain, but Current Easton staffing demand ignores Allergy Shots.",
   );
 
   return {
@@ -263,7 +263,7 @@ function parseShiftDemandSheet(worksheet: ExcelJS.Worksheet) {
 
     if (isDeprecatedEastonJulyRoleCode(roleCode)) {
       warnings.push(
-        `${worksheet.name}: ${roleName} is deprecated for July generation and was ignored.`,
+        `${worksheet.name}: ${roleName} is deprecated for Current Easton generation and was ignored.`,
       );
       continue;
     }
@@ -489,16 +489,16 @@ function classifyEmployeeTarget(input: {
       status: "SPECIAL_EXCLUDED",
       reason:
         input.roleLabel || input.groupLabel
-          ? "No recognized July group and no active role targets in the active sheet."
-          : "No active July scheduling targets in the active sheet.",
+          ? "No recognized Current Easton group and no active role targets in the active sheet."
+          : "No active Current Easton scheduling targets in the active sheet.",
     };
   }
 
   return {
     status: "NEEDS_REVIEW",
     reason: input.groupLabel
-      ? `Unrecognized July work-pattern group: ${input.groupLabel}.`
-      : "Active role targets exist but no July work-pattern group was provided.",
+      ? `Unrecognized Current Easton work-pattern group: ${input.groupLabel}.`
+      : "Active role targets exist but no Current Easton work-pattern group was provided.",
   };
 }
 

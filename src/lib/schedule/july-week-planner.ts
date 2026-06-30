@@ -400,7 +400,7 @@ function workPatternLabel(employee: SchedulerEmployee) {
     (pattern) => pattern.code === code,
   );
 
-  return exactPattern?.label ?? code ?? employee.workPattern?.kind ?? "July";
+  return exactPattern?.label ?? code ?? employee.workPattern?.kind ?? "Current Easton";
 }
 
 function unique<T>(items: T[]) {

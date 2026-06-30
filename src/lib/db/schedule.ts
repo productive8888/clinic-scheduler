@@ -42,6 +42,8 @@ import {
   getEffectiveWorkPattern,
 } from "@/lib/schedule/easton-work-pattern-resolution";
 import { withEastonDerivedAvailability } from "@/lib/schedule/easton-derived-availability";
+import { eastonTargetPatternCodeForDate } from "@/lib/schedule/easton-model";
+import { isSchedulingRequiredEmployee } from "@/lib/schedule/employees";
 import { isCanonicalBgTaskType } from "@/lib/schedule/bg-role";
 import { shouldPreserveSlotOutsideStaffingRequirements } from "@/lib/schedule/slot-reconciliation";
 import { buildShiftBlockSnapshot } from "@/lib/shifts/templates";
@@ -652,6 +654,7 @@ export async function generateScheduleForDate(input: {
   const fairnessSetting = await fairnessSettingPromise;
   const fairnessWindow = getFairnessWindow(input.date, fairnessSetting);
   const currentWeek = clinicWeekRange(input.date);
+  const eastonTargetPatternCode = eastonTargetPatternCodeForDate(input.date);
   const [
     scheduleDay,
     employees,
@@ -798,7 +801,9 @@ export async function generateScheduleForDate(input: {
       where: {
         scheduleEligibility: "ACTIVE_SCHEDULED",
         pattern: {
-          code: "EASTON_JULY_ACTIVE_TARGETS",
+          code:
+            eastonTargetPatternCode ??
+            "__NO_ACTIVE_EASTON_TARGET_PATTERN__",
           active: true,
         },
       },
@@ -988,7 +993,10 @@ export async function generateScheduleForDate(input: {
     }
   }
 
-  const baseSchedulerEmployees: SchedulerEmployee[] = employees
+  const schedulingRequiredEmployees = employees.filter(
+    isSchedulingRequiredEmployee,
+  );
+  const baseSchedulerEmployees: SchedulerEmployee[] = schedulingRequiredEmployees
     .map((employee) => {
       const scheduleTarget = findEastonTargetForEmployee(employee, scheduleTargets);
       const workPattern = getEffectiveWorkPattern({

@@ -8,6 +8,8 @@ import {
   type EmployeeScheduleTargetSource,
 } from "@/lib/schedule/easton-work-pattern-resolution";
 import { withEastonDerivedAvailability } from "@/lib/schedule/easton-derived-availability";
+import { eastonTargetPatternCodeForDate } from "@/lib/schedule/easton-model";
+import { isSchedulingRequiredEmployee } from "@/lib/schedule/employees";
 import { buildJulyWeekSkeletons } from "@/lib/schedule/july-week-planner";
 import { julyPatientShiftGroupFromTaskCode } from "@/lib/schedule/patient-shifts";
 import {
@@ -38,6 +40,7 @@ export async function loadPatientRepairContext(input: {
   movableDates: string[];
 }): Promise<PatientRepairContext> {
   const db = getDb();
+  const eastonTargetPatternCode = eastonTargetPatternCodeForDate(input.endDate);
   const [rawEmployees, scheduleTargets, scheduleDays, generationRunCount] =
     await Promise.all([
       db.employee.findMany({
@@ -67,7 +70,9 @@ export async function loadPatientRepairContext(input: {
         where: {
           scheduleEligibility: "ACTIVE_SCHEDULED",
           pattern: {
-            code: "EASTON_JULY_ACTIVE_TARGETS",
+            code:
+              eastonTargetPatternCode ??
+              "__NO_ACTIVE_EASTON_TARGET_PATTERN__",
             active: true,
           },
         },
@@ -129,12 +134,14 @@ export async function loadPatientRepairContext(input: {
       }),
     ]);
 
-  let employees = rawEmployees.map((employee) =>
-    toRepairEmployee(
-      employee,
-      findEastonTargetForEmployee(employee, scheduleTargets),
-    ),
-  );
+  let employees = rawEmployees
+    .filter(isSchedulingRequiredEmployee)
+    .map((employee) =>
+      toRepairEmployee(
+        employee,
+        findEastonTargetForEmployee(employee, scheduleTargets),
+      ),
+    );
   const slots: PatientRepairSlot[] = [];
   const assignments: ExistingAssignment[] = [];
   const shiftBlocks = scheduleDays.flatMap((day) => {

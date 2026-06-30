@@ -18,6 +18,7 @@ import {
   type EmployeeScheduleTargetSource,
 } from "@/lib/schedule/easton-work-pattern-resolution";
 import { withEastonDerivedAvailability } from "@/lib/schedule/easton-derived-availability";
+import { ACTIVE_EASTON_TARGET_PATTERN_CODE } from "@/lib/schedule/easton-model";
 import { LEGACY_SHIFT_TEMPLATE_ID } from "@/lib/shifts/legacy";
 import { parseIsoDate, toIsoDate } from "@/lib/utils/date";
 
@@ -58,7 +59,7 @@ export async function getManualAssignmentWarnings(input: {
       where: {
         scheduleEligibility: "ACTIVE_SCHEDULED",
         pattern: {
-          code: "EASTON_JULY_ACTIVE_TARGETS",
+          code: ACTIVE_EASTON_TARGET_PATTERN_CODE,
           active: true,
         },
       },
@@ -233,7 +234,7 @@ export async function getManualAssignmentWarningMatrix(date: string) {
       where: {
         scheduleEligibility: "ACTIVE_SCHEDULED",
         pattern: {
-          code: "EASTON_JULY_ACTIVE_TARGETS",
+          code: ACTIVE_EASTON_TARGET_PATTERN_CODE,
           active: true,
         },
       },

@@ -117,6 +117,8 @@ export function getMonthDayPresentation(input: {
 export type MonthGenerationWeekSummary = {
   startDate: string;
   endDate: string;
+  validationStatus: "FULL" | "PARTIAL";
+  validationMessage: string | null;
   daysProcessed: number;
   daysCreated: number;
   daysRegenerated: number;
@@ -136,6 +138,8 @@ export type MonthGenerationWeekSummary = {
 
 export type MonthActionOperation =
   | "GENERATE"
+  | "PARTIAL_GENERATE"
+  | "FULL_REGENERATE"
   | "REGENERATE"
   | "PUBLISH"
   | "UNPUBLISH"

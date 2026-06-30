@@ -24,6 +24,8 @@ import {
   type EmployeeScheduleTargetSource,
 } from "@/lib/schedule/easton-work-pattern-resolution";
 import { withEastonDerivedAvailability } from "@/lib/schedule/easton-derived-availability";
+import { eastonTargetPatternCodeForDate } from "@/lib/schedule/easton-model";
+import { isSchedulingRequiredEmployee } from "@/lib/schedule/employees";
 import { buildJulyWeekSkeletons } from "@/lib/schedule/july-week-planner";
 import { parseIsoDate, toIsoDate } from "@/lib/utils/date";
 
@@ -108,6 +110,7 @@ export async function enforceWorkPatternRequirementsForRange(input: {
   mode?: "ALL" | "SATURDAY_ONLY";
   actorEmployeeId?: string | null;
 }) {
+  const eastonTargetPatternCode = eastonTargetPatternCodeForDate(input.endDate);
   const summary: WorkPatternRepairSummary = {
     startDate: input.startDate,
     endDate: input.endDate,
@@ -203,7 +206,9 @@ export async function enforceWorkPatternRequirementsForRange(input: {
       where: {
         scheduleEligibility: "ACTIVE_SCHEDULED",
         pattern: {
-          code: "EASTON_JULY_ACTIVE_TARGETS",
+          code:
+            eastonTargetPatternCode ??
+            "__NO_ACTIVE_EASTON_TARGET_PATTERN__",
           active: true,
         },
       },
@@ -221,9 +226,14 @@ export async function enforceWorkPatternRequirementsForRange(input: {
     return summary;
   }
 
-  let employees = rawEmployees.map((employee) =>
-    toRepairEmployee(employee, findEastonTargetForEmployee(employee, scheduleTargets)),
-  );
+  let employees = rawEmployees
+    .filter(isSchedulingRequiredEmployee)
+    .map((employee) =>
+      toRepairEmployee(
+        employee,
+        findEastonTargetForEmployee(employee, scheduleTargets),
+      ),
+    );
   const taskTypes = new Map<string, RepairTaskType>();
   const slots: RepairSlot[] = [];
   const shiftBlocks: RepairShiftBlock[] = [];

@@ -25,7 +25,7 @@ const EASTON_WORK_PATTERN_GROUPS: EastonWorkPatternGroup[] = [
     requiredSaturdayShiftCategory: "ENDO",
     extraHourWeekdays: [],
     notes:
-      "July model: works Saturday 0600-1400 for 8 paid hours and does not need weekday make-up hours.",
+      "Current Easton scheduling model: works Saturday 0600-1400 for 8 paid hours and does not need weekday make-up hours.",
   },
   {
     code: "EASTON_GROUP_M_TH",
@@ -36,7 +36,7 @@ const EASTON_WORK_PATTERN_GROUPS: EastonWorkPatternGroup[] = [
     requiredSaturdayShiftCategory: "SATURDAY",
     extraHourWeekdays: [1, 4],
     notes:
-      "July model: works Saturday 0800-1400 for 6 paid hours plus 5-hour shifts Monday and Thursday.",
+      "Current Easton scheduling model: works Saturday 0800-1400 for 6 paid hours plus 5-hour shifts Monday and Thursday.",
   },
   {
     code: "EASTON_GROUP_T_TH",
@@ -47,7 +47,7 @@ const EASTON_WORK_PATTERN_GROUPS: EastonWorkPatternGroup[] = [
     requiredSaturdayShiftCategory: "SATURDAY",
     extraHourWeekdays: [2, 4],
     notes:
-      "July model: works Saturday 0800-1400 for 6 paid hours plus 5-hour shifts Tuesday and Thursday.",
+      "Current Easton scheduling model: works Saturday 0800-1400 for 6 paid hours plus 5-hour shifts Tuesday and Thursday.",
   },
   {
     code: "EASTON_GROUP_M_W",
@@ -58,7 +58,7 @@ const EASTON_WORK_PATTERN_GROUPS: EastonWorkPatternGroup[] = [
     requiredSaturdayShiftCategory: "SATURDAY",
     extraHourWeekdays: [1, 3],
     notes:
-      "July model: works Saturday 0800-1400 for 6 paid hours plus 5-hour shifts Monday and Wednesday.",
+      "Current Easton scheduling model: works Saturday 0800-1400 for 6 paid hours plus 5-hour shifts Monday and Wednesday.",
   },
   {
     code: "EASTON_GROUP_M_T",
@@ -69,7 +69,7 @@ const EASTON_WORK_PATTERN_GROUPS: EastonWorkPatternGroup[] = [
     requiredSaturdayShiftCategory: "SATURDAY",
     extraHourWeekdays: [1, 2],
     notes:
-      "July model: works Saturday 0800-1400 for 6 paid hours plus 5-hour shifts Monday and Tuesday.",
+      "Current Easton scheduling model: works Saturday 0800-1400 for 6 paid hours plus 5-hour shifts Monday and Tuesday.",
   },
   {
     code: "EASTON_GROUP_T_W",
@@ -80,7 +80,7 @@ const EASTON_WORK_PATTERN_GROUPS: EastonWorkPatternGroup[] = [
     requiredSaturdayShiftCategory: "SATURDAY",
     extraHourWeekdays: [2, 3],
     notes:
-      "July model: works Saturday 0800-1400 for 6 paid hours plus 5-hour shifts Tuesday and Wednesday.",
+      "Current Easton scheduling model: works Saturday 0800-1400 for 6 paid hours plus 5-hour shifts Tuesday and Wednesday.",
   },
   {
     code: "EASTON_GROUP_W_TH",
@@ -91,7 +91,7 @@ const EASTON_WORK_PATTERN_GROUPS: EastonWorkPatternGroup[] = [
     requiredSaturdayShiftCategory: "SATURDAY",
     extraHourWeekdays: [3, 4],
     notes:
-      "July model: works Saturday 0800-1400 for 6 paid hours plus 5-hour shifts Wednesday and Thursday.",
+      "Current Easton scheduling model: works Saturday 0800-1400 for 6 paid hours plus 5-hour shifts Wednesday and Thursday.",
   },
 ];
 

@@ -7,6 +7,9 @@ import {
 
 export type ScheduleRangeMode = "DAY" | "WEEK" | "MONTH" | "CUSTOM";
 
+export const PUBLISHED_DAYS_PARTIAL_GENERATION_WARNING =
+  "This week has published days. Weekly balancing for 40 hours, Saturday rules, BG minimums, and work-pattern rules requires the whole week. If published days are skipped, the result will be partial and weekly validation may be incomplete or stale. Recommended: Unpublish, clear, and regenerate full week.";
+
 export function resolveScheduleRange(input: {
   mode: ScheduleRangeMode;
   date: string;
@@ -170,4 +173,17 @@ export function groupScheduleDatesByClinicWeek(dates: string[]) {
       ...clinicWeekRange(weekStart),
       dates: weekDates,
     }));
+}
+
+export function partialGenerationWeekStarts(input: {
+  weeks: ReturnType<typeof groupScheduleDatesByClinicWeek>;
+  publishedDatesSkipped: string[];
+}) {
+  const publishedDatesSkipped = new Set(input.publishedDatesSkipped);
+
+  return input.weeks
+    .filter((week) =>
+      week.dates.some((date) => publishedDatesSkipped.has(date)),
+    )
+    .map((week) => week.startDate);
 }

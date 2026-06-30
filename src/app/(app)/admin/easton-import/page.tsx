@@ -24,9 +24,9 @@ export default async function EastonImportPage() {
               Import and review scheduling defaults
             </h1>
             <p className="mt-2 max-w-3xl text-sm text-slate-500">
-              Parse the private spreadsheet, review the July shift grid and
-              demand counts, then apply them as editable database rules. June
-              sheets are ignored for active generation.
+              Parse the private spreadsheet, review the Current Easton shift
+              grid and demand counts, then apply them as editable database
+              rules. June sheets are ignored for active generation.
             </p>
           </div>
           <div className="flex flex-wrap gap-2">
