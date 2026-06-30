@@ -116,6 +116,7 @@ import {
   summarizeShiftBlocks,
 } from "../../src/lib/schedule/views";
 import { shouldPreserveSlotOutsideStaffingRequirements } from "../../src/lib/schedule/slot-reconciliation";
+import { EMPLOYEE_BG_MINIMUM_SOURCE } from "../../src/lib/schedule/employee-bg-minimum";
 import {
   isJulyPatientShiftTaskCode,
   julyPatientShiftGroupFromTaskCode,
@@ -4580,6 +4581,206 @@ describe("Current Easton hard requirements", () => {
     assert.equal(result.assignments[0]?.employeeId, "needs-bg");
   });
 
+  it("honors employee-specific BG minimum reservations before patient slots", () => {
+    const result = generateSchedule({
+      seed: "july-bg-minimum-reservation",
+      employees: [
+        {
+          id: "easton",
+          fullName: "Easton Liaw",
+          skillIds: ["clinic"],
+          availability: [{ weekday: 2, startMinute: 0, endMinute: 24 * 60 }],
+          requiredBackgroundAssignments: 5,
+        },
+        {
+          id: "coverage",
+          fullName: "Coverage Employee",
+          skillIds: ["clinic"],
+          availability: [{ weekday: 2, startMinute: 0, endMinute: 24 * 60 }],
+          requiredBackgroundAssignments: 0,
+        },
+      ],
+      taskTypes: [
+        {
+          id: "background",
+          code: "BACKGROUND",
+          name: "Background",
+          requiredSkillIds: [],
+          isBackground: true,
+        },
+        {
+          id: "new-gi",
+          code: "NEW_GI",
+          name: "New GI",
+          requiredSkillIds: ["clinic"],
+          isPatientFacing: true,
+          isClinical: true,
+        },
+      ],
+      slots: [
+        {
+          id: "patient-slot",
+          date: "2026-07-07",
+          shiftBlockId: "tue-am",
+          shiftCategory: "AM",
+          paidHours: 4,
+          taskTypeId: "new-gi",
+          slotIndex: 1,
+          startMinute: 8 * 60,
+          endMinute: 12 * 60,
+          requirementLevel: "REQUIRED",
+        },
+        {
+          id: "bg-minimum-slot",
+          date: "2026-07-07",
+          shiftBlockId: "tue-am",
+          shiftCategory: "AM",
+          paidHours: 4,
+          taskTypeId: "background",
+          slotIndex: 2,
+          source: EMPLOYEE_BG_MINIMUM_SOURCE,
+          startMinute: 8 * 60,
+          endMinute: 12 * 60,
+          requirementLevel: "REQUIRED",
+          reservedEmployeeIds: ["easton"],
+          protectedFromPull: true,
+        },
+      ],
+      fairness: {
+        clinicalShiftWeight: 0,
+        patientFacingShiftWeight: 0,
+        totalShiftWeight: 0,
+        totalHoursWeight: 0,
+        saturdayShiftWeight: 0,
+        endoscopyShiftWeight: 0,
+        patternConsistencyWeight: 0,
+        skillRoleBalanceWeight: 0,
+        exposureGoalWeight: 0,
+        backgroundPenaltyWeight: 0,
+      },
+    });
+
+    assert.equal(
+      result.assignments.find((assignment) => assignment.slotId === "bg-minimum-slot")
+        ?.employeeId,
+      "easton",
+    );
+    assert.equal(
+      result.assignments.find((assignment) => assignment.slotId === "patient-slot")
+        ?.employeeId,
+      "coverage",
+    );
+  });
+
+  it("can reserve five literal BG minimum slots while filling exactly 40 hours", () => {
+    const dates = [
+      "2026-07-06",
+      "2026-07-07",
+      "2026-07-08",
+      "2026-07-09",
+      "2026-07-10",
+    ];
+    const bgSlots = dates.map((date, index) => ({
+      id: `bg-minimum-${index + 1}`,
+      date,
+      shiftBlockId: `${date}-am`,
+      shiftCategory: "AM" as const,
+      paidHours: 4,
+      taskTypeId: "background",
+      slotIndex: 1,
+      source: EMPLOYEE_BG_MINIMUM_SOURCE,
+      startMinute: 8 * 60,
+      endMinute: 12 * 60,
+      requirementLevel: "REQUIRED" as const,
+      reservedEmployeeIds: ["easton"],
+      protectedFromPull: true,
+    }));
+    const patientSlots = dates.map((date, index) => ({
+      id: `patient-${index + 1}`,
+      date,
+      shiftBlockId: `${date}-pm`,
+      shiftCategory: "PM" as const,
+      paidHours: 4,
+      taskTypeId: "pcp",
+      slotIndex: 1,
+      startMinute: 13 * 60,
+      endMinute: 17 * 60,
+      requirementLevel: "REQUIRED" as const,
+    }));
+    const result = generateSchedule({
+      seed: "july-bg-minimum-five",
+      employees: [
+        {
+          id: "easton",
+          fullName: "Easton Liaw",
+          skillIds: ["clinic"],
+          availability: [1, 2, 3, 4, 5].map((weekday) => ({
+            weekday,
+            startMinute: 0,
+            endMinute: 24 * 60,
+          })),
+          targetWeeklyHours: 40,
+          requiredBackgroundAssignments: 5,
+          julyWeekSkeleton: {
+            employeeId: "easton",
+            groupLabel: "Group Saturday",
+            targetHours: 40,
+            allowedShiftBlockIds: [...bgSlots, ...patientSlots].map(
+              (slot) => slot.shiftBlockId,
+            ),
+            requiredShiftBlockIds: [],
+            forbiddenShiftBlockIds: [],
+            requiredSaturdayShiftBlockId: null,
+            requiredExtraHourWeekdays: [],
+            plannedDays: dates.map((date) => ({
+              date,
+              kind: "NORMAL_FULL_DAY" as const,
+              allowedShiftBlockIds: [`${date}-am`, `${date}-pm`],
+              requiredShiftBlockIds: [],
+            })),
+          },
+        },
+      ],
+      taskTypes: [
+        {
+          id: "background",
+          code: "BACKGROUND",
+          name: "Background",
+          requiredSkillIds: [],
+          isBackground: true,
+        },
+        {
+          id: "pcp",
+          code: "PCP",
+          name: "PCP",
+          requiredSkillIds: ["clinic"],
+          isPatientFacing: true,
+          isClinical: true,
+        },
+      ],
+      slots: [...bgSlots, ...patientSlots],
+    });
+    const bgAssignments = result.assignments.filter((assignment) =>
+      assignment.slotId.startsWith("bg-minimum-"),
+    );
+    const eastonHours = result.assignments
+      .filter((assignment) => assignment.employeeId === "easton")
+      .reduce((total, assignment) => {
+        const slot = [...bgSlots, ...patientSlots].find(
+          (item) => item.id === assignment.slotId,
+        );
+        return total + (slot?.paidHours ?? 0);
+      }, 0);
+
+    assert.equal(result.conflicts.length, 0);
+    assert.equal(bgAssignments.length, 5);
+    assert.equal(
+      bgAssignments.every((assignment) => assignment.employeeId === "easton"),
+      true,
+    );
+    assert.equal(eastonHours, 40);
+  });
+
   it("selects literal BG top-off for an under-40 employee missing BG", () => {
     const employee = topOffEmployee({
       id: "under-bg",
@@ -7236,6 +7437,13 @@ describe("automated scheduling workflow foundations", () => {
       shouldPreserveSlotOutsideStaffingRequirements({
         source: "BACKGROUND_DEFINITION",
         taskTypeOptional: true,
+      }),
+      true,
+    );
+    assert.equal(
+      shouldPreserveSlotOutsideStaffingRequirements({
+        source: EMPLOYEE_BG_MINIMUM_SOURCE,
+        taskTypeOptional: false,
       }),
       true,
     );

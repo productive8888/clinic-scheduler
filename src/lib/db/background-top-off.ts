@@ -27,6 +27,7 @@ import { eastonTargetPatternCodeForDate } from "@/lib/schedule/easton-model";
 import { isSchedulingRequiredEmployee } from "@/lib/schedule/employees";
 import { buildJulyWeekSkeletons } from "@/lib/schedule/july-week-planner";
 import { isCanonicalBgTaskType } from "@/lib/schedule/bg-role";
+import { isEmployeeBgMinimumSlotSource } from "@/lib/schedule/employee-bg-minimum";
 import { parseIsoDate, toIsoDate } from "@/lib/utils/date";
 
 export const GENERATED_BACKGROUND_TOP_OFF_SOURCE =
@@ -352,7 +353,8 @@ export async function topOffBackgroundAssignmentsForRange(input: {
         canBePulledForClinic:
           slot.backgroundTaskInstance?.definition.canBePulledForClinic ?? false,
         protectedFromPull:
-          slot.backgroundTaskInstance?.definition.protectedFromPull ?? false,
+          isEmployeeBgMinimumSlotSource(slot.source) ||
+          (slot.backgroundTaskInstance?.definition.protectedFromPull ?? false),
         taskType: {
           id: slot.taskType.id,
           code: slot.taskType.code,

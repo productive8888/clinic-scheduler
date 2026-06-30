@@ -26,6 +26,7 @@ import {
 import { withEastonDerivedAvailability } from "@/lib/schedule/easton-derived-availability";
 import { eastonTargetPatternCodeForDate } from "@/lib/schedule/easton-model";
 import { isSchedulingRequiredEmployee } from "@/lib/schedule/employees";
+import { isEmployeeBgMinimumSlotSource } from "@/lib/schedule/employee-bg-minimum";
 import { buildJulyWeekSkeletons } from "@/lib/schedule/july-week-planner";
 import { parseIsoDate, toIsoDate } from "@/lib/utils/date";
 
@@ -304,7 +305,8 @@ export async function enforceWorkPatternRequirementsForRange(input: {
         canBePulledForClinic:
           slot.backgroundTaskInstance?.definition.canBePulledForClinic ?? false,
         protectedFromPull:
-          slot.backgroundTaskInstance?.definition.protectedFromPull ?? false,
+          isEmployeeBgMinimumSlotSource(slot.source) ||
+          (slot.backgroundTaskInstance?.definition.protectedFromPull ?? false),
         lockedEmployeeIds: slot.assignments
           .filter((assignment) => assignment.locked)
           .map((assignment) => assignment.employeeId),

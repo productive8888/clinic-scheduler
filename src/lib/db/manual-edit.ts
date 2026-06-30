@@ -16,6 +16,7 @@ import {
 } from "@/lib/schedule/easton-work-pattern-resolution";
 import { withEastonDerivedAvailability } from "@/lib/schedule/easton-derived-availability";
 import { ACTIVE_EASTON_TARGET_PATTERN_CODE } from "@/lib/schedule/easton-model";
+import { isEmployeeBgMinimumSlotSource } from "@/lib/schedule/employee-bg-minimum";
 import {
   evaluateWeeklyHardRequirements,
   type WeeklyHardRequirementAssignment,
@@ -657,6 +658,26 @@ function previewManualEditBatchWithContext(
         date: slot?.date,
       });
     }
+
+    if (
+      original &&
+      slot &&
+      isEmployeeBgMinimumSlotSource(slot.source) &&
+      (!change.employeeId ||
+        change.employeeId !== original.employeeId ||
+        !change.locked)
+    ) {
+      diagnostics.push({
+        severity: "OVERRIDE_REQUIRED",
+        code: "BG_MINIMUM_ASSIGNMENT_CHANGE",
+        message:
+          "This changes a protected required BG minimum assignment. Regeneration may be needed to keep the employee's literal BG minimum inside their weekly target.",
+        employeeId: original.employeeId,
+        assignmentId: original.id,
+        slotId: original.slotId,
+        date: slot.date,
+      });
+    }
   }
 
   const touchedDates = touchedDatesForBatch(context, batch);
@@ -1027,6 +1048,7 @@ function toSchedulerSlot(
     date: slot.date,
     taskTypeId: slot.taskTypeId,
     slotIndex: slot.slotIndex,
+    source: slot.source,
     shiftBlockId: slot.shiftBlockId,
     shiftTemplateId: block.shiftTemplateId,
     shiftCategory: block.shiftCategory,

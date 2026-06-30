@@ -19,6 +19,7 @@ import {
   publishScheduleForDate,
   unpublishScheduleForDate,
 } from "@/lib/db/schedule";
+import { EMPLOYEE_BG_MINIMUM_SOURCE } from "@/lib/schedule/employee-bg-minimum";
 import {
   clinicWeekRange,
   groupScheduleDatesByClinicWeek,
@@ -910,6 +911,7 @@ const GENERATED_TASK_SLOT_SOURCES = [
   "DEFAULT",
   "STAFFING_RULE",
   "BACKGROUND_DEFINITION",
+  EMPLOYEE_BG_MINIMUM_SOURCE,
   GENERATED_BACKGROUND_TOP_OFF_SOURCE,
   GENERATED_WORK_PATTERN_TOP_OFF_SOURCE,
 ] as const;

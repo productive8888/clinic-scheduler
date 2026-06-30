@@ -1,5 +1,6 @@
 import { selectAssignment, toExistingAssignment } from "./assignment";
 import { dateToWeekday } from "./constraints";
+import { EMPLOYEE_BG_MINIMUM_SOURCE } from "@/lib/schedule/employee-bg-minimum";
 import { tryRepairRequiredAssignment } from "./repair";
 import type {
   ExistingAssignment,
@@ -205,6 +206,7 @@ function sortSlots(
 
     return (
       hardWorkPatternPriority(left) - hardWorkPatternPriority(right) ||
+      employeeBgMinimumPriority(left) - employeeBgMinimumPriority(right) ||
       requirementPriority(left) - requirementPriority(right) ||
       objectivePriority(leftTask) - objectivePriority(rightTask) ||
       rightSkillCount - leftSkillCount ||
@@ -215,6 +217,10 @@ function sortSlots(
       left.id.localeCompare(right.id)
     );
   });
+}
+
+function employeeBgMinimumPriority(slot: SchedulerTaskSlot) {
+  return slot.source === EMPLOYEE_BG_MINIMUM_SOURCE ? 0 : 1;
 }
 
 function hardWorkPatternPriority(slot: SchedulerTaskSlot) {

@@ -93,6 +93,7 @@ export type SchedulerTaskSlot = {
   paidHours?: number | null;
   taskTypeId: string;
   slotIndex: number;
+  source?: string | null;
   requirementLevel?: "REQUIRED" | "DESIRED" | "OPTIONAL" | "CONDITIONAL";
   startMinute?: number | null;
   endMinute?: number | null;

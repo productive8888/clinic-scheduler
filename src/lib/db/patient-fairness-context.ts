@@ -10,6 +10,7 @@ import {
 import { withEastonDerivedAvailability } from "@/lib/schedule/easton-derived-availability";
 import { eastonTargetPatternCodeForDate } from "@/lib/schedule/easton-model";
 import { isSchedulingRequiredEmployee } from "@/lib/schedule/employees";
+import { isEmployeeBgMinimumSlotSource } from "@/lib/schedule/employee-bg-minimum";
 import { buildJulyWeekSkeletons } from "@/lib/schedule/july-week-planner";
 import { julyPatientShiftGroupFromTaskCode } from "@/lib/schedule/patient-shifts";
 import {
@@ -197,7 +198,8 @@ export async function loadPatientRepairContext(input: {
           slot.backgroundTaskInstance?.definition.canBePulledForClinic ??
           false,
         protectedFromPull:
-          slot.backgroundTaskInstance?.definition.protectedFromPull ?? false,
+          isEmployeeBgMinimumSlotSource(slot.source) ||
+          (slot.backgroundTaskInstance?.definition.protectedFromPull ?? false),
         source: slot.source,
         taskType,
         assignments: slot.assignments,

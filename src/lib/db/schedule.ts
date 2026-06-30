@@ -23,7 +23,7 @@ import {
   type SchedulerTaskSlot,
   type SchedulerTaskType,
 } from "@/lib/scheduler";
-import { overlaps } from "@/lib/scheduler/constraints";
+import { getConstraintRejections, overlaps } from "@/lib/scheduler/constraints";
 import { isShortNoticeScheduleChange } from "@/lib/schedule/short-notice";
 import { buildJulySaturdayReservationPlan } from "@/lib/schedule/july-saturday-reservations";
 import { buildJulyWeekSkeletons } from "@/lib/schedule/july-week-planner";
@@ -45,6 +45,10 @@ import { withEastonDerivedAvailability } from "@/lib/schedule/easton-derived-ava
 import { eastonTargetPatternCodeForDate } from "@/lib/schedule/easton-model";
 import { isSchedulingRequiredEmployee } from "@/lib/schedule/employees";
 import { isCanonicalBgTaskType } from "@/lib/schedule/bg-role";
+import {
+  EMPLOYEE_BG_MINIMUM_SOURCE,
+  isEmployeeBgMinimumSlotSource,
+} from "@/lib/schedule/employee-bg-minimum";
 import { shouldPreserveSlotOutsideStaffingRequirements } from "@/lib/schedule/slot-reconciliation";
 import { buildShiftBlockSnapshot } from "@/lib/shifts/templates";
 import { LEGACY_SHIFT_TEMPLATE_ID } from "@/lib/shifts/legacy";
@@ -666,6 +670,7 @@ export async function generateScheduleForDate(input: {
     previousWeekPatternSlots,
     scheduleTargets,
     weekScheduleDays,
+    backgroundTaskType,
   ] = await Promise.all([
     getScheduleBoard(input.date),
     getDb().employee.findMany({
@@ -831,6 +836,14 @@ export async function generateScheduleForDate(input: {
       },
       orderBy: { date: "asc" },
     }),
+    getDb().taskType.findFirst({
+      where: { active: true, code: "BACKGROUND" },
+      include: {
+        skillRequirements: {
+          include: { skill: true },
+        },
+      },
+    }),
   ]);
 
   if (!scheduleDay) {
@@ -840,27 +853,16 @@ export async function generateScheduleForDate(input: {
   const taskTypes = new Map(
     scheduleDay.taskSlots.map((slot) => [
       slot.taskType.id,
-      {
-        id: slot.taskType.id,
-        code: slot.taskType.code,
-        name: slot.taskType.name,
-        requiredSkillIds: slot.taskType.skillRequirements.map(
-          (requirement) => requirement.skillId,
-        ),
-        interchangeableGroup: slot.taskType.interchangeableGroup,
-        difficultyWeight: slot.taskType.difficultyWeight,
-        sortOrder: slot.taskType.sortOrder,
-        isPatientFacing: slot.taskType.isPatientFacing,
-        isClinical: slot.taskType.isClinical,
-        isBackground: slot.taskType.isBackground,
-        isSkilled: slot.taskType.isSkilled,
-        isEndoscopy: slot.taskType.isEndoscopy,
-        isFloat: slot.taskType.isFloat,
-        isClosureCandidate: slot.taskType.isClosureCandidate,
-        exposureGroup: taskExposureGroup(slot.taskType.code),
-      } satisfies SchedulerTaskType,
+      schedulerTaskTypeFromTaskType(slot.taskType),
     ]),
   );
+
+  if (backgroundTaskType && !taskTypes.has(backgroundTaskType.id)) {
+    taskTypes.set(
+      backgroundTaskType.id,
+      schedulerTaskTypeFromTaskType(backgroundTaskType),
+    );
+  }
   const taskTypeIdByCode = new Map(
     [...taskTypes.values()].map((taskType) => [taskType.code, taskType.id]),
   );
@@ -1121,6 +1123,7 @@ export async function generateScheduleForDate(input: {
     paidHours: Number(slot.shiftBlock.paidHours),
     taskTypeId: slot.taskTypeId,
     slotIndex: slot.slotIndex,
+    source: slot.source,
     startMinute: slot.startMinute,
     endMinute: slot.endMinute,
     minStaff: slot.minStaff,
@@ -1141,7 +1144,8 @@ export async function generateScheduleForDate(input: {
     canBePulledForClinic:
       slot.backgroundTaskInstance?.definition.canBePulledForClinic ?? false,
     protectedFromPull:
-      slot.backgroundTaskInstance?.definition.protectedFromPull ?? false,
+      isEmployeeBgMinimumSlotSource(slot.source) ||
+      (slot.backgroundTaskInstance?.definition.protectedFromPull ?? false),
     lockedEmployeeIds: slot.assignments
       .filter(
         (assignment) =>
@@ -1178,6 +1182,19 @@ export async function generateScheduleForDate(input: {
     });
   }
 
+  const backgroundMinimumReservations =
+    await reserveEmployeeBackgroundMinimumSlotsForDate({
+      date: input.date,
+      scheduleDay,
+      employees: schedulerEmployees,
+      backgroundTaskType:
+        backgroundTaskType ? schedulerTaskTypeFromTaskType(backgroundTaskType) : null,
+      slots,
+      taskTypes,
+      existingAssignments,
+    });
+  slots = backgroundMinimumReservations.slots;
+
   const pullCandidates = selectBackgroundPullCandidates({
     assignments: scheduleDay.taskSlots.flatMap((slot) =>
       slot.assignments.map((assignment) => ({
@@ -1187,7 +1204,8 @@ export async function generateScheduleForDate(input: {
         canBePulledForClinic:
           slot.backgroundTaskInstance?.definition.canBePulledForClinic ?? false,
         protectedFromPull:
-          slot.backgroundTaskInstance?.definition.protectedFromPull ?? false,
+          isEmployeeBgMinimumSlotSource(slot.source) ||
+          (slot.backgroundTaskInstance?.definition.protectedFromPull ?? false),
       })),
     ),
     rules: backgroundPullRules,
@@ -1268,6 +1286,13 @@ export async function generateScheduleForDate(input: {
     ).length,
     saturdayReservations: saturdayReservationPlan.reservations.length,
     saturdayReservationUnresolved: saturdayReservationPlan.unresolved,
+    backgroundMinimumReservations:
+      backgroundMinimumReservations.reservations.length,
+    backgroundMinimumSlotsCreated:
+      backgroundMinimumReservations.createdSlotIds.length,
+    backgroundMinimumSlotsCancelled:
+      backgroundMinimumReservations.cancelledSlotIds.length,
+    backgroundMinimumUnresolved: backgroundMinimumReservations.unresolved,
     firstConflictReasons: result.conflicts.slice(0, 5).map((conflict) => ({
       slotId: conflict.slotId,
       reason: conflict.reason,
@@ -1296,11 +1321,14 @@ export async function generateScheduleForDate(input: {
     },
   });
 
-  const slotIds = scheduleDay.taskSlots.map((slot) => slot.id);
+  const slotIds = [...new Set(slots.map((slot) => slot.id))];
+  const slotIdsForGeneratedRemoval = [
+    ...new Set([...slotIds, ...backgroundMinimumReservations.cancelledSlotIds]),
+  ];
 
   await getDb().assignment.updateMany({
     where: {
-      taskSlotId: { in: slotIds },
+      taskSlotId: { in: slotIdsForGeneratedRemoval },
       status: "ACTIVE",
       locked: false,
       source: {
@@ -1325,6 +1353,28 @@ export async function generateScheduleForDate(input: {
       removedAt: new Date(),
     },
   });
+
+  if (backgroundMinimumReservations.cancelledSlotIds.length > 0) {
+    await getDb().taskSlot.updateMany({
+      where: {
+        id: { in: backgroundMinimumReservations.cancelledSlotIds },
+        assignments: {
+          none: {
+            status: AssignmentStatus.ACTIVE,
+            OR: [
+              { locked: true },
+              { source: AssignmentSource.MANUAL_OVERRIDE },
+            ],
+          },
+        },
+      },
+      data: {
+        status: TaskSlotStatus.CANCELLED,
+        notes:
+          "Cancelled because this generated employee BG minimum slot is no longer needed.",
+      },
+    });
+  }
 
   for (const assignment of result.assignments) {
     if (assignment.source === "LOCKED") {
@@ -1524,6 +1574,620 @@ export async function unpublishScheduleForDate(input: {
   });
 
   return unpublished;
+}
+
+type ScheduleBoardDay = NonNullable<Awaited<ReturnType<typeof getScheduleBoard>>>;
+type ScheduleBoardTaskSlot = ScheduleBoardDay["taskSlots"][number];
+type ScheduleBoardShiftBlock = ScheduleBoardDay["shiftBlocks"][number];
+
+type TaskTypeWithSkills = {
+  id: string;
+  code: string;
+  name: string;
+  skillRequirements: Array<{ skillId: string }>;
+  interchangeableGroup: string | null;
+  difficultyWeight: number;
+  sortOrder: number;
+  isPatientFacing: boolean;
+  isClinical: boolean;
+  isBackground: boolean;
+  isSkilled: boolean;
+  isEndoscopy: boolean;
+  isFloat: boolean;
+  isClosureCandidate: boolean;
+};
+
+function schedulerTaskTypeFromTaskType(
+  taskType: TaskTypeWithSkills,
+): SchedulerTaskType {
+  return {
+    id: taskType.id,
+    code: taskType.code,
+    name: taskType.name,
+    requiredSkillIds: taskType.skillRequirements.map(
+      (requirement) => requirement.skillId,
+    ),
+    interchangeableGroup: taskType.interchangeableGroup,
+    difficultyWeight: taskType.difficultyWeight,
+    sortOrder: taskType.sortOrder,
+    isPatientFacing: taskType.isPatientFacing,
+    isClinical: taskType.isClinical,
+    isBackground: taskType.isBackground,
+    isSkilled: taskType.isSkilled,
+    isEndoscopy: taskType.isEndoscopy,
+    isFloat: taskType.isFloat,
+    isClosureCandidate: taskType.isClosureCandidate,
+    exposureGroup: taskExposureGroup(taskType.code),
+  };
+}
+
+async function reserveEmployeeBackgroundMinimumSlotsForDate(input: {
+  date: string;
+  scheduleDay: ScheduleBoardDay;
+  employees: SchedulerEmployee[];
+  backgroundTaskType: SchedulerTaskType | null;
+  slots: SchedulerTaskSlot[];
+  taskTypes: Map<string, SchedulerTaskType>;
+  existingAssignments: ExistingAssignment[];
+}) {
+  const protectedExistingBgMinimumSlotIds = new Set(
+    input.scheduleDay.taskSlots
+      .filter((slot) => isEmployeeBgMinimumSlotSource(slot.source))
+      .filter(hasProtectedAssignment)
+      .map((slot) => slot.id),
+  );
+  const slotsById = new Map(input.slots.map((slot) => [slot.id, slot]));
+  const finalSlotsById = new Map(
+    input.slots
+      .filter(
+        (slot) =>
+          !isEmployeeBgMinimumSlotSource(slot.source) ||
+          protectedExistingBgMinimumSlotIds.has(slot.id),
+      )
+      .map((slot) => [slot.id, slot]),
+  );
+  const reusableBgMinimumSlotsByShiftBlock = new Map<string, SchedulerTaskSlot[]>();
+
+  for (const slot of input.slots) {
+    if (
+      !isEmployeeBgMinimumSlotSource(slot.source) ||
+      protectedExistingBgMinimumSlotIds.has(slot.id) ||
+      slot.taskTypeId !== input.backgroundTaskType?.id ||
+      !slot.shiftBlockId
+    ) {
+      continue;
+    }
+
+    const reusableSlots =
+      reusableBgMinimumSlotsByShiftBlock.get(slot.shiftBlockId) ?? [];
+    reusableSlots.push(slot);
+    reusableBgMinimumSlotsByShiftBlock.set(slot.shiftBlockId, reusableSlots);
+  }
+
+  const reservations: Array<{
+    employeeId: string;
+    employeeName: string;
+    slotId: string;
+    shiftBlockId: string;
+  }> = [];
+  const unresolved: Array<{
+    employeeId: string;
+    employeeName: string;
+    required: number;
+    assigned: number;
+    reason: string;
+  }> = [];
+  const createdSlotIds: string[] = [];
+  const usedReusableSlotIds = new Set<string>();
+  const simulatedAssignments = [
+    ...input.existingAssignments,
+    ...prefilledExistingAssignmentsFromSlots(input.slots, input.taskTypes),
+  ];
+  const currentDayBgByEmployee = countCanonicalBgAssignments(
+    simulatedAssignments,
+    input.taskTypes,
+  );
+
+  if (!input.backgroundTaskType || !isCanonicalBgTaskType(input.backgroundTaskType)) {
+    for (const employee of input.employees) {
+      const required = requiredBackgroundAssignmentsForEmployee(employee);
+      const assigned =
+        (employee.scheduledBackgroundAssignmentsThisWeek ?? 0) +
+        (currentDayBgByEmployee.get(employee.id) ?? 0);
+
+      if (required > assigned) {
+        unresolved.push({
+          employeeId: employee.id,
+          employeeName: employee.fullName,
+          required,
+          assigned,
+          reason: "Literal BACKGROUND task type is not configured.",
+        });
+      }
+    }
+
+    return {
+      slots: [...finalSlotsById.values()],
+      reservations,
+      unresolved,
+      createdSlotIds,
+      cancelledSlotIds: obsoleteEmployeeBgMinimumSlotIds({
+        slotsById,
+        finalSlotsById,
+        protectedExistingBgMinimumSlotIds,
+      }),
+    };
+  }
+
+  const weekday = parseIsoDate(input.date).getUTCDay();
+
+  if (weekday === 0 || weekday === 6 || input.scheduleDay.scenario === "CLINIC_CLOSED") {
+    return {
+      slots: [...finalSlotsById.values()],
+      reservations,
+      unresolved,
+      createdSlotIds,
+      cancelledSlotIds: obsoleteEmployeeBgMinimumSlotIds({
+        slotsById,
+        finalSlotsById,
+        protectedExistingBgMinimumSlotIds,
+      }),
+    };
+  }
+
+  const employeesWithMissingBg = input.employees
+    .map((employee) => {
+      const required = requiredBackgroundAssignmentsForEmployee(employee);
+      const assigned =
+        (employee.scheduledBackgroundAssignmentsThisWeek ?? 0) +
+        (currentDayBgByEmployee.get(employee.id) ?? 0);
+
+      return {
+        employee,
+        required,
+        assigned,
+        missing: Math.max(0, required - assigned),
+      };
+    })
+    .filter((entry) => entry.missing > 0)
+    .sort(
+      (left, right) =>
+        right.missing - left.missing ||
+        left.employee.fullName.localeCompare(right.employee.fullName) ||
+        left.employee.id.localeCompare(right.employee.id),
+    );
+
+  const nextSlotIndexes = new Map<string, number>();
+
+  for (const entry of employeesWithMissingBg) {
+    let missing = entry.missing;
+
+    while (missing > 0) {
+      const candidate = selectBackgroundMinimumShiftBlock({
+        employee: entry.employee,
+        date: input.date,
+        shiftBlocks: input.scheduleDay.shiftBlocks,
+        backgroundTaskType: input.backgroundTaskType,
+        assignments: simulatedAssignments,
+        reusableBgMinimumSlotsByShiftBlock,
+        usedReusableSlotIds,
+      });
+
+      if (!candidate) {
+        unresolved.push({
+          employeeId: entry.employee.id,
+          employeeName: entry.employee.fullName,
+          required: entry.required,
+          assigned: entry.required - missing,
+          reason: "No legal weekday background slot remains inside the Current Easton skeleton.",
+        });
+        break;
+      }
+
+      const reservedSlot = candidate.reusableSlot
+        ? await reserveReusableBackgroundMinimumSlot({
+            slot: candidate.reusableSlot,
+            employee: entry.employee,
+            shiftBlock: candidate.shiftBlock,
+          })
+        : await createBackgroundMinimumSlot({
+            date: input.date,
+            scheduleDayId: input.scheduleDay.id,
+            backgroundTaskTypeId: input.backgroundTaskType.id,
+            employee: entry.employee,
+            shiftBlock: candidate.shiftBlock,
+            nextSlotIndexes,
+          });
+
+      if (!candidate.reusableSlot) {
+        createdSlotIds.push(reservedSlot.id);
+      } else {
+        usedReusableSlotIds.add(candidate.reusableSlot.id);
+      }
+
+      finalSlotsById.set(reservedSlot.id, reservedSlot);
+      simulatedAssignments.push(
+        existingAssignmentFromSlot(
+          entry.employee.id,
+          reservedSlot,
+          input.backgroundTaskType,
+        ),
+      );
+      currentDayBgByEmployee.set(
+        entry.employee.id,
+        (currentDayBgByEmployee.get(entry.employee.id) ?? 0) + 1,
+      );
+      reservations.push({
+        employeeId: entry.employee.id,
+        employeeName: entry.employee.fullName,
+        slotId: reservedSlot.id,
+        shiftBlockId: reservedSlot.shiftBlockId ?? candidate.shiftBlock.id,
+      });
+      missing -= 1;
+    }
+  }
+
+  return {
+    slots: [...finalSlotsById.values()],
+    reservations,
+    unresolved,
+    createdSlotIds,
+    cancelledSlotIds: obsoleteEmployeeBgMinimumSlotIds({
+      slotsById,
+      finalSlotsById,
+      protectedExistingBgMinimumSlotIds,
+    }),
+  };
+}
+
+function requiredBackgroundAssignmentsForEmployee(employee: SchedulerEmployee) {
+  if (
+    employee.active === false ||
+    (employee.targetWeeklyHours !== null &&
+      employee.targetWeeklyHours !== undefined &&
+      employee.targetWeeklyHours <= 0)
+  ) {
+    return 0;
+  }
+
+  return Math.max(0, employee.requiredBackgroundAssignments ?? 0);
+}
+
+function hasProtectedAssignment(slot: ScheduleBoardTaskSlot) {
+  return slot.assignments.some(
+    (assignment) =>
+      assignment.locked ||
+      assignment.source === AssignmentSource.MANUAL_OVERRIDE,
+  );
+}
+
+function obsoleteEmployeeBgMinimumSlotIds(input: {
+  slotsById: Map<string, SchedulerTaskSlot>;
+  finalSlotsById: Map<string, SchedulerTaskSlot>;
+  protectedExistingBgMinimumSlotIds: Set<string>;
+}) {
+  return [...input.slotsById.values()]
+    .filter((slot) => isEmployeeBgMinimumSlotSource(slot.source))
+    .filter((slot) => !input.finalSlotsById.has(slot.id))
+    .filter((slot) => !input.protectedExistingBgMinimumSlotIds.has(slot.id))
+    .map((slot) => slot.id);
+}
+
+function selectBackgroundMinimumShiftBlock(input: {
+  employee: SchedulerEmployee;
+  date: string;
+  shiftBlocks: ScheduleBoardShiftBlock[];
+  backgroundTaskType: SchedulerTaskType;
+  assignments: ExistingAssignment[];
+  reusableBgMinimumSlotsByShiftBlock: Map<string, SchedulerTaskSlot[]>;
+  usedReusableSlotIds: Set<string>;
+}) {
+  const requiredShiftBlockIds = new Set(
+    input.employee.julyWeekSkeleton?.plannedDays.find(
+      (day) => day.date === input.date,
+    )?.requiredShiftBlockIds ?? [],
+  );
+  const shiftBlocks = [...input.shiftBlocks]
+    .filter((block) => isWeekdayBackgroundMinimumShiftBlock(input.employee, block))
+    .sort(
+      (left, right) =>
+        Number(requiredShiftBlockIds.has(right.id)) -
+          Number(requiredShiftBlockIds.has(left.id)) ||
+        left.startMinute - right.startMinute ||
+        left.endMinute - right.endMinute ||
+        left.id.localeCompare(right.id),
+    );
+
+  for (const shiftBlock of shiftBlocks) {
+    const reusableSlot = (
+      input.reusableBgMinimumSlotsByShiftBlock.get(shiftBlock.id) ?? []
+    ).find((slot) => !input.usedReusableSlotIds.has(slot.id));
+    const slot = reusableSlot
+      ? reservedBackgroundMinimumSchedulerSlot({
+          slot: reusableSlot,
+          employeeId: input.employee.id,
+          shiftBlock,
+        })
+      : backgroundMinimumCandidateSlot({
+          date: input.date,
+          employeeId: input.employee.id,
+          shiftBlock,
+          backgroundTaskTypeId: input.backgroundTaskType.id,
+        });
+    const rejections = getConstraintRejections(
+      input.employee,
+      input.backgroundTaskType,
+      slot,
+      input.assignments,
+    );
+
+    if (rejections.length === 0) {
+      return { shiftBlock, reusableSlot };
+    }
+  }
+
+  return null;
+}
+
+function isWeekdayBackgroundMinimumShiftBlock(
+  employee: SchedulerEmployee,
+  shiftBlock: ScheduleBoardShiftBlock,
+) {
+  if (
+    shiftBlock.shiftCategory === "SATURDAY" ||
+    shiftBlock.shiftCategory === "ENDO"
+  ) {
+    return false;
+  }
+
+  if (!employee.julyWeekSkeleton) {
+    return true;
+  }
+
+  return employee.julyWeekSkeleton.allowedShiftBlockIds.includes(shiftBlock.id);
+}
+
+function backgroundMinimumCandidateSlot(input: {
+  date: string;
+  employeeId: string;
+  shiftBlock: ScheduleBoardShiftBlock;
+  backgroundTaskTypeId: string;
+}): SchedulerTaskSlot {
+  return {
+    id: `employee-bg-minimum:${input.employeeId}:${input.shiftBlock.id}`,
+    date: input.date,
+    shiftBlockId: input.shiftBlock.id,
+    shiftTemplateId: input.shiftBlock.shiftTemplateId,
+    shiftCategory: input.shiftBlock.shiftCategory,
+    shiftName: input.shiftBlock.name,
+    paidHours: Number(input.shiftBlock.paidHours),
+    taskTypeId: input.backgroundTaskTypeId,
+    slotIndex: 1,
+    source: EMPLOYEE_BG_MINIMUM_SOURCE,
+    requirementLevel: "REQUIRED",
+    startMinute: input.shiftBlock.startMinute,
+    endMinute: input.shiftBlock.endMinute,
+    minStaff: 1,
+    requiredStaff: 1,
+    reservedEmployeeIds: [input.employeeId],
+    canBePulledForClinic: false,
+    protectedFromPull: true,
+  };
+}
+
+function reservedBackgroundMinimumSchedulerSlot(input: {
+  slot: SchedulerTaskSlot;
+  employeeId: string;
+  shiftBlock: ScheduleBoardShiftBlock;
+}) {
+  return {
+    ...input.slot,
+    source: EMPLOYEE_BG_MINIMUM_SOURCE,
+    requirementLevel: "REQUIRED" as const,
+    minStaff: 1,
+    requiredStaff: 1,
+    startMinute: input.shiftBlock.startMinute,
+    endMinute: input.shiftBlock.endMinute,
+    paidHours: Number(input.shiftBlock.paidHours),
+    reservedEmployeeIds: uniqueStrings([
+      ...(input.slot.reservedEmployeeIds ?? []),
+      input.employeeId,
+    ]),
+    canBePulledForClinic: false,
+    protectedFromPull: true,
+  };
+}
+
+async function reserveReusableBackgroundMinimumSlot(input: {
+  slot: SchedulerTaskSlot;
+  employee: SchedulerEmployee;
+  shiftBlock: ScheduleBoardShiftBlock;
+}) {
+  const reservedSlot = reservedBackgroundMinimumSchedulerSlot({
+    slot: input.slot,
+    employeeId: input.employee.id,
+    shiftBlock: input.shiftBlock,
+  });
+
+  await getDb().taskSlot.update({
+    where: { id: input.slot.id },
+    data: {
+      label: employeeBackgroundMinimumSlotLabel(input.employee.fullName),
+      startMinute: input.shiftBlock.startMinute,
+      endMinute: input.shiftBlock.endMinute,
+      minStaff: 1,
+      requiredStaff: 1,
+      requirementLevel: "REQUIRED",
+      source: EMPLOYEE_BG_MINIMUM_SOURCE,
+      status: TaskSlotStatus.OPEN,
+      notes: employeeBackgroundMinimumSlotNote(input.employee.fullName),
+    },
+  });
+
+  return reservedSlot;
+}
+
+async function createBackgroundMinimumSlot(input: {
+  date: string;
+  scheduleDayId: string;
+  backgroundTaskTypeId: string;
+  employee: SchedulerEmployee;
+  shiftBlock: ScheduleBoardShiftBlock;
+  nextSlotIndexes: Map<string, number>;
+}) {
+  const slotIndex = await nextBackgroundMinimumSlotIndex({
+    scheduleDayId: input.scheduleDayId,
+    shiftBlockId: input.shiftBlock.id,
+    taskTypeId: input.backgroundTaskTypeId,
+    nextSlotIndexes: input.nextSlotIndexes,
+  });
+  const slot = await getDb().taskSlot.create({
+    data: {
+      scheduleDayId: input.scheduleDayId,
+      shiftBlockId: input.shiftBlock.id,
+      taskTypeId: input.backgroundTaskTypeId,
+      slotIndex,
+      label: employeeBackgroundMinimumSlotLabel(input.employee.fullName),
+      startMinute: input.shiftBlock.startMinute,
+      endMinute: input.shiftBlock.endMinute,
+      minStaff: 1,
+      requiredStaff: 1,
+      requirementLevel: "REQUIRED",
+      source: EMPLOYEE_BG_MINIMUM_SOURCE,
+      status: TaskSlotStatus.OPEN,
+      notes: employeeBackgroundMinimumSlotNote(input.employee.fullName),
+    },
+  });
+  const schedulerSlot = backgroundMinimumCandidateSlot({
+    date: input.date,
+    employeeId: input.employee.id,
+    shiftBlock: input.shiftBlock,
+    backgroundTaskTypeId: input.backgroundTaskTypeId,
+  });
+
+  return {
+    ...schedulerSlot,
+    id: slot.id,
+    slotIndex,
+  };
+}
+
+async function nextBackgroundMinimumSlotIndex(input: {
+  scheduleDayId: string;
+  shiftBlockId: string;
+  taskTypeId: string;
+  nextSlotIndexes: Map<string, number>;
+}) {
+  const key = `${input.shiftBlockId}:${input.taskTypeId}`;
+  const cached = input.nextSlotIndexes.get(key);
+
+  if (cached !== undefined) {
+    const next = cached + 1;
+    input.nextSlotIndexes.set(key, next);
+    return next;
+  }
+
+  const existing = await getDb().taskSlot.aggregate({
+    where: {
+      scheduleDayId: input.scheduleDayId,
+      shiftBlockId: input.shiftBlockId,
+      taskTypeId: input.taskTypeId,
+    },
+    _max: { slotIndex: true },
+  });
+  const next = (existing._max.slotIndex ?? 0) + 1;
+  input.nextSlotIndexes.set(key, next);
+
+  return next;
+}
+
+function employeeBackgroundMinimumSlotLabel(employeeName: string) {
+  return `Required BG minimum - ${employeeName}`;
+}
+
+function employeeBackgroundMinimumSlotNote(employeeName: string) {
+  return `Reserved before ordinary schedule generation to satisfy ${employeeName}'s required literal BG minimum.`;
+}
+
+function prefilledExistingAssignmentsFromSlots(
+  slots: SchedulerTaskSlot[],
+  taskTypes: Map<string, SchedulerTaskType>,
+) {
+  const assignments: ExistingAssignment[] = [];
+
+  for (const slot of slots) {
+    const taskType = taskTypes.get(slot.taskTypeId);
+
+    if (!taskType) {
+      continue;
+    }
+
+    const lockedEmployeeIds = uniqueStrings([
+      ...(slot.lockedEmployeeIds ?? []),
+      ...(slot.lockedEmployeeId ? [slot.lockedEmployeeId] : []),
+    ]);
+    const reservedEmployeeIds = uniqueStrings(
+      slot.reservedEmployeeIds ?? [],
+    ).filter((employeeId) => !lockedEmployeeIds.includes(employeeId));
+
+    for (const employeeId of [...lockedEmployeeIds, ...reservedEmployeeIds]) {
+      assignments.push(existingAssignmentFromSlot(employeeId, slot, taskType));
+    }
+  }
+
+  return assignments;
+}
+
+function existingAssignmentFromSlot(
+  employeeId: string,
+  slot: SchedulerTaskSlot,
+  taskType: SchedulerTaskType,
+): ExistingAssignment {
+  return {
+    slotId: slot.id,
+    employeeId,
+    date: slot.date,
+    taskTypeId: slot.taskTypeId,
+    startMinute: slot.startMinute,
+    endMinute: slot.endMinute,
+    shiftBlockId: slot.shiftBlockId,
+    shiftCategory: slot.shiftCategory,
+    paidHours: slot.paidHours,
+    isPatientFacing: taskType.isPatientFacing,
+    isClinical: taskType.isClinical,
+    isBackground: taskType.isBackground,
+    isFloat: taskType.isFloat,
+    isEndoscopy: taskType.isEndoscopy,
+    exposureGroup: taskExposureGroup(taskType.code),
+    canBePulledForClinic: slot.canBePulledForClinic,
+    protectedFromPull: slot.protectedFromPull,
+  };
+}
+
+function countCanonicalBgAssignments(
+  assignments: ExistingAssignment[],
+  taskTypes: Map<string, SchedulerTaskType>,
+) {
+  const counts = new Map<string, number>();
+
+  for (const assignment of assignments) {
+    const taskType = taskTypes.get(assignment.taskTypeId);
+
+    if (!taskType || !isCanonicalBgTaskType(taskType)) {
+      continue;
+    }
+
+    counts.set(
+      assignment.employeeId,
+      (counts.get(assignment.employeeId) ?? 0) + 1,
+    );
+  }
+
+  return counts;
+}
+
+function uniqueStrings(values: string[]) {
+  return [...new Set(values)].sort();
 }
 
 function formatConflictNote(conflict: {
